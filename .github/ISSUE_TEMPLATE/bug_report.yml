@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible problem in the simulator, bindings, or scripts.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and where did it fail?
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: Exact command you ran
+      placeholder: python scripts/train.py --config configs/tasks/hover.toml
+    validations:
+      required: true
+  - type: input
+    id: config
+    attributes:
+      label: Config
+      description: Config file used
+      placeholder: configs/tasks/hover.toml
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Steps to reproduce the issue
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, compiler toolchain, and relevant package versions
+    validations:
+      required: true

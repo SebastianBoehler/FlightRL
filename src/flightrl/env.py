@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+import gymnasium
+import numpy as np
+import pufferlib
+
+from . import _binding
+from .config import FlightConfig, MAX_WAYPOINTS
+
+
+TASK_MAP = {
+    "hover": 0,
+    "reach_waypoint": 1,
+    "follow_waypoints": 2,
+}
+
+ACTION_MAP = {
+    "stabilized_planar": 0,
+    "motor_pair": 1,
+}
+
+RESET_MAP = {
+    "deterministic": 0,
+    "random_uniform": 1,
+}
+
+
+class DronePlanarEnv(pufferlib.PufferEnv):
+    def __init__(self, config: FlightConfig, num_envs: int | None = None, buf=None, seed: int = 0, emit_logs: bool = True):
+        self.config = config
+        env_count = num_envs or config.environment.num_envs
+        self.single_observation_space = gymnasium.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(config.observation_dim,),
+            dtype=np.float32,
+        )
+        self.single_action_space = gymnasium.spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(config.action_dim,),
+            dtype=np.float32,
+        )
+        self.num_agents = env_count
+        self.render_mode = None
+        self._tick = 0
+        self._report_interval = config.logging.report_interval
+        self._emit_logs = emit_logs
+        self._handles: list[int] = []
+
+        super().__init__(buf)
+        self.actions = self.actions.astype(np.float32, copy=False)
+        kwargs = self._binding_kwargs()
+        for env_idx in range(env_count):
+            handle = _binding.env_init(
+                self.observations[env_idx : env_idx + 1],
+                self.actions[env_idx : env_idx + 1],
+                self.rewards[env_idx : env_idx + 1],
+                self.terminals[env_idx : env_idx + 1],
+                self.truncations[env_idx : env_idx + 1],
+                seed + env_idx,
+                **kwargs,
+            )
+            self._handles.append(handle)
+        self._vec_handle = _binding.vectorize(*self._handles)
+
+    def _binding_kwargs(self) -> dict[str, float | int]:
+        task = self.config.task
+        drone = self.config.drone
+        reward = self.config.reward
+        sensors = self.config.sensors
+        randomization = self.config.domain_randomization
+        kwargs: dict[str, float | int] = {
+            "dt": self.config.environment.dt,
+            "action_dim": self.config.action_dim,
+            "observation_dim": self.config.observation_dim,
+            "observation_flags": self.config.observation_flags,
+            "state_noise_std": sensors.state_noise_std,
+            "imu_noise_std": sensors.imu_noise_std,
+            "task_type": TASK_MAP[task.task_type],
+            "action_mode": ACTION_MAP[self.config.environment.action_mode],
+            "reset_mode": RESET_MAP[self.config.environment.reset_mode],
+            "max_steps": task.max_steps,
+            "sequence_length": min(task.sequence_length, MAX_WAYPOINTS),
+            "hover_hold_steps": task.hover_hold_steps,
+            "success_radius": task.success_radius,
+            "hover_speed_threshold": task.hover_speed_threshold,
+            "fixed_start_x": task.fixed_start[0],
+            "fixed_start_z": task.fixed_start[1],
+            "fixed_target_x": task.fixed_target[0],
+            "fixed_target_z": task.fixed_target[1],
+            "spawn_x_min": task.spawn_bounds[0],
+            "spawn_x_max": task.spawn_bounds[1],
+            "spawn_z_min": task.spawn_bounds[2],
+            "spawn_z_max": task.spawn_bounds[3],
+            "target_x_min": task.target_bounds[0],
+            "target_x_max": task.target_bounds[1],
+            "target_z_min": task.target_bounds[2],
+            "target_z_max": task.target_bounds[3],
+            "mass": drone.mass,
+            "inertia": drone.inertia,
+            "arm_length": drone.arm_length,
+            "drag": drone.drag,
+            "angular_drag": drone.angular_drag,
+            "gravity": drone.gravity,
+            "hover_thrust": drone.hover_thrust,
+            "thrust_gain": drone.thrust_gain,
+            "max_total_thrust": drone.max_total_thrust,
+            "max_pitch_torque": drone.max_pitch_torque,
+            "actuator_tau": drone.actuator_tau,
+            "max_velocity": drone.max_velocity,
+            "max_pitch_rate": drone.max_pitch_rate,
+            "max_pitch_angle": drone.max_pitch_angle,
+            "floor_z": drone.floor_z,
+            "x_limit": drone.x_limit,
+            "z_limit": drone.z_limit,
+            "alive_bonus": reward.alive_bonus,
+            "distance_penalty": reward.distance_penalty,
+            "progress_bonus": reward.progress_bonus,
+            "velocity_penalty": reward.velocity_penalty,
+            "angular_rate_penalty": reward.angular_rate_penalty,
+            "control_penalty": reward.control_penalty,
+            "smoothness_penalty": reward.smoothness_penalty,
+            "success_bonus": reward.success_bonus,
+            "crash_penalty": reward.crash_penalty,
+            "out_of_bounds_penalty": reward.out_of_bounds_penalty,
+            "randomization_enabled": int(randomization.enabled),
+            "mass_scale": randomization.mass_scale,
+            "drag_scale": randomization.drag_scale,
+            "thrust_scale": randomization.thrust_scale,
+            "actuator_tau_scale": randomization.actuator_tau_scale,
+            "sensor_noise_scale": randomization.sensor_noise_scale,
+        }
+        for idx in range(MAX_WAYPOINTS):
+            waypoint = task.fixed_waypoints[idx]
+            kwargs[f"waypoint_{idx}_x"] = waypoint[0]
+            kwargs[f"waypoint_{idx}_z"] = waypoint[1]
+        return kwargs
+
+    def reset(self, seed: int | None = None):
+        self._tick = 0
+        _binding.vec_reset(self._vec_handle, seed or 0)
+        return self.observations, []
+
+    def step(self, actions):
+        self._tick += 1
+        self.actions[:] = np.asarray(actions, dtype=np.float32)
+        _binding.vec_step(self._vec_handle)
+        info: list[dict[str, float]] = []
+        if self._emit_logs and self._tick % self._report_interval == 0:
+            log = _binding.vec_log(self._vec_handle)
+            if log:
+                info.append(log)
+        return self.observations, self.rewards, self.terminals, self.truncations, info
+
+    def snapshot(self, env_index: int = 0) -> dict[str, float]:
+        return _binding.env_get(self._handles[env_index])
+
+    def close(self):
+        if hasattr(self, "_vec_handle"):
+            _binding.vec_close(self._vec_handle)

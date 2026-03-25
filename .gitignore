@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+*.pyd
+*.egg-info/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+artifacts/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local tooling
+.DS_Store
+
+# Workspace-specific symlink
+resources

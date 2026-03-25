@@ -1,0 +1,43 @@
+[environment]
+dt = 0.02
+action_mode = "motor_pair"
+reset_mode = "deterministic"
+
+[drone]
+mass = 1.15
+inertia = 0.09
+arm_length = 0.23
+drag = 0.14
+angular_drag = 0.09
+hover_thrust = 10.6
+thrust_gain = 4.2
+max_total_thrust = 19.5
+max_pitch_torque = 2.2
+actuator_tau = 0.11
+
+[sensors]
+include_position = true
+include_velocity = true
+include_attitude = true
+include_angular_velocity = true
+include_target_vector = true
+include_previous_action = true
+include_health = true
+include_ideal_state = false
+include_noisy_state = true
+include_imu = true
+state_noise_std = 0.02
+imu_noise_std = 0.03
+
+[task]
+task_type = "reach_waypoint"
+fixed_start = [0.0, 2.0]
+fixed_target = [2.0, 2.8]
+
+[domain_randomization]
+enabled = true
+mass_scale = 0.02
+drag_scale = 0.04
+thrust_scale = 0.03
+actuator_tau_scale = 0.08
+sensor_noise_scale = 0.1

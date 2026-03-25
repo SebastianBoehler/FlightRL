@@ -1,0 +1,85 @@
+[environment]
+dt = 0.02
+num_envs = 256
+action_mode = "stabilized_planar"
+reset_mode = "random_uniform"
+
+[drone]
+mass = 1.0
+inertia = 0.08
+arm_length = 0.25
+drag = 0.12
+angular_drag = 0.08
+gravity = 9.81
+hover_thrust = 9.81
+thrust_gain = 4.5
+max_total_thrust = 18.0
+max_pitch_torque = 2.5
+actuator_tau = 0.08
+max_velocity = 10.0
+max_pitch_rate = 6.0
+max_pitch_angle = 1.2
+floor_z = 0.0
+x_limit = 8.0
+z_limit = 8.0
+
+[sensors]
+include_position = true
+include_velocity = true
+include_attitude = true
+include_angular_velocity = true
+include_target_vector = true
+include_previous_action = true
+include_health = true
+include_ideal_state = false
+include_noisy_state = false
+include_imu = true
+
+[task]
+task_type = "reach_waypoint"
+max_steps = 512
+sequence_length = 4
+hover_hold_steps = 16
+success_radius = 0.35
+hover_speed_threshold = 0.4
+fixed_start = [0.0, 2.0]
+fixed_target = [2.5, 3.0]
+fixed_waypoints = [[2.5, 3.0], [2.5, 3.0], [2.5, 3.0], [2.5, 3.0]]
+spawn_bounds = [-2.5, 2.5, 1.0, 3.0]
+target_bounds = [-4.0, 4.0, 1.5, 5.5]
+
+[reward]
+alive_bonus = 0.04
+distance_penalty = 0.12
+progress_bonus = 1.2
+velocity_penalty = 0.05
+angular_rate_penalty = 0.04
+control_penalty = 0.01
+smoothness_penalty = 0.02
+success_bonus = 10.0
+crash_penalty = 8.0
+out_of_bounds_penalty = 4.0
+
+[training]
+device = "cpu"
+total_timesteps = 65536
+batch_size = 4096
+bptt_horizon = 32
+minibatch_size = 1024
+max_minibatch_size = 4096
+learning_rate = 0.0003
+iterations = 4
+checkpoint_interval = 4
+hidden_size = 128
+
+[domain_randomization]
+enabled = true
+mass_scale = 0.03
+drag_scale = 0.05
+thrust_scale = 0.04
+actuator_tau_scale = 0.1
+sensor_noise_scale = 0.2
+
+[logging]
+report_interval = 8
+trajectory_dir = "artifacts/trajectories"
