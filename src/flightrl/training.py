@@ -58,8 +58,12 @@ def build_train_config(config: FlightConfig, total_agents: int) -> dict[str, obj
     }
 
 
-def create_env_and_policy(config: FlightConfig, seed: int = 0) -> tuple[DronePlanarEnv, FlightPolicy]:
-    env = DronePlanarEnv(config, seed=seed, emit_logs=False)
+def create_env_and_policy(
+    config: FlightConfig,
+    seed: int = 0,
+    render_mode: str | None = None,
+) -> tuple[DronePlanarEnv, FlightPolicy]:
+    env = DronePlanarEnv(config, seed=seed, emit_logs=False, render_mode=render_mode)
     policy = FlightPolicy(env, hidden_size=config.training.hidden_size)
     if config.training.device == "cuda" and torch.cuda.is_available():
         policy = policy.to("cuda")

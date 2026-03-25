@@ -14,10 +14,11 @@ def main() -> None:
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--steps", type=int, default=128)
     parser.add_argument("--output", default="artifacts/trajectories/eval.csv")
+    parser.add_argument("--render-mode", choices=["human", "rgb_array"], default=None)
     args = parser.parse_args()
 
     config = load_config(args.config)
-    env, policy = create_env_and_policy(config)
+    env, policy = create_env_and_policy(config, render_mode=args.render_mode)
     if args.checkpoint:
         load_policy_checkpoint(policy, args.checkpoint, device=config.training.device)
 

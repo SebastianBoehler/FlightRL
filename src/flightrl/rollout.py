@@ -36,6 +36,8 @@ def collect_rollout(env: DronePlanarEnv, steps: int, policy: FlightPolicy | None
         )
         trace.append(snapshot)
         obs = next_obs
+        if env.render_mode is not None:
+            env.render()
     return trace
 
 

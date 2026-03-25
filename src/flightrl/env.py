@@ -6,6 +6,7 @@ import pufferlib
 
 from . import _binding
 from .config import FlightConfig, MAX_WAYPOINTS
+from .renderer import DroneFrame, FlightRenderer
 
 
 TASK_MAP = {
@@ -26,7 +27,17 @@ RESET_MAP = {
 
 
 class DronePlanarEnv(pufferlib.PufferEnv):
-    def __init__(self, config: FlightConfig, num_envs: int | None = None, buf=None, seed: int = 0, emit_logs: bool = True):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
+
+    def __init__(
+        self,
+        config: FlightConfig,
+        num_envs: int | None = None,
+        buf=None,
+        seed: int = 0,
+        emit_logs: bool = True,
+        render_mode: str | None = None,
+    ):
         self.config = config
         env_count = num_envs or config.environment.num_envs
         self.single_observation_space = gymnasium.spaces.Box(
@@ -42,11 +53,14 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             dtype=np.float32,
         )
         self.num_agents = env_count
-        self.render_mode = None
+        self.render_mode = render_mode
         self._tick = 0
         self._report_interval = config.logging.report_interval
         self._emit_logs = emit_logs
         self._handles: list[int] = []
+        self._renderer: FlightRenderer | None = None
+        if render_mode not in {None, "human", "rgb_array"}:
+            raise ValueError(f"unsupported render mode: {render_mode}")
 
         super().__init__(buf)
         self.actions = self.actions.astype(np.float32, copy=False)
@@ -156,6 +170,29 @@ class DronePlanarEnv(pufferlib.PufferEnv):
     def snapshot(self, env_index: int = 0) -> dict[str, float]:
         return _binding.env_get(self._handles[env_index])
 
+    def render(self):
+        if self.render_mode is None:
+            raise ValueError("render_mode is not enabled for this environment")
+        frame = self._snapshot_frame()
+        if self._renderer is None:
+            fps = float(self.metadata.get("render_fps", 30))
+            self._renderer = FlightRenderer(self.config, self.render_mode, fps=fps)
+        return self._renderer.render(frame)
+
     def close(self):
+        if self._renderer is not None:
+            self._renderer.close()
         if hasattr(self, "_vec_handle"):
             _binding.vec_close(self._vec_handle)
+
+    def _snapshot_frame(self, env_index: int = 0) -> DroneFrame:
+        snapshot = self.snapshot(env_index)
+        return DroneFrame(
+            x=snapshot["x"],
+            z=snapshot["z"],
+            pitch=snapshot["pitch"],
+            target_x=snapshot["target_x"],
+            target_z=snapshot["target_z"],
+            distance=snapshot["distance"],
+            reward_total=snapshot["reward_total"],
+        )

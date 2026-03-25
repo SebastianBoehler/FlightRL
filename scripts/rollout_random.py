@@ -12,9 +12,10 @@ def main() -> None:
     parser.add_argument("--config", required=True)
     parser.add_argument("--steps", type=int, default=128)
     parser.add_argument("--output", default="artifacts/trajectories/random_rollout.csv")
+    parser.add_argument("--render-mode", choices=["human", "rgb_array"], default=None)
     args = parser.parse_args()
 
-    env = make_env(load_config(args.config))
+    env = make_env(load_config(args.config), render_mode=args.render_mode)
     trace = collect_rollout(env, args.steps)
     output_path = save_rollout(trace, args.output)
     plot_path = plot_trajectory(trace, output_path.with_suffix(".png"))

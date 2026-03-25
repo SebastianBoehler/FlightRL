@@ -64,3 +64,17 @@ def test_timeout_sets_truncation() -> None:
             break
     env.close()
     assert truncated
+
+
+def test_rgb_array_render_returns_frame() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "hover.toml",
+        overrides={"environment": {"num_envs": 1}},
+    )
+    env = make_env(config, seed=5, render_mode="rgb_array")
+    env.reset(seed=5)
+    frame = env.render()
+    env.close()
+    assert frame.ndim == 3
+    assert frame.shape[2] == 3
+    assert frame.dtype == np.uint8

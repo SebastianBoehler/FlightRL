@@ -84,12 +84,14 @@ Random rollout:
 
 ```bash
 python scripts/rollout_random.py --config configs/tasks/hover.toml
+python scripts/rollout_random.py --config configs/tasks/hover.toml --render-mode human
 ```
 
 Policy evaluation:
 
 ```bash
 python scripts/eval.py --config configs/tasks/reach.toml --checkpoint artifacts/<run>/model_000004.pt
+python scripts/eval.py --config configs/tasks/reach.toml --checkpoint artifacts/<run>/model_000004.pt --render-mode human
 ```
 
 Trajectory plotting:
@@ -109,6 +111,8 @@ Environment-only throughput benchmark:
 ```bash
 python scripts/benchmark_env.py --config configs/tasks/hover.toml
 ```
+
+The environment also exposes Gymnasium-style rendering through `DronePlanarEnv(render_mode="human")` and `DronePlanarEnv(render_mode="rgb_array")`. Rendering is lazy and stays out of the fast path unless explicitly enabled.
 
 ## Tasks In The MVP
 
