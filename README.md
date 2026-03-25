@@ -2,6 +2,14 @@
 
 FlightRL is a research-oriented drone RL scaffold built around a small C simulator and a thin PufferLib Ocean-style Python wrapper. The goal is fast simulation throughput, modular environment structure, and a clean path toward richer sensor models, manufacturer-specific parameter profiles, and later sim-to-real work on civilian developer platforms.
 
+## Renderer Preview
+
+Screenshots from short live `render_mode="human"` runs:
+
+| Reach waypoint | Hover |
+| --- | --- |
+| ![Reach waypoint live renderer](docs/images/live-render-reach.png) | ![Hover live renderer](docs/images/live-render-hover.png) |
+
 ## Open Source
 
 - License: [MIT](LICENSE)
