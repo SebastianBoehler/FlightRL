@@ -6,8 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 
 from .config import FlightConfig
+from .render_forces import FORCE_STYLES, compute_force_vectors, thrust_drag_magnitudes
 
 
 @dataclass(slots=True)
@@ -105,10 +107,13 @@ class FlightRenderer:
         self._artists["body"], = ax.plot([], [], color="#20262e", linewidth=3.2, solid_capstyle="round", zorder=8)
         self._artists["cross_arm"], = ax.plot([], [], color="#6b7280", linewidth=2.0, alpha=0.9, zorder=7)
         self._artists["forward"], = ax.plot([], [], color="#4f6d7a", linewidth=1.8, zorder=7)
-        self._artists["thrust"], = ax.plot([], [], color="#2f7f7a", linewidth=2.2, zorder=7)
-        self._artists["velocity"], = ax.plot([], [], color="#5b6c7d", linewidth=1.6, zorder=7)
-        self._artists["acceleration"], = ax.plot([], [], color="#b26a4f", linewidth=1.5, linestyle=":", zorder=7)
-        self._artists["wind"], = ax.plot([], [], color="#4c956c", linewidth=1.6, linestyle="--", zorder=7)
+        for name, style in FORCE_STYLES.items():
+            self._artists[name] = ax.quiver(
+                [0.0], [0.0], [0.0], [0.0],
+                angles="xy", scale_units="xy", scale=1,
+                color=style["color"], width=0.004, headwidth=4.2,
+                headlength=5.4, headaxislength=4.5, alpha=0.95, zorder=6,
+            )
         self._artists["left_front_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
         self._artists["left_rear_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
         self._artists["right_front_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
@@ -122,6 +127,8 @@ class FlightRenderer:
             linewidths=1.0,
             zorder=9,
         )
+        handles = [Line2D([0], [0], color=style["color"], lw=2, label=style["label"]) for style in FORCE_STYLES.values()]
+        ax.legend(handles=handles, loc="upper left", fontsize=7.4, frameon=True, facecolor="#ffffff", edgecolor="#dde4ea")
         self._artists["history_x"] = []
         self._artists["history_z"] = []
 
@@ -141,7 +148,7 @@ class FlightRenderer:
         ax.plot([0.08, 0.92], [0.42, 0.42], color="#d9e0e6", linewidth=0.8)
         self._artists["hud_title"] = ax.text(0.08, 0.93, "", color="#1f2933", fontsize=13, fontweight="bold")
         self._artists["hud_task"] = ax.text(0.08, 0.875, "", color="#52606d", fontsize=9.5)
-        self._artists["hud_metrics"] = ax.text(0.08, 0.77, "", color="#24323f", fontsize=9.6, linespacing=1.42, va="top")
+        self._artists["hud_metrics"] = ax.text(0.08, 0.77, "", color="#24323f", fontsize=9.1, linespacing=1.34, va="top")
         self._artists["hud_motor_label"] = ax.text(0.08, 0.38, "Rotor Thrust", color="#1f2933", fontsize=10, fontweight="bold")
         self._artists["hud_command_label"] = ax.text(0.08, 0.11, "Control Command", color="#1f2933", fontsize=10, fontweight="bold")
         motor_positions = [0.33, 0.28, 0.23, 0.18]
@@ -209,10 +216,16 @@ class FlightRenderer:
             [frame.z - 0.55 * arm * tz, frame.z + 0.55 * arm * tz],
         )
         self._artists["forward"].set_data([frame.x, frame.x + 1.65 * dx], [frame.z, frame.z + 1.65 * dz])
-        self._artists["thrust"].set_data([frame.x, frame.x + 1.15 * tx], [frame.z, frame.z + 1.15 * tz])
-        self._artists["velocity"].set_data([frame.x, frame.x + 0.75 * frame.vx], [frame.z, frame.z + 0.75 * frame.vz])
-        self._artists["acceleration"].set_data([frame.x, frame.x + 0.2 * frame.ax], [frame.z, frame.z + 0.2 * frame.az])
-        self._artists["wind"].set_data([frame.x, frame.x + 0.75 * frame.wind_x], [frame.z, frame.z + 0.75 * frame.wind_z])
+        anchors = {
+            "thrust": (frame.x, frame.z),
+            "drag": (frame.x + 0.22 * arm * tx, frame.z + 0.22 * arm * tz),
+            "gravity": (frame.x - 0.22 * arm * tx, frame.z - 0.22 * arm * tz),
+            "net": (frame.x, frame.z - 0.22 * arm),
+            "wind": (frame.x, frame.z + 0.22 * arm),
+        }
+        for name, vector in compute_force_vectors(self.config, frame).items():
+            self._artists[name].set_offsets([anchors[name]])
+            self._artists[name].set_UVC([vector[0]], [vector[1]])
         left_front_plume = 0.28 + 0.42 * float(rotor_scale[0])
         right_front_plume = 0.28 + 0.42 * float(rotor_scale[1])
         left_rear_plume = 0.28 + 0.42 * float(rotor_scale[2])
@@ -247,6 +260,7 @@ class FlightRenderer:
     def _draw_hud(self, frame: DroneFrame, rotor_scale: np.ndarray) -> None:
         speed = float(np.hypot(frame.vx, frame.vz))
         accel = float(np.hypot(frame.ax, frame.az))
+        thrust_mag, drag_mag = thrust_drag_magnitudes(self.config, frame)
         self._artists["hud_title"].set_text("Flight Inspection")
         self._artists["hud_task"].set_text(
             f"{self.config.environment.action_mode} | dt={self.config.environment.dt:.3f}s"
@@ -258,6 +272,8 @@ class FlightRenderer:
                     f"pitch rate {np.degrees(frame.pitch_rate):6.1f} deg/s",
                     f"speed      {speed:6.2f} m/s",
                     f"wind       {np.hypot(frame.wind_x, frame.wind_z):6.2f} m/s",
+                    f"thrust     {thrust_mag:6.2f} N",
+                    f"drag       {drag_mag:6.2f} N",
                     f"accel      {accel:6.2f} m/s²",
                     f"reward     {frame.reward_total:6.2f}",
                     f"distance   {frame.distance:6.2f} m",
