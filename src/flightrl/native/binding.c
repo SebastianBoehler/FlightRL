@@ -95,11 +95,19 @@ static int my_get(PyObject *dict, DronePlanarEnv *env) {
         flightrl_set_float(dict, "z", env->drone.z) ||
         flightrl_set_float(dict, "vx", env->drone.vx) ||
         flightrl_set_float(dict, "vz", env->drone.vz) ||
+        flightrl_set_float(dict, "ax", env->last_ax) ||
+        flightrl_set_float(dict, "az", env->last_az) ||
         flightrl_set_float(dict, "pitch", env->drone.pitch) ||
         flightrl_set_float(dict, "pitch_rate", env->drone.pitch_rate) ||
         flightrl_set_float(dict, "target_x", target.x) ||
         flightrl_set_float(dict, "target_z", target.z) ||
         flightrl_set_float(dict, "distance", env->current_distance) ||
+        flightrl_set_float(dict, "motor_left", env->motor_thrusts[0]) ||
+        flightrl_set_float(dict, "motor_right", env->motor_thrusts[1]) ||
+        flightrl_set_float(dict, "command_0", env->current_action[0]) ||
+        flightrl_set_float(dict, "command_1", env->current_action[1]) ||
+        flightrl_set_float(dict, "active_target", (float)(env->world.active_target + 1)) ||
+        flightrl_set_float(dict, "target_count", (float)env->world.target_count) ||
         flightrl_set_float(dict, "reward_total", env->reward_breakdown.total) ||
         flightrl_set_float(dict, "reward_progress", env->reward_breakdown.progress_bonus) ||
         flightrl_set_float(dict, "reward_distance_penalty", env->reward_breakdown.distance_penalty);

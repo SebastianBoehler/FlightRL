@@ -22,7 +22,10 @@ def test_reset_and_step_shapes() -> None:
     assert rewards.shape == (4,)
     assert terminals.shape == (4,)
     assert truncations.shape == (4,)
-    assert "x" in env.snapshot(0)
+    snapshot = env.snapshot(0)
+    assert "x" in snapshot
+    assert "motor_left" in snapshot
+    assert "command_0" in snapshot
     env.close()
 
 

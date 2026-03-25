@@ -4,7 +4,7 @@ FlightRL is a research-oriented drone RL scaffold built around a small C simulat
 
 ## Renderer Preview
 
-Screenshots from short live `render_mode="human"` runs:
+Clean previews exported from the live renderer. The inspection view shows a quadrotor airframe, target geometry, body orientation, thrust axis, and a compact telemetry panel with command state plus left/right rotor-pair thrust. The underlying MVP dynamics are still planar, so the renderer visualizes a reduced-order quadrotor rather than full 3D motor physics:
 
 | Reach waypoint | Hover |
 | --- | --- |
@@ -121,6 +121,12 @@ python scripts/benchmark_env.py --config configs/tasks/hover.toml
 ```
 
 The environment also exposes Gymnasium-style rendering through `DronePlanarEnv(render_mode="human")` and `DronePlanarEnv(render_mode="rgb_array")`. Rendering is lazy and stays out of the fast path unless explicitly enabled.
+
+To export a clean preview frame without a desktop window:
+
+```bash
+python scripts/export_render_preview.py --config configs/tasks/reach.toml --output docs/images/reach-preview.png
+```
 
 ## Tasks In The MVP
 
