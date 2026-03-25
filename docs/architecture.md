@@ -63,6 +63,31 @@ The key extension points for sim-to-real work are already separated:
 
 The MVP does not implement real hardware IO. It only keeps the configuration and action/sensor abstractions ready for that later work.
 
+## Future Hierarchical Autonomy Path
+
+The intended autonomy split is hierarchical rather than end-to-end motor control:
+
+- `camera + telemetry + mission context -> VLA navigator`
+- `VLA navigator -> high-level command setpoints`
+- `stabilizer/controller -> motor mixing -> quadrotor`
+
+For this project, that means future perception-heavy models should target high-level commands such as:
+
+- velocity targets
+- heading or yaw targets
+- altitude targets
+- local waypoint updates
+- discrete modes like `hold`, `approach`, `circle`, or `land`
+
+The low-level stabilizer remains responsible for:
+
+- attitude stabilization
+- disturbance rejection
+- actuator smoothing and limits
+- emergency recovery behavior
+
+This keeps the fast PufferLib/Ocean C backend useful for stabilization and control research while leaving room for a slower multimodal navigator on external compute later. It also avoids coupling future VLA work to unsafe or brittle direct motor-command outputs.
+
 ## Future Multi-Agent Path
 
 The current MVP is single-drone, but the core already separates drone state from world/task state. To extend toward multiple drones later:

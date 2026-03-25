@@ -169,3 +169,9 @@ The scaffold is organized around swappable task, reset, reward, sensor, and acti
 - noisier sensor profiles
 - switching from stabilized commands to direct actuator-style control
 - future parameter-fitting or replay-driven calibration workflows
+
+For future autonomy work, the intended control hierarchy is:
+
+`camera + telemetry + mission context -> VLA navigator -> high-level commands -> stabilizer/controller -> motor mixing`
+
+That keeps low-level stabilization fast and local while allowing a slower perception-conditioned model to handle navigation and mission semantics later.
