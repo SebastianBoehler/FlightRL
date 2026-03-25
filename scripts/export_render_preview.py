@@ -15,9 +15,22 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=24)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--action-scale", type=float, default=0.3)
+    parser.add_argument("--wind-x", type=float, default=0.0)
+    parser.add_argument("--wind-z", type=float, default=0.0)
+    parser.add_argument("--gust-strength", type=float, default=0.0)
+    parser.add_argument("--gust-tau", type=float, default=0.6)
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    overrides = {}
+    if any(value != 0.0 for value in (args.wind_x, args.wind_z, args.gust_strength)):
+        overrides["wind"] = {
+            "enabled": True,
+            "steady_x": args.wind_x,
+            "steady_z": args.wind_z,
+            "gust_strength": args.gust_strength,
+            "gust_tau": args.gust_tau,
+        }
+    config = load_config(args.config, overrides=overrides or None)
     env = make_env(config, seed=args.seed, render_mode="rgb_array")
     rng = np.random.default_rng(args.seed)
     env.reset(seed=args.seed)
