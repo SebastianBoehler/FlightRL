@@ -2,7 +2,7 @@
 
 void flightrl_record_step(DronePlanarEnv *env) {
     env->distance_sum += env->current_distance;
-    env->action_magnitude_sum += flightrl_norm2(env->current_action[0], env->current_action[1]);
+    env->action_magnitude_sum += flightrl_vector_norm(env->current_action, env->sensor_config.action_dim);
 }
 
 void flightrl_finalize_episode(DronePlanarEnv *env, int reason) {

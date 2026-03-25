@@ -3,11 +3,12 @@
 void flightrl_update_reward(DronePlanarEnv *env, int event_code) {
     RewardConfig *cfg = &env->reward_config;
     float speed = flightrl_norm2(env->drone.vx, env->drone.vz);
-    float action_mag = flightrl_norm2(env->current_action[0], env->current_action[1]);
-    float action_delta = flightrl_norm2(
-        env->current_action[0] - env->previous_action[0],
-        env->current_action[1] - env->previous_action[1]
-    );
+    float delta[FLIGHTRL_MAX_ACTION_DIM] = {0};
+    for (int i = 0; i < env->sensor_config.action_dim; ++i) {
+        delta[i] = env->current_action[i] - env->previous_action[i];
+    }
+    float action_mag = flightrl_vector_norm(env->current_action, env->sensor_config.action_dim);
+    float action_delta = flightrl_vector_norm(delta, env->sensor_config.action_dim);
 
     env->reward_breakdown = (RewardBreakdown){
         .alive = cfg->alive_bonus,

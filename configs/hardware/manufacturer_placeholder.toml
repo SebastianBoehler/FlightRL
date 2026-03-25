@@ -1,6 +1,6 @@
 [environment]
 dt = 0.02
-action_mode = "motor_pair"
+action_mode = "motor_quad"
 reset_mode = "deterministic"
 
 [drone]

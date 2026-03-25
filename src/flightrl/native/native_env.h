@@ -15,6 +15,7 @@ void flightrl_sample_runtime(DronePlanarEnv *env);
 float flightrl_task_distance(DronePlanarEnv *env);
 int flightrl_task_step(DronePlanarEnv *env);
 void flightrl_update_reward(DronePlanarEnv *env, int event_code);
+void flightrl_update_wind(DronePlanarEnv *env);
 int flightrl_check_termination(DronePlanarEnv *env);
 
 void c_close(DronePlanarEnv *env);

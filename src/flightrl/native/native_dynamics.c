@@ -3,14 +3,21 @@
 void flightrl_apply_dynamics(DronePlanarEnv *env) {
     RuntimeDynamics *dyn = &env->runtime_dynamics;
     DroneState *drone = &env->drone;
-
-    float total_thrust = env->motor_thrusts[0] + env->motor_thrusts[1];
-    float torque = (env->motor_thrusts[1] - env->motor_thrusts[0]) * dyn->arm_length;
+    float front_pair = env->motor_thrusts[FLIGHT_ROTOR_FRONT_LEFT] + env->motor_thrusts[FLIGHT_ROTOR_FRONT_RIGHT];
+    float rear_pair = env->motor_thrusts[FLIGHT_ROTOR_REAR_LEFT] + env->motor_thrusts[FLIGHT_ROTOR_REAR_RIGHT];
+    float total_thrust = front_pair + rear_pair;
+    float torque = (rear_pair - front_pair) * dyn->arm_length;
     float sin_pitch = sinf(drone->pitch);
     float cos_pitch = cosf(drone->pitch);
+    float rel_vx;
+    float rel_vz;
 
-    env->last_ax = -(total_thrust / dyn->mass) * sin_pitch - (dyn->drag * drone->vx / dyn->mass);
-    env->last_az = (total_thrust / dyn->mass) * cos_pitch - dyn->gravity - (dyn->drag * drone->vz / dyn->mass);
+    flightrl_update_wind(env);
+    rel_vx = drone->vx - env->wind_x;
+    rel_vz = drone->vz - env->wind_z;
+
+    env->last_ax = -(total_thrust / dyn->mass) * sin_pitch - (dyn->drag * rel_vx / dyn->mass);
+    env->last_az = (total_thrust / dyn->mass) * cos_pitch - dyn->gravity - (dyn->drag * rel_vz / dyn->mass);
 
     float pitch_acc = (torque - (dyn->angular_drag * drone->pitch_rate)) / dyn->inertia;
 

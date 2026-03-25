@@ -40,8 +40,9 @@ void c_step(DronePlanarEnv *env) {
         env->world.prev_distance = env->current_distance;
     }
 
-    env->previous_action[0] = env->current_action[0];
-    env->previous_action[1] = env->current_action[1];
+    for (int i = 0; i < env->sensor_config.action_dim; ++i) {
+        env->previous_action[i] = env->current_action[i];
+    }
     flightrl_fill_observation(env);
 }
 

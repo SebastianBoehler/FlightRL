@@ -22,12 +22,13 @@ class DroneFrame:
     pitch_rate: float
     target_x: float
     target_z: float
+    wind_x: float
+    wind_z: float
     distance: float
     reward_total: float
-    motor_left: float
-    motor_right: float
-    command_0: float
-    command_1: float
+    motor_thrusts: tuple[float, float, float, float]
+    commands: tuple[float, float, float, float]
+    action_dim: int
     active_target: int
     target_count: int
 
@@ -107,6 +108,7 @@ class FlightRenderer:
         self._artists["thrust"], = ax.plot([], [], color="#2f7f7a", linewidth=2.2, zorder=7)
         self._artists["velocity"], = ax.plot([], [], color="#5b6c7d", linewidth=1.6, zorder=7)
         self._artists["acceleration"], = ax.plot([], [], color="#b26a4f", linewidth=1.5, linestyle=":", zorder=7)
+        self._artists["wind"], = ax.plot([], [], color="#4c956c", linewidth=1.6, linestyle="--", zorder=7)
         self._artists["left_front_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
         self._artists["left_rear_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
         self._artists["right_front_plume"], = ax.plot([], [], color="#2f7f7a", linewidth=1.2, alpha=0.7, zorder=5)
@@ -128,7 +130,7 @@ class FlightRenderer:
         ax = self._hud_ax
         ax.set_facecolor("#f1f4f7")
         ax.set_xlim(0.0, 1.0)
-        ax.set_ylim(0.0, 1.0)
+        ax.set_ylim(-0.05, 1.0)
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
@@ -140,21 +142,25 @@ class FlightRenderer:
         self._artists["hud_title"] = ax.text(0.08, 0.93, "", color="#1f2933", fontsize=13, fontweight="bold")
         self._artists["hud_task"] = ax.text(0.08, 0.875, "", color="#52606d", fontsize=9.5)
         self._artists["hud_metrics"] = ax.text(0.08, 0.77, "", color="#24323f", fontsize=9.6, linespacing=1.42, va="top")
-        self._artists["hud_motor_label"] = ax.text(0.08, 0.37, "Rotor Pair Thrust", color="#1f2933", fontsize=10, fontweight="bold")
-        self._artists["hud_command_label"] = ax.text(0.08, 0.19, "Control Command", color="#1f2933", fontsize=10, fontweight="bold")
-        motor_bars = ax.barh([0.31, 0.25], [0.0, 0.0], left=0.18, height=0.028, color=["#607d8b", "#90a4ae"], alpha=0.95)
-        command_bars = ax.barh([0.12, 0.07], [0.0, 0.0], left=0.54, height=0.028, color=["#6b9080", "#a68a64"], alpha=0.95)
-        ax.plot([0.18, 0.86], [0.31, 0.31], color="#d3dbe3", linewidth=6.0, solid_capstyle="butt", zorder=0)
-        ax.plot([0.18, 0.86], [0.25, 0.25], color="#d3dbe3", linewidth=6.0, solid_capstyle="butt", zorder=0)
-        ax.plot([0.20, 0.88], [0.12, 0.12], color="#d3dbe3", linewidth=6.0, solid_capstyle="butt", zorder=0)
-        ax.plot([0.20, 0.88], [0.07, 0.07], color="#d3dbe3", linewidth=6.0, solid_capstyle="butt", zorder=0)
-        ax.plot([0.54, 0.54], [0.03, 0.16], color="#9aa5b1", linewidth=0.9)
-        ax.text(0.08, 0.31, "Left Pair", color="#52606d", fontsize=8.8, va="center")
-        ax.text(0.08, 0.25, "Right Pair", color="#52606d", fontsize=8.8, va="center")
-        ax.text(0.08, 0.12, "Collective", color="#52606d", fontsize=8.8, va="center")
-        ax.text(0.08, 0.07, "Pitch", color="#52606d", fontsize=8.8, va="center")
+        self._artists["hud_motor_label"] = ax.text(0.08, 0.38, "Rotor Thrust", color="#1f2933", fontsize=10, fontweight="bold")
+        self._artists["hud_command_label"] = ax.text(0.08, 0.11, "Control Command", color="#1f2933", fontsize=10, fontweight="bold")
+        motor_positions = [0.33, 0.28, 0.23, 0.18]
+        command_positions = [0.065, 0.03, -0.005, -0.04]
+        motor_bars = ax.barh(motor_positions, [0.0] * 4, left=0.26, height=0.022, color=["#607d8b"] * 4, alpha=0.95)
+        command_bars = ax.barh(command_positions, [0.0] * 4, left=0.54, height=0.022, color=["#6b9080", "#a68a64", "#8f7aa8", "#7d8f6b"], alpha=0.95)
+        for y in motor_positions:
+            ax.plot([0.26, 0.86], [y, y], color="#d3dbe3", linewidth=5.2, solid_capstyle="butt", zorder=0)
+        for y in command_positions:
+            ax.plot([0.22, 0.88], [y, y], color="#d3dbe3", linewidth=5.2, solid_capstyle="butt", zorder=0)
+        ax.plot([0.54, 0.54], [-0.03, 0.15], color="#9aa5b1", linewidth=0.9)
+        for y, label in zip(motor_positions, ["Front Left", "Front Right", "Rear Left", "Rear Right"], strict=True):
+            ax.text(0.08, y, label, color="#52606d", fontsize=8.2, va="center")
+        command_labels = []
+        for y, label in zip(command_positions, ["u0", "u1", "u2", "u3"], strict=True):
+            command_labels.append(ax.text(0.08, y, label, color="#52606d", fontsize=8.2, va="center"))
         self._artists["motor_bars"] = motor_bars.patches
         self._artists["command_bars"] = command_bars.patches
+        self._artists["command_labels"] = command_labels
 
     def _draw_frame(self, frame: DroneFrame) -> None:
         assert self._world_ax is not None
@@ -174,30 +180,30 @@ class FlightRenderer:
         tz = np.cos(frame.pitch)
         dx = arm * fx
         dz = arm * fz
-        left_pair = (frame.x - dx, frame.z - dz)
-        right_pair = (frame.x + dx, frame.z + dz)
+        front_pair = (frame.x + dx, frame.z + dz)
+        rear_pair = (frame.x - dx, frame.z - dz)
         depth = 0.23 * arm
-        front_offset = (depth * tx, depth * tz)
-        rear_offset = (-depth * tx, -depth * tz)
-        left_front = (left_pair[0] + front_offset[0], left_pair[1] + front_offset[1])
-        left_rear = (left_pair[0] + rear_offset[0], left_pair[1] + rear_offset[1])
-        right_front = (right_pair[0] + front_offset[0], right_pair[1] + front_offset[1])
-        right_rear = (right_pair[0] + rear_offset[0], right_pair[1] + rear_offset[1])
+        left_offset = (-depth * tx, -depth * tz)
+        right_offset = (depth * tx, depth * tz)
+        front_left = (front_pair[0] + left_offset[0], front_pair[1] + left_offset[1])
+        front_right = (front_pair[0] + right_offset[0], front_pair[1] + right_offset[1])
+        rear_left = (rear_pair[0] + left_offset[0], rear_pair[1] + left_offset[1])
+        rear_right = (rear_pair[0] + right_offset[0], rear_pair[1] + right_offset[1])
 
-        rotor_scale = np.array([frame.motor_left, frame.motor_right], dtype=np.float32) / max(max_thrust, 1e-6)
+        rotor_scale = np.asarray(frame.motor_thrusts, dtype=np.float32) / max(max_thrust, 1e-6)
         rotor_scale = np.clip(rotor_scale, 0.0, 1.0)
         rotor_sizes = [
             85.0 + 45.0 * float(rotor_scale[0]),
-            85.0 + 45.0 * float(rotor_scale[0]),
             85.0 + 45.0 * float(rotor_scale[1]),
-            85.0 + 45.0 * float(rotor_scale[1]),
+            85.0 + 45.0 * float(rotor_scale[2]),
+            85.0 + 45.0 * float(rotor_scale[3]),
         ]
 
         self._artists["target"].set_offsets([[frame.target_x, frame.target_z]])
         self._artists["target_ring"].set_offsets([[frame.target_x, frame.target_z]])
         self._artists["trail"].set_data(history_x, history_z)
         self._artists["link"].set_data([frame.x, frame.target_x], [frame.z, frame.target_z])
-        self._artists["body"].set_data([left_pair[0], right_pair[0]], [left_pair[1], right_pair[1]])
+        self._artists["body"].set_data([rear_pair[0], front_pair[0]], [rear_pair[1], front_pair[1]])
         self._artists["cross_arm"].set_data(
             [frame.x - 0.55 * arm * tx, frame.x + 0.55 * arm * tx],
             [frame.z - 0.55 * arm * tz, frame.z + 0.55 * arm * tz],
@@ -206,25 +212,28 @@ class FlightRenderer:
         self._artists["thrust"].set_data([frame.x, frame.x + 1.15 * tx], [frame.z, frame.z + 1.15 * tz])
         self._artists["velocity"].set_data([frame.x, frame.x + 0.75 * frame.vx], [frame.z, frame.z + 0.75 * frame.vz])
         self._artists["acceleration"].set_data([frame.x, frame.x + 0.2 * frame.ax], [frame.z, frame.z + 0.2 * frame.az])
-        left_plume = 0.28 + 0.42 * float(rotor_scale[0])
-        right_plume = 0.28 + 0.42 * float(rotor_scale[1])
+        self._artists["wind"].set_data([frame.x, frame.x + 0.75 * frame.wind_x], [frame.z, frame.z + 0.75 * frame.wind_z])
+        left_front_plume = 0.28 + 0.42 * float(rotor_scale[0])
+        right_front_plume = 0.28 + 0.42 * float(rotor_scale[1])
+        left_rear_plume = 0.28 + 0.42 * float(rotor_scale[2])
+        right_rear_plume = 0.28 + 0.42 * float(rotor_scale[3])
         self._artists["left_front_plume"].set_data(
-            [left_front[0], left_front[0] + left_plume * tx],
-            [left_front[1], left_front[1] + left_plume * tz],
-        )
-        self._artists["left_rear_plume"].set_data(
-            [left_rear[0], left_rear[0] + left_plume * tx],
-            [left_rear[1], left_rear[1] + left_plume * tz],
+            [front_left[0], front_left[0] + left_front_plume * tx],
+            [front_left[1], front_left[1] + left_front_plume * tz],
         )
         self._artists["right_front_plume"].set_data(
-            [right_front[0], right_front[0] + right_plume * tx],
-            [right_front[1], right_front[1] + right_plume * tz],
+            [front_right[0], front_right[0] + right_front_plume * tx],
+            [front_right[1], front_right[1] + right_front_plume * tz],
+        )
+        self._artists["left_rear_plume"].set_data(
+            [rear_left[0], rear_left[0] + left_rear_plume * tx],
+            [rear_left[1], rear_left[1] + left_rear_plume * tz],
         )
         self._artists["right_rear_plume"].set_data(
-            [right_rear[0], right_rear[0] + right_plume * tx],
-            [right_rear[1], right_rear[1] + right_plume * tz],
+            [rear_right[0], rear_right[0] + right_rear_plume * tx],
+            [rear_right[1], rear_right[1] + right_rear_plume * tz],
         )
-        self._artists["rotors"].set_offsets([left_front, left_rear, right_front, right_rear])
+        self._artists["rotors"].set_offsets([front_left, front_right, rear_left, rear_right])
         self._artists["rotors"].set_sizes(rotor_sizes)
         self._artists["rotors"].set_facecolor(["#f8fafc", "#f8fafc", "#f8fafc", "#f8fafc"])
         self._world_ax.set_title(
@@ -248,6 +257,7 @@ class FlightRenderer:
                     f"pitch      {np.degrees(frame.pitch):6.1f} deg",
                     f"pitch rate {np.degrees(frame.pitch_rate):6.1f} deg/s",
                     f"speed      {speed:6.2f} m/s",
+                    f"wind       {np.hypot(frame.wind_x, frame.wind_z):6.2f} m/s",
                     f"accel      {accel:6.2f} m/s²",
                     f"reward     {frame.reward_total:6.2f}",
                     f"distance   {frame.distance:6.2f} m",
@@ -255,9 +265,14 @@ class FlightRenderer:
             )
         )
         for patch, value in zip(self._artists["motor_bars"], rotor_scale, strict=True):
-            patch.set_x(0.18)
-            patch.set_width(0.68 * float(value))
-        for patch, value in zip(self._artists["command_bars"], [frame.command_0, frame.command_1], strict=True):
+            patch.set_x(0.26)
+            patch.set_width(0.60 * float(value))
+        labels = ["u0", "u1", "u2", "u3"] if frame.action_dim == 4 else ["collective", "pitch", "", ""]
+        for text, label in zip(self._artists["command_labels"], labels, strict=True):
+            text.set_text(label)
+        for idx, patch in enumerate(self._artists["command_bars"]):
+            value = frame.commands[idx] if idx < frame.action_dim else 0.0
             clipped = float(np.clip(value, -1.0, 1.0))
-            patch.set_x(0.54 if clipped >= 0.0 else 0.54 + 0.34 * clipped)
-            patch.set_width(0.34 * abs(clipped))
+            patch.set_x(0.54 if clipped >= 0.0 else 0.54 + 0.32 * clipped)
+            patch.set_width(0.32 * abs(clipped))
+            patch.set_alpha(0.95 if idx < frame.action_dim else 0.0)

@@ -39,8 +39,9 @@ void flightrl_fill_observation(DronePlanarEnv *env) {
         flightrl_push(obs, &idx, rel_z);
     }
     if (flags & FLIGHT_OBS_PREVIOUS_ACTION) {
-        flightrl_push(obs, &idx, env->previous_action[0]);
-        flightrl_push(obs, &idx, env->previous_action[1]);
+        for (int i = 0; i < env->sensor_config.action_dim; ++i) {
+            flightrl_push(obs, &idx, env->previous_action[i]);
+        }
     }
     if (flags & FLIGHT_OBS_HEALTH) {
         flightrl_push(obs, &idx, 1.0f);

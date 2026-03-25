@@ -19,21 +19,17 @@ def sample_policy_action(policy: FlightPolicy, observation: np.ndarray) -> np.nd
 
 def collect_rollout(env: DronePlanarEnv, steps: int, policy: FlightPolicy | None = None, seed: int = 0) -> list[dict[str, float]]:
     rng = np.random.default_rng(seed)
+    action_dim = int(np.prod(env.single_action_space.shape))
     obs, _ = env.reset(seed=seed)
     trace: list[dict[str, float]] = []
     for step_idx in range(steps):
-        action = sample_policy_action(policy, obs[0]) if policy else rng.uniform(-1.0, 1.0, size=(2,)).astype(np.float32)
+        action = sample_policy_action(policy, obs[0]) if policy else rng.uniform(-1.0, 1.0, size=(action_dim,)).astype(np.float32)
         batch_action = np.repeat(action[None, :], env.num_agents, axis=0).astype(np.float32)
         next_obs, rewards, terminals, truncations, _ = env.step(batch_action)
         snapshot = env.snapshot(0)
-        snapshot.update(
-            step=float(step_idx),
-            reward=float(rewards[0]),
-            terminal=float(terminals[0]),
-            truncation=float(truncations[0]),
-            action_0=float(action[0]),
-            action_1=float(action[1]),
-        )
+        snapshot.update(step=float(step_idx), reward=float(rewards[0]), terminal=float(terminals[0]), truncation=float(truncations[0]))
+        for idx, value in enumerate(action):
+            snapshot[f"action_{idx}"] = float(value)
         trace.append(snapshot)
         obs = next_obs
         if env.render_mode is not None:

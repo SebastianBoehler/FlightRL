@@ -18,6 +18,7 @@ TASK_MAP = {
 ACTION_MAP = {
     "stabilized_planar": 0,
     "motor_pair": 1,
+    "motor_quad": 2,
 }
 
 RESET_MAP = {
@@ -84,6 +85,7 @@ class DronePlanarEnv(pufferlib.PufferEnv):
         reward = self.config.reward
         sensors = self.config.sensors
         randomization = self.config.domain_randomization
+        wind = self.config.wind
         kwargs: dict[str, float | int] = {
             "dt": self.config.environment.dt,
             "action_dim": self.config.action_dim,
@@ -144,6 +146,11 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             "thrust_scale": randomization.thrust_scale,
             "actuator_tau_scale": randomization.actuator_tau_scale,
             "sensor_noise_scale": randomization.sensor_noise_scale,
+            "wind_enabled": int(wind.enabled),
+            "wind_steady_x": wind.steady_x,
+            "wind_steady_z": wind.steady_z,
+            "wind_gust_strength": wind.gust_strength,
+            "wind_gust_tau": wind.gust_tau,
         }
         for idx in range(MAX_WAYPOINTS):
             waypoint = task.fixed_waypoints[idx]
@@ -198,12 +205,23 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             pitch_rate=snapshot["pitch_rate"],
             target_x=snapshot["target_x"],
             target_z=snapshot["target_z"],
+            wind_x=snapshot["wind_x"],
+            wind_z=snapshot["wind_z"],
             distance=snapshot["distance"],
             reward_total=snapshot["reward_total"],
-            motor_left=snapshot["motor_left"],
-            motor_right=snapshot["motor_right"],
-            command_0=snapshot["command_0"],
-            command_1=snapshot["command_1"],
+            motor_thrusts=(
+                snapshot["motor_front_left"],
+                snapshot["motor_front_right"],
+                snapshot["motor_rear_left"],
+                snapshot["motor_rear_right"],
+            ),
+            commands=(
+                snapshot["command_0"],
+                snapshot["command_1"],
+                snapshot["command_2"],
+                snapshot["command_3"],
+            ),
+            action_dim=int(snapshot["action_dim"]),
             active_target=int(snapshot["active_target"]),
             target_count=int(snapshot["target_count"]),
         )

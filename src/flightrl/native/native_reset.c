@@ -66,12 +66,19 @@ void flightrl_reset_state(DronePlanarEnv *env) {
         .pitch_rate = 0.0f,
     };
 
-    env->motor_thrusts[0] = 0.5f * env->runtime_dynamics.hover_thrust;
-    env->motor_thrusts[1] = 0.5f * env->runtime_dynamics.hover_thrust;
-    env->previous_action[0] = 0.0f;
-    env->previous_action[1] = 0.0f;
-    env->current_action[0] = 0.0f;
-    env->current_action[1] = 0.0f;
+    for (int i = 0; i < FLIGHTRL_NUM_ROTORS; ++i) {
+        env->motor_thrusts[i] = 0.25f * env->runtime_dynamics.hover_thrust;
+        env->action_state[i] = env->motor_thrusts[i];
+    }
+    for (int i = 0; i < FLIGHTRL_MAX_ACTION_DIM; ++i) {
+        env->previous_action[i] = 0.0f;
+        env->current_action[i] = 0.0f;
+    }
+    env->wind_x = 0.0f;
+    env->wind_z = 0.0f;
+    env->gust_x = 0.0f;
+    env->gust_z = 0.0f;
+    flightrl_update_wind(env);
     env->last_ax = 0.0f;
     env->last_az = 0.0f;
 

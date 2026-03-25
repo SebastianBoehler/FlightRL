@@ -6,6 +6,8 @@
 #include <string.h>
 
 #define FLIGHTRL_MAX_WAYPOINTS 8
+#define FLIGHTRL_MAX_ACTION_DIM 4
+#define FLIGHTRL_NUM_ROTORS 4
 
 enum FlightTaskType {
     FLIGHT_TASK_HOVER = 0,
@@ -16,6 +18,14 @@ enum FlightTaskType {
 enum FlightActionMode {
     FLIGHT_ACTION_STABILIZED = 0,
     FLIGHT_ACTION_MOTOR_PAIR = 1,
+    FLIGHT_ACTION_MOTOR_QUAD = 2,
+};
+
+enum FlightRotorIndex {
+    FLIGHT_ROTOR_FRONT_LEFT = 0,
+    FLIGHT_ROTOR_FRONT_RIGHT = 1,
+    FLIGHT_ROTOR_REAR_LEFT = 2,
+    FLIGHT_ROTOR_REAR_RIGHT = 3,
 };
 
 enum FlightResetMode {
@@ -163,6 +173,14 @@ typedef struct {
 } DomainRandomizationConfig;
 
 typedef struct {
+    int enabled;
+    float steady_x;
+    float steady_z;
+    float gust_strength;
+    float gust_tau;
+} WindConfig;
+
+typedef struct {
     float episode_return;
     float episode_length;
     float success_rate;
@@ -200,6 +218,7 @@ typedef struct DronePlanarEnv {
     TaskConfig task_config;
     RewardConfig reward_config;
     DomainRandomizationConfig randomization_config;
+    WindConfig wind_config;
     RuntimeDynamics runtime_dynamics;
     DroneState drone;
     WorldState world;
@@ -211,10 +230,14 @@ typedef struct DronePlanarEnv {
     float sensor_noise_multiplier;
     unsigned int step_count;
     int terminal_reason;
-    float action_state[2];
-    float current_action[2];
-    float motor_thrusts[2];
-    float previous_action[2];
+    float wind_x;
+    float wind_z;
+    float gust_x;
+    float gust_z;
+    float action_state[FLIGHTRL_NUM_ROTORS];
+    float current_action[FLIGHTRL_MAX_ACTION_DIM];
+    float motor_thrusts[FLIGHTRL_NUM_ROTORS];
+    float previous_action[FLIGHTRL_MAX_ACTION_DIM];
     float last_ax;
     float last_az;
     float episode_return;
@@ -238,6 +261,14 @@ static inline float flightrl_sign(float value) {
 
 static inline float flightrl_norm2(float x, float z) {
     return sqrtf((x * x) + (z * z));
+}
+
+static inline float flightrl_vector_norm(const float *values, int count) {
+    float total = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        total += values[i] * values[i];
+    }
+    return sqrtf(total);
 }
 
 #endif

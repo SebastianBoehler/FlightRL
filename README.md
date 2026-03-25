@@ -4,7 +4,7 @@ FlightRL is a research-oriented drone RL scaffold built around a small C simulat
 
 ## Renderer Preview
 
-Clean previews exported from the live renderer. The inspection view shows a quadrotor airframe, target geometry, body orientation, thrust axis, and a compact telemetry panel with command state plus left/right rotor-pair thrust. The underlying MVP dynamics are still planar, so the renderer visualizes a reduced-order quadrotor rather than full 3D motor physics:
+Clean previews exported from the live renderer. The inspection view shows a quadrotor airframe, per-rotor thrust state, target geometry, body orientation, thrust axis, and compact telemetry. The underlying MVP dynamics are still planar, so direct `motor_quad` control is physically meaningful through front-vs-rear pitch authority, while left-vs-right asymmetry remains future-facing until a fuller 3D model lands:
 
 | Reach waypoint | Hover |
 | --- | --- |
@@ -121,6 +121,23 @@ python scripts/benchmark_env.py --config configs/tasks/hover.toml
 ```
 
 The environment also exposes Gymnasium-style rendering through `DronePlanarEnv(render_mode="human")` and `DronePlanarEnv(render_mode="rgb_array")`. Rendering is lazy and stays out of the fast path unless explicitly enabled.
+
+Supported action modes:
+
+- `stabilized_planar`: two commands, collective thrust and pitch torque.
+- `motor_pair`: two direct commands for front-pair and rear-pair thrust.
+- `motor_quad`: four direct normalized rotor commands for front-left, front-right, rear-left, and rear-right actuators.
+
+Wind support is also built into the native dynamics through air-relative drag plus correlated gusts. Example config:
+
+```toml
+[wind]
+enabled = true
+steady_x = 2.0
+steady_z = 0.0
+gust_strength = 0.4
+gust_tau = 0.3
+```
 
 To export a clean preview frame without a desktop window:
 

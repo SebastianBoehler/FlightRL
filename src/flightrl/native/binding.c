@@ -61,6 +61,11 @@ static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
     env->randomization_config.thrust_scale = (float)flightrl_unpack_number(kwargs, "thrust_scale");
     env->randomization_config.actuator_tau_scale = (float)flightrl_unpack_number(kwargs, "actuator_tau_scale");
     env->randomization_config.sensor_noise_scale = (float)flightrl_unpack_number(kwargs, "sensor_noise_scale");
+    env->wind_config.enabled = (int)flightrl_unpack_number(kwargs, "wind_enabled");
+    env->wind_config.steady_x = (float)flightrl_unpack_number(kwargs, "wind_steady_x");
+    env->wind_config.steady_z = (float)flightrl_unpack_number(kwargs, "wind_steady_z");
+    env->wind_config.gust_strength = (float)flightrl_unpack_number(kwargs, "wind_gust_strength");
+    env->wind_config.gust_tau = (float)flightrl_unpack_number(kwargs, "wind_gust_tau");
     env->rng_state = (uint64_t)flightrl_unpack_number(kwargs, "seed") + 0x9e3779b97f4a7c15ULL;
 
     for (int i = 0; i < FLIGHTRL_MAX_WAYPOINTS; ++i) {
@@ -91,6 +96,8 @@ static int my_log(PyObject *dict, Log *log) {
 
 static int my_get(PyObject *dict, DronePlanarEnv *env) {
     TargetPoint target = env->world.targets[env->world.active_target];
+    float front_pair = env->motor_thrusts[FLIGHT_ROTOR_FRONT_LEFT] + env->motor_thrusts[FLIGHT_ROTOR_FRONT_RIGHT];
+    float rear_pair = env->motor_thrusts[FLIGHT_ROTOR_REAR_LEFT] + env->motor_thrusts[FLIGHT_ROTOR_REAR_RIGHT];
     return flightrl_set_float(dict, "x", env->drone.x) ||
         flightrl_set_float(dict, "z", env->drone.z) ||
         flightrl_set_float(dict, "vx", env->drone.vx) ||
@@ -102,10 +109,19 @@ static int my_get(PyObject *dict, DronePlanarEnv *env) {
         flightrl_set_float(dict, "target_x", target.x) ||
         flightrl_set_float(dict, "target_z", target.z) ||
         flightrl_set_float(dict, "distance", env->current_distance) ||
-        flightrl_set_float(dict, "motor_left", env->motor_thrusts[0]) ||
-        flightrl_set_float(dict, "motor_right", env->motor_thrusts[1]) ||
+        flightrl_set_float(dict, "wind_x", env->wind_x) ||
+        flightrl_set_float(dict, "wind_z", env->wind_z) ||
+        flightrl_set_float(dict, "motor_front_left", env->motor_thrusts[FLIGHT_ROTOR_FRONT_LEFT]) ||
+        flightrl_set_float(dict, "motor_front_right", env->motor_thrusts[FLIGHT_ROTOR_FRONT_RIGHT]) ||
+        flightrl_set_float(dict, "motor_rear_left", env->motor_thrusts[FLIGHT_ROTOR_REAR_LEFT]) ||
+        flightrl_set_float(dict, "motor_rear_right", env->motor_thrusts[FLIGHT_ROTOR_REAR_RIGHT]) ||
+        flightrl_set_float(dict, "motor_front_pair", front_pair) ||
+        flightrl_set_float(dict, "motor_rear_pair", rear_pair) ||
         flightrl_set_float(dict, "command_0", env->current_action[0]) ||
         flightrl_set_float(dict, "command_1", env->current_action[1]) ||
+        flightrl_set_float(dict, "command_2", env->current_action[2]) ||
+        flightrl_set_float(dict, "command_3", env->current_action[3]) ||
+        flightrl_set_float(dict, "action_dim", (float)env->sensor_config.action_dim) ||
         flightrl_set_float(dict, "active_target", (float)(env->world.active_target + 1)) ||
         flightrl_set_float(dict, "target_count", (float)env->world.target_count) ||
         flightrl_set_float(dict, "reward_total", env->reward_breakdown.total) ||

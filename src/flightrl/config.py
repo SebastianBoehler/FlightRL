@@ -13,6 +13,7 @@ DEFAULT_FIXED_TARGET = (0.0, 2.0)
 DEFAULT_SPAWN_BOUNDS = (-3.0, 3.0, 1.0, 4.0)
 DEFAULT_TARGET_BOUNDS = (-4.0, 4.0, 1.0, 6.0)
 DEFAULT_FIXED_WAYPOINTS = [(0.0, 2.0)] * MAX_WAYPOINTS
+ACTION_DIMS = {"stabilized_planar": 2, "motor_pair": 2, "motor_quad": 4}
 
 
 @dataclass(slots=True)
@@ -146,6 +147,15 @@ class LoggingConfig:
 
 
 @dataclass(slots=True)
+class WindConfig:
+    enabled: bool = False
+    steady_x: float = 0.0
+    steady_z: float = 0.0
+    gust_strength: float = 0.0
+    gust_tau: float = 0.6
+
+
+@dataclass(slots=True)
 class FlightConfig:
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     drone: DroneConfig = field(default_factory=DroneConfig)
@@ -155,10 +165,14 @@ class FlightConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     domain_randomization: DomainRandomizationConfig = field(default_factory=DomainRandomizationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    wind: WindConfig = field(default_factory=WindConfig)
 
     @property
     def action_dim(self) -> int:
-        return 2
+        try:
+            return ACTION_DIMS[self.environment.action_mode]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported action mode: {self.environment.action_mode}") from exc
 
     @property
     def observation_flags(self) -> int:
@@ -191,7 +205,7 @@ class FlightConfig:
         dims += 2 if self.sensors.include_attitude else 0
         dims += 1 if self.sensors.include_angular_velocity else 0
         dims += 2 if self.sensors.include_target_vector else 0
-        dims += 2 if self.sensors.include_previous_action else 0
+        dims += self.action_dim if self.sensors.include_previous_action else 0
         dims += 1 if self.sensors.include_health else 0
         dims += 6 if self.sensors.include_ideal_state else 0
         dims += 6 if self.sensors.include_noisy_state else 0
@@ -253,7 +267,9 @@ def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Fl
         training=TrainingConfig(**raw.get("training", {})),
         domain_randomization=DomainRandomizationConfig(**raw.get("domain_randomization", {})),
         logging=LoggingConfig(**raw.get("logging", {})),
+        wind=WindConfig(**raw.get("wind", {})),
     )
     if config.observation_dim <= 0:
         raise ValueError("Observation config produced an empty observation vector")
+    _ = config.action_dim
     return config

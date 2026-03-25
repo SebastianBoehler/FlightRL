@@ -24,7 +24,7 @@ def test_reset_and_step_shapes() -> None:
     assert truncations.shape == (4,)
     snapshot = env.snapshot(0)
     assert "x" in snapshot
-    assert "motor_left" in snapshot
+    assert "motor_front_left" in snapshot
     assert "command_0" in snapshot
     env.close()
 
@@ -81,3 +81,42 @@ def test_rgb_array_render_returns_frame() -> None:
     assert frame.ndim == 3
     assert frame.shape[2] == 3
     assert frame.dtype == np.uint8
+
+
+def test_motor_quad_mode_uses_four_actions_and_changes_pitch() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "hover.toml",
+        overrides={"environment": {"num_envs": 1, "action_mode": "motor_quad"}},
+    )
+    assert config.action_dim == 4
+    env = make_env(config, seed=13)
+    env.reset(seed=13)
+    action = np.array([[1.0, 1.0, -1.0, -1.0]], dtype=np.float32)
+    pitch_before = env.snapshot(0)["pitch"]
+    for _ in range(5):
+        env.step(action)
+    pitch_after = env.snapshot(0)["pitch"]
+    env.close()
+    assert abs(pitch_after - pitch_before) > 1e-5
+
+
+def test_wind_changes_trajectory_deterministically() -> None:
+    overrides = {
+        "environment": {"num_envs": 1},
+        "wind": {"enabled": True, "steady_x": 2.0, "steady_z": 0.0, "gust_strength": 0.4, "gust_tau": 0.3},
+    }
+    config = load_config(ROOT / "configs" / "tasks" / "hover.toml", overrides=overrides)
+    action = np.zeros((1, config.action_dim), dtype=np.float32)
+    traces = []
+    for seed in (19, 19):
+        env = make_env(config, seed=seed)
+        env.reset(seed=seed)
+        rollout = []
+        for _ in range(6):
+            env.step(action)
+            snapshot = env.snapshot(0)
+            rollout.append((snapshot["x"], snapshot["z"], snapshot["wind_x"], snapshot["wind_z"]))
+        traces.append(rollout)
+        env.close()
+    assert traces[0] == traces[1]
+    assert any(abs(x) > 1e-5 for x, _, _, _ in traces[0])
