@@ -8,6 +8,13 @@
 4. `vec_step` advances every native environment, writes observations and rewards in place, and aggregates episodic metrics through `vec_log`.
 5. `PuffeRL` consumes the wrapper directly without an extra Gymnasium emulation layer.
 
+For the PufferLib 4 path, the flow forks after step 1:
+
+1. FlightRL flattens the same TOML config into a PufferLib `4.0` `.ini`.
+2. FlightRL copies the native simulator modules into a target `ocean/<env_name>/` directory in an upstream PufferLib checkout.
+3. FlightRL generates a thin Puffer 4 `binding.c` adapter that wraps the existing single-agent simulator into the static `vecenv.h` interface.
+4. Upstream `build.sh` compiles that exported environment into the PufferLib 4 backend.
+
 ## Native Boundaries
 
 The native side is intentionally split into small modules:
@@ -28,6 +35,8 @@ The binding layer is also modular:
 - `binding_env.h`: per-env handle lifecycle
 - `binding_vec.h`: vectorized reset, step, log, and close
 - `binding.c`: native config parsing and exported methods
+
+The PufferLib 4 export path reuses the same simulator modules but swaps in a generated `binding.c` that targets `vecenv.h` instead of the legacy Python C extension entrypoints.
 
 ## C Core Vs Python Wrapper
 

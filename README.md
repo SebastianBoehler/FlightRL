@@ -2,6 +2,8 @@
 
 FlightRL is a research-oriented drone RL scaffold built around a small C simulator and a thin PufferLib Ocean-style Python wrapper. The goal is fast simulation throughput, modular environment structure, and a clean path toward richer sensor models, manufacturer-specific parameter profiles, and later sim-to-real work on civilian developer platforms.
 
+The repo now supports a staged PufferLib 4 migration. The legacy in-repo wrapper still targets `pufferlib<4`, while `scripts/export_puffer4.py` and `scripts/train_puffer4.py` export the simulator into an official PufferLib `4.0` checkout and run it through the new Ocean/native build flow.
+
 ## Renderer Preview
 
 Clean previews exported from the live renderer. The inspection view shows a quadrotor airframe, per-rotor thrust state, target geometry, body orientation, color-coded force vectors, and compact telemetry. The underlying MVP dynamics are still planar, so direct `motor_quad` control is physically meaningful through front-vs-rear pitch authority, while left-vs-right asymmetry remains future-facing until a fuller 3D model lands:
@@ -22,6 +24,8 @@ Clean previews exported from the live renderer. The inspection view shows a quad
 
 The native simulator keeps state, stepping, reward logic, reset sampling, and observation assembly in C so Python overhead stays minimal. The Python wrapper only defines spaces, owns shared buffers, exposes config loading, and plugs the environment into `pufferlib.PufferEnv` and `PuffeRL`.
 
+For PufferLib 4 specifically, FlightRL now exports those same native modules into a generated `binding.c` plus `.ini` config inside a separate PufferLib `4.0` checkout. That avoids relying on the removed `PufferEnv`/`vector`/`emulation` APIs in the upstream 4.0 branch while still letting FlightRL use the new native build and training path.
+
 The implementation follows the current Ocean pattern:
 
 - C writes directly into contiguous NumPy buffers.
@@ -34,7 +38,7 @@ The implementation follows the current Ocean pattern:
 - `src/flightrl/native/`: modular C simulator, reward/task logic, and Ocean-style binding bridge.
 - `configs/tasks/`: runnable hover, waypoint, and sequence experiment configs.
 - `configs/hardware/`: placeholder hardware-oriented profile examples.
-- `scripts/`: train, eval, benchmark, rollout, plotting, comparison, and smoke-test entrypoints.
+- `scripts/`: legacy train/eval tools plus `export_puffer4.py` and `train_puffer4.py` for the PufferLib 4 migration path.
 - `tests/`: lightweight regression and smoke coverage.
 - `docs/architecture.md`: module boundaries and extension path.
 
@@ -46,7 +50,9 @@ Editable install:
 python -m pip install -e . --no-build-isolation
 ```
 
-PufferLib currently advertises an older NumPy constraint than many Python 3.13 environments already use. In a shared interpreter, `pip` may try to reshuffle NumPy during install; a dedicated virtualenv is the safer setup.
+The editable install keeps the legacy Python wrapper on `pufferlib<4`. PufferLib 4 training is handled through a separate upstream checkout.
+
+PufferLib packaging can also influence the installed NumPy version. In a shared interpreter, `pip` may try to reshuffle NumPy during install; a dedicated virtualenv is the safer setup.
 
 Direct extension rebuild:
 
@@ -86,6 +92,41 @@ The training loop uses a small Gaussian actor-critic and calls `PuffeRL` directl
 - `domain_randomization`
 - `logging`
 
+## Train With PufferLib 4
+
+Verified on April 6, 2026 against the official `4.0` branch: upstream PufferLib 4 no longer exposes the legacy Python `PufferEnv`/`vector`/`emulation` surface, so FlightRL integrates with it by exporting a native env package into a PufferLib checkout.
+
+Export only:
+
+```bash
+python scripts/export_puffer4.py \
+  --config configs/tasks/hover.toml \
+  --pufferlib-root /path/to/PufferLib
+```
+
+Export, build, and train through the upstream `4.0` checkout:
+
+```bash
+python scripts/train_puffer4.py \
+  --config configs/tasks/hover.toml \
+  --pufferlib-root /path/to/PufferLib
+```
+
+On macOS, the upstream CPU path is toolchain-sensitive. The verified smoke on this host used Apple clang with local wrapper scripts that neutralize upstream `-fopenmp` flags while keeping `libomp` headers available. Plain Apple clang failed immediately on `-fopenmp`, and plain Homebrew LLVM built an extension that later became unstable under the torch fallback runtime.
+
+Useful overrides:
+
+- `--build-mode float` for the Torch-compatible float32 build
+- `--build-mode cpu` for the CPU torch fallback backend. `train_puffer4.py` adds upstream `--slowly` automatically in this mode.
+- `--total-agents`, `--num-buffers`, and `--num-threads` to override exported vector settings
+- pass additional Puffer CLI args after `--`, for example `-- --train.learning-rate 0.005`
+
+The exporter writes:
+
+- `ocean/flightrl/binding.c` generated from the current FlightRL config
+- the current simulator C modules copied from `src/flightrl/native/`
+- `config/flightrl.ini` with translated vec/policy/train settings
+
 ## Evaluate And Roll Out
 
 Random rollout:
@@ -121,6 +162,8 @@ python scripts/benchmark_env.py --config configs/tasks/hover.toml
 ```
 
 The environment also exposes Gymnasium-style rendering through `DronePlanarEnv(render_mode="human")` and `DronePlanarEnv(render_mode="rgb_array")`. Rendering is lazy and stays out of the fast path unless explicitly enabled.
+
+The exported PufferLib 4 env is currently focused on training. Native `puffer eval` rendering is stubbed out until the renderer is ported into the upstream raylib-based C path.
 
 Supported action modes:
 
