@@ -17,7 +17,7 @@ python scripts/smoke_test.py --config configs/tasks/hover.toml
 
 If you are working in a shared Python environment, prefer a dedicated virtualenv. Upstream PufferLib packaging can influence the installed NumPy version during `pip install`.
 
-Legacy in-repo training still depends on `pufferlib<4`. Use the dedicated PufferLib 4 export/train scripts when working against the upstream `4.0` branch.
+Training uses an upstream PufferLib 4 checkout. Set `PUFFERLIB_ROOT` or pass `--pufferlib-root` to `scripts/train.py`.
 
 ## Making Changes
 

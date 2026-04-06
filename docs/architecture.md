@@ -6,9 +6,9 @@
 2. `DronePlanarEnv` converts that config into numeric keyword arguments for the native binding.
 3. The C binding allocates per-env state, points into shared NumPy buffers, and stores sim/task/reward/sensor parameters.
 4. `vec_step` advances every native environment, writes observations and rewards in place, and aggregates episodic metrics through `vec_log`.
-5. `PuffeRL` consumes the wrapper directly without an extra Gymnasium emulation layer.
+5. Local Python utilities use that wrapper for rollout export, checkpoint evaluation, and rendering.
 
-For the PufferLib 4 path, the flow forks after step 1:
+For training, the flow continues into upstream PufferLib 4 after step 1:
 
 1. FlightRL flattens the same TOML config into a PufferLib `4.0` `.ini`.
 2. FlightRL copies the native simulator modules into a target `ocean/<env_name>/` directory in an upstream PufferLib checkout.
@@ -36,7 +36,7 @@ The binding layer is also modular:
 - `binding_vec.h`: vectorized reset, step, log, and close
 - `binding.c`: native config parsing and exported methods
 
-The PufferLib 4 export path reuses the same simulator modules but swaps in a generated `binding.c` that targets `vecenv.h` instead of the legacy Python C extension entrypoints.
+The PufferLib 4 export path reuses the same simulator modules but swaps in a generated `binding.c` that targets `vecenv.h` instead of the local Python C extension entrypoints.
 
 ## C Core Vs Python Wrapper
 
