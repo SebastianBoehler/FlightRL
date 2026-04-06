@@ -15,7 +15,7 @@ requires-python = ">=3.13"
 dependencies = [
   "gymnasium>=0.29",
   "matplotlib>=3.8",
-  "pufferlib>=3.0",
+  "pufferlib>=3.0,<4",
 ]
 
 [project.optional-dependencies]
