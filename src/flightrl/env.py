@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gymnasium
 import numpy as np
-import pufferlib
 
 from . import _binding
 from .binding_kwargs import build_binding_kwargs
@@ -10,7 +9,7 @@ from .config import FlightConfig
 from .renderer import DroneFrame, FlightRenderer
 
 
-class DronePlanarEnv(pufferlib.PufferEnv):
+class DronePlanarEnv:
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
     def __init__(
@@ -21,9 +20,15 @@ class DronePlanarEnv(pufferlib.PufferEnv):
         seed: int = 0,
         emit_logs: bool = True,
         render_mode: str | None = None,
-    ):
+    ) -> None:
+        if buf is not None:
+            raise NotImplementedError("custom shared buffers are not supported by the local FlightRL wrapper")
+        if render_mode not in {None, "human", "rgb_array"}:
+            raise ValueError(f"unsupported render mode: {render_mode}")
+
         self.config = config
-        env_count = num_envs or config.environment.num_envs
+        self.num_agents = num_envs or config.environment.num_envs
+        self.render_mode = render_mode
         self.single_observation_space = gymnasium.spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -36,20 +41,23 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             shape=(config.action_dim,),
             dtype=np.float32,
         )
-        self.num_agents = env_count
-        self.render_mode = render_mode
-        self._tick = 0
-        self._report_interval = config.logging.report_interval
+        self.observation_space = self.single_observation_space
+        self.action_space = self.single_action_space
+
+        self.observations = np.zeros((self.num_agents, config.observation_dim), dtype=np.float32)
+        self.actions = np.zeros((self.num_agents, config.action_dim), dtype=np.float32)
+        self.rewards = np.zeros(self.num_agents, dtype=np.float32)
+        self.terminals = np.zeros(self.num_agents, dtype=np.uint8)
+        self.truncations = np.zeros(self.num_agents, dtype=np.uint8)
+
         self._emit_logs = emit_logs
         self._handles: list[int] = []
         self._renderer: FlightRenderer | None = None
-        if render_mode not in {None, "human", "rgb_array"}:
-            raise ValueError(f"unsupported render mode: {render_mode}")
+        self._report_interval = config.logging.report_interval
+        self._tick = 0
 
-        super().__init__(buf)
-        self.actions = self.actions.astype(np.float32, copy=False)
-        kwargs = build_binding_kwargs(self.config)
-        for env_idx in range(env_count):
+        kwargs = build_binding_kwargs(config)
+        for env_idx in range(self.num_agents):
             handle = _binding.env_init(
                 self.observations[env_idx : env_idx + 1],
                 self.actions[env_idx : env_idx + 1],
@@ -62,12 +70,15 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             self._handles.append(handle)
         self._vec_handle = _binding.vectorize(*self._handles)
 
-    def reset(self, seed: int | None = None):
+    def reset(self, seed: int | None = None) -> tuple[np.ndarray, list[dict[str, float]]]:
         self._tick = 0
-        _binding.vec_reset(self._vec_handle, seed or 0)
+        _binding.vec_reset(self._vec_handle, 0 if seed is None else seed)
         return self.observations, []
 
-    def step(self, actions):
+    def step(
+        self,
+        actions: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]]:
         self._tick += 1
         self.actions[:] = np.asarray(actions, dtype=np.float32)
         _binding.vec_step(self._vec_handle)
@@ -81,7 +92,7 @@ class DronePlanarEnv(pufferlib.PufferEnv):
     def snapshot(self, env_index: int = 0) -> dict[str, float]:
         return _binding.env_get(self._handles[env_index])
 
-    def render(self):
+    def render(self) -> np.ndarray | None:
         if self.render_mode is None:
             raise ValueError("render_mode is not enabled for this environment")
         frame = self._snapshot_frame()
@@ -90,9 +101,10 @@ class DronePlanarEnv(pufferlib.PufferEnv):
             self._renderer = FlightRenderer(self.config, self.render_mode, fps=fps)
         return self._renderer.render(frame)
 
-    def close(self):
+    def close(self) -> None:
         if self._renderer is not None:
             self._renderer.close()
+            self._renderer = None
         if hasattr(self, "_vec_handle"):
             _binding.vec_close(self._vec_handle)
 

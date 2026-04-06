@@ -5,22 +5,36 @@ import argparse
 from flightrl import load_config
 from flightrl.plotting import plot_trajectory
 from flightrl.rollout import collect_rollout, save_rollout
-from flightrl.training import create_env_and_policy, load_policy_checkpoint
+from flightrl.training import create_env_and_policy, load_policy_for_evaluation
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a FlightRL policy")
+    parser = argparse.ArgumentParser(description="Evaluate a FlightRL policy checkpoint")
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--steps", type=int, default=128)
     parser.add_argument("--output", default="artifacts/trajectories/eval.csv")
     parser.add_argument("--render-mode", choices=["human", "rgb_array"], default=None)
+    parser.add_argument("--policy-hidden-size", type=int, default=None)
+    parser.add_argument("--policy-num-layers", type=int, default=2)
     args = parser.parse_args()
 
     config = load_config(args.config)
-    env, policy = create_env_and_policy(config, render_mode=args.render_mode)
     if args.checkpoint:
-        load_policy_checkpoint(policy, args.checkpoint, device=config.training.device)
+        env, policy = load_policy_for_evaluation(
+            config,
+            args.checkpoint,
+            render_mode=args.render_mode,
+            policy_hidden_size=args.policy_hidden_size,
+            policy_num_layers=args.policy_num_layers,
+        )
+    else:
+        env, policy = create_env_and_policy(
+            config,
+            render_mode=args.render_mode,
+            policy_hidden_size=args.policy_hidden_size,
+            policy_num_layers=args.policy_num_layers,
+        )
 
     trace = collect_rollout(env, steps=args.steps, policy=policy)
     output_path = save_rollout(trace, args.output)
