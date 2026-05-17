@@ -1,0 +1,43 @@
+[radio]
+uri = "radio://0/80/2M/E7E7E7E7E7"
+cache_dir = "artifacts/cflib_cache"
+
+[safety]
+default_height_m = 0.3
+velocity_m_s = 0.15
+turn_rate_deg_s = 45.0
+turn_angle_deg = 20.0
+hover_s = 2.0
+max_flight_s = 20.0
+requires_manual_confirm = true
+
+[decks]
+expect_flow_deck = true
+expect_multiranger = true
+
+[logging]
+period_ms = 50
+output_dir = "artifacts/crazyflie_logs"
+variables = [
+  "stabilizer.roll",
+  "stabilizer.pitch",
+  "stabilizer.yaw",
+  "stateEstimate.x",
+  "stateEstimate.y",
+  "stateEstimate.z",
+  "stateEstimate.vx",
+  "stateEstimate.vy",
+  "stateEstimate.vz",
+  "acc.x",
+  "acc.y",
+  "acc.z",
+  "gyro.x",
+  "gyro.y",
+  "gyro.z",
+  "pm.vbat",
+  "range.front",
+  "range.back",
+  "range.left",
+  "range.right",
+  "range.up",
+]

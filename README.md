@@ -39,6 +39,8 @@ The implementation follows the current Ocean pattern:
 - `scripts/`: train/export/eval helpers that target the local wrapper or an upstream PufferLib 4 checkout.
 - `tests/`: lightweight regression and smoke coverage.
 - `docs/architecture.md`: module boundaries and extension path.
+- `docs/crazyflie_bringup.md`: Crazyflie 2.1 Brushless setup, dry-run checks, demo flight, and telemetry logging.
+- `docs/sim_to_real_roadmap.md`: indoor-first hardware, VLA, and sim-to-real roadmap.
 
 ## Build
 
@@ -46,6 +48,12 @@ Editable install:
 
 ```bash
 python -m pip install -e . --no-build-isolation
+```
+
+Crazyflie hardware bring-up tools are optional:
+
+```bash
+python -m pip install -e ".[hardware,dev]" --no-build-isolation
 ```
 
 PufferLib is no longer a package dependency of FlightRL itself. Training runs through a separate upstream PufferLib 4 checkout, either passed explicitly with `--pufferlib-root` or via `PUFFERLIB_ROOT`.
@@ -222,3 +230,5 @@ For future autonomy work, the intended control hierarchy is:
 `camera + telemetry + mission context -> VLA navigator -> high-level commands -> stabilizer/controller -> motor mixing`
 
 That keeps low-level stabilization fast and local while allowing a slower perception-conditioned model to handle navigation and mission semantics later.
+
+For the first real hardware setup, see [docs/crazyflie_bringup.md](docs/crazyflie_bringup.md). The current Crazyflie layer supports safe scripted MotionCommander bring-up and telemetry logging; learned policies remain sim-only until a 6-DoF model, replay checks, and deployment safety gates are implemented.

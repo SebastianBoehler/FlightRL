@@ -21,6 +21,9 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+hardware = [
+  "cflib>=0.1.32,<0.2",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

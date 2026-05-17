@@ -1,0 +1,75 @@
+# Crazyflie Hardware Bring-Up
+
+This guide prepares FlightRL for a Bitcraze Crazyflie 2.1 Brushless with Flow deck v2 and Multi-ranger deck. The current hardware layer is for safe scripted bring-up and telemetry collection only. Learned policies must stay in simulation until FlightRL has a 6-DoF model, replay comparison, and hardware safety gates.
+
+## Install
+
+```bash
+python -m pip install -e ".[hardware,dev]" --no-build-isolation
+```
+
+The `hardware` extra installs Bitcraze `cflib`. It is optional because normal simulator training and tests do not need radio hardware.
+
+## Physical Checklist
+
+- Update and test the Crazyflie with the official Bitcraze client before using FlightRL scripts.
+- Put the Flow deck v2 underneath the drone.
+- Put the Multi-ranger deck above the drone.
+- Run all checks with propellers off first.
+- Use a clear indoor area with no people close to the flight path.
+- Keep the drone within reach for power removal and be ready to interrupt the script.
+
+## Config
+
+The default config is:
+
+```text
+configs/hardware/crazyflie_2_1_brushless.toml
+```
+
+It uses the default Bitcraze radio URI `radio://0/80/2M/E7E7E7E7E7`, a 0.3 m hover height, conservative velocity, Flow deck v2 expectation, Multi-ranger expectation, and `requires_manual_confirm = true`.
+
+## Bring-Up Commands
+
+Dry-run commands do not import `cflib`, do not scan radio hardware, and do not write fake telemetry.
+
+```bash
+python scripts/crazyflie_bringup.py --dry-run scan
+python scripts/crazyflie_bringup.py --dry-run check
+python scripts/crazyflie_bringup.py --dry-run demo
+```
+
+When the replacement board is ready, scan and check the drone:
+
+```bash
+python scripts/crazyflie_bringup.py scan
+python scripts/crazyflie_bringup.py check
+```
+
+Only run the demo with props on after the prop-off checks pass:
+
+```bash
+python scripts/crazyflie_bringup.py demo --confirm
+```
+
+The demo takes off to roughly 0.3 m, hovers, turns left and right in place, hovers again, and lands.
+
+## Telemetry
+
+Dry-run logging validates config and prints the intended output path without creating fake rows:
+
+```bash
+python scripts/crazyflie_log.py --dry-run
+```
+
+Real logging writes replay-friendly CSV under `artifacts/crazyflie_logs/`:
+
+```bash
+python scripts/crazyflie_log.py --duration-s 10
+```
+
+CSV columns start with `host_time_s` and `crazyflie_time_ms`, followed by configured cflib log variables. These logs are intended for later parameter fitting and sim-to-real replay checks.
+
+## RL Boundary
+
+The current simulator is still planar and useful for fast hover/reach experiments. Do not deploy FlightRL policies to the real Crazyflie yet. The next hardware-safe policy interface should emit bounded velocity, position, altitude, and yaw setpoints through cflib; it should not command direct motors.
