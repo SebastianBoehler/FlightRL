@@ -4,7 +4,14 @@ import pytest
 
 from flightrl.hardware.config import CrazyflieHardwareConfig
 from flightrl.hardware.errors import HardwareSafetyError
-from flightrl.hardware.motion import DemoFlightPlan, arm_for_flight, disarm_after_flight, execute_demo_flight
+from flightrl.hardware.motion import (
+    DemoFlightPlan,
+    arm_crazyflie_for_flight,
+    arm_for_flight,
+    disarm_after_flight,
+    disarm_crazyflie_after_flight,
+    execute_demo_flight,
+)
 
 
 class FakeCommander:
@@ -33,6 +40,25 @@ class FakeSupervisor:
 
     def send_arming_request(self, do_arm: bool) -> None:
         self.requests.append(do_arm)
+
+
+class FakeParam:
+    def __init__(self, arm_value: str = "0") -> None:
+        self.values = {"system.arm": arm_value}
+        self.set_calls: list[tuple[str, str]] = []
+
+    def get_value(self, complete_name: str) -> object:
+        return self.values[complete_name]
+
+    def set_value(self, complete_name: str, value: str) -> None:
+        self.set_calls.append((complete_name, value))
+        self.values[complete_name] = value
+
+
+class FakeCrazyflie:
+    def __init__(self, arm_value: str = "0") -> None:
+        self.supervisor = FakeSupervisor()
+        self.param = FakeParam(arm_value)
 
 
 def test_demo_sequence_uses_conservative_motion_primitives() -> None:
@@ -66,3 +92,21 @@ def test_arm_and_disarm_use_supervisor_requests() -> None:
     disarm_after_flight(supervisor, sleep=lambda _: None)
 
     assert supervisor.requests == [True, False]
+
+
+def test_arm_crazyflie_falls_back_to_system_arm_param() -> None:
+    cf = FakeCrazyflie(arm_value="0")
+
+    arm_crazyflie_for_flight(cf, sleep=lambda _: None)
+
+    assert cf.supervisor.requests == [True]
+    assert cf.param.set_calls == [("system.arm", "1")]
+
+
+def test_disarm_crazyflie_clears_system_arm_param() -> None:
+    cf = FakeCrazyflie(arm_value="1")
+
+    disarm_crazyflie_after_flight(cf, sleep=lambda _: None)
+
+    assert cf.param.set_calls == [("system.arm", "0")]
+    assert cf.supervisor.requests == [False]

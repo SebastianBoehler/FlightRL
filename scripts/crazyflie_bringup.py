@@ -9,12 +9,17 @@ from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.errors import HardwareError
 from flightrl.hardware.motion import (
     DemoFlightPlan,
-    arm_for_flight,
+    arm_crazyflie_for_flight,
     build_motion_commander,
-    disarm_after_flight,
+    disarm_crazyflie_after_flight,
     execute_demo_flight,
 )
-from flightrl.hardware.preflight import expected_deck_params, inspect_decks, inspect_log_variables
+from flightrl.hardware.preflight import (
+    expected_deck_params,
+    inspect_decks,
+    inspect_log_variables,
+    require_supervisor_allows_flight,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,11 +114,12 @@ def _demo(config, dry_run: bool, confirmed: bool) -> int:
     modules = require_cflib()
     with sync_crazyflie_context(config, modules) as scf:
         try:
-            arm_for_flight(scf.cf.supervisor)
+            require_supervisor_allows_flight(scf, modules, config)
+            arm_crazyflie_for_flight(scf.cf)
             commander = build_motion_commander(scf, modules, config)
             execute_demo_flight(commander, plan)
         finally:
-            disarm_after_flight(scf.cf.supervisor)
+            disarm_crazyflie_after_flight(scf.cf)
     return 0
 
 
