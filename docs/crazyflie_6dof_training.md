@@ -95,7 +95,41 @@ This writes:
 - `ocean/flightrl_sixdof/native_sixdof.h`
 - `config/flightrl_sixdof.ini`
 
-The generated Ocean env is the first native PufferLib-oriented 6-DoF scaffold. It uses the same native hot loop as `SixDofCrazyflieEnv(use_native_step=True)`. The remaining work is building and training it inside a real upstream PufferLib checkout and adding exact replay/calibration gates.
+The generated Ocean env is the first native PufferLib-oriented 6-DoF scaffold. It uses the same native hot loop as `SixDofCrazyflieEnv(use_native_step=True)`.
+
+To build and run a small CPU/PyTorch-backend Puffer smoke train:
+
+```bash
+python scripts/train_sixdof_puffer4.py \
+  --pufferlib-root /path/to/PufferLib \
+  --env-name flightrl_sixdof \
+  --total-agents 1024 \
+  --num-buffers 1 \
+  --build-mode cpu \
+  -- --train.total-timesteps 32768 --train.horizon 16 --train.minibatch-size 1024
+```
+
+On macOS, the CPU backend is run with `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE` by default. Without that guard, importing the Puffer Python training stack can collide with already-loaded OpenMP runtimes from Torch/Numpy and crash during `cpu_step`.
+
+## Edge Export Contract
+
+Issue #12 tracks the tiny-model deployment path. The current first contract is a TorchScript trace for simulation checkpoints:
+
+```bash
+python scripts/export_sixdof_edge_policy.py \
+  --checkpoint artifacts/checkpoints/sixdof_position_yaw_h256_long.pt \
+  --output artifacts/edge/sixdof_position_yaw_h256_long.ts
+```
+
+The export writes a `.parity.json` report with:
+
+- observation shape and dtype: `[28]`, `float32`
+- action shape and dtype: `[4]`, `float32`
+- action bounds: `[-1, 1]`
+- action meaning: thrust, roll-rate, pitch-rate, yaw-rate
+- max/mean absolute parity error between the Python policy and exported artifact
+
+This is still a local inference smoke path, not an onboard deployment path. Hardware use remains gated by replay comparison, latency checks, and a flight safety envelope.
 
 ## Hardware Boundary
 

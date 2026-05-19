@@ -191,6 +191,7 @@ Export the native 6-DoF environment into an upstream PufferLib 4 checkout:
 
 ```bash
 python scripts/export_sixdof_puffer4.py --pufferlib-root /path/to/PufferLib
+python scripts/train_sixdof_puffer4.py --pufferlib-root /path/to/PufferLib --build-mode cpu -- --train.total-timesteps 32768
 ```
 
 Environment-only throughput benchmark:
@@ -202,6 +203,14 @@ python scripts/benchmark_env.py --config configs/tasks/hover.toml
 The environment exposes Gymnasium-style rendering through `DronePlanarEnv(render_mode="human")` and `DronePlanarEnv(render_mode="rgb_array")`. Rendering is lazy and stays out of the fast path unless explicitly enabled.
 
 The exported PufferLib 4 env is currently focused on training. Native `puffer eval` rendering is stubbed out until the renderer is ported into the upstream raylib-based C path.
+
+Export a trained 6-DoF simulation checkpoint to a local edge-inference artifact:
+
+```bash
+python scripts/export_sixdof_edge_policy.py --checkpoint artifacts/checkpoints/sixdof_position_yaw_h256_long.pt
+```
+
+This writes a TorchScript model and parity report under `artifacts/edge/`. It is a deployment contract and local smoke test, not approval to run the model directly on the Crazyflie.
 
 Supported action modes:
 

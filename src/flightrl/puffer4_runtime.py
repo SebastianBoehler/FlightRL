@@ -37,6 +37,21 @@ def normalize_puffer_args(puffer_args: Sequence[str], build_mode: str) -> list[s
     return forwarded
 
 
+def puffer_subprocess_env(build_mode: str, puffer_args: Sequence[str]) -> dict[str, str]:
+    env = os.environ.copy()
+    forwarded = normalize_puffer_args(puffer_args, build_mode)
+    if build_mode == "cpu" or "--slowly" in forwarded:
+        env.setdefault("OMP_NUM_THREADS", "1")
+        env.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    if sys.platform == "darwin":
+        clang = Path("/opt/homebrew/opt/llvm/bin/clang")
+        clangxx = Path("/opt/homebrew/opt/llvm/bin/clang++")
+        if clang.exists() and clangxx.exists():
+            env.setdefault("CC", str(clang))
+            env.setdefault("CXX", str(clangxx))
+    return env
+
+
 def export_and_build(
     config: FlightConfig,
     *,
@@ -52,6 +67,7 @@ def export_and_build(
             ["bash", "build.sh", settings.env_name, *BUILD_MODE_FLAGS[build_mode]],
             cwd=root,
             check=True,
+            env=puffer_subprocess_env(build_mode, ()),
         )
     return root, result
 
@@ -81,4 +97,4 @@ def run_train(
         settings.env_name,
         *normalize_puffer_args(puffer_args, build_mode),
     ]
-    return subprocess.run(command, cwd=root, check=True)
+    return subprocess.run(command, cwd=root, check=True, env=puffer_subprocess_env(build_mode, puffer_args))

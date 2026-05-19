@@ -5,6 +5,7 @@ from pathlib import Path
 from flightrl import load_config
 from flightrl.puffer4_config import Puffer4ExportSettings
 from flightrl.puffer4_export import PUFFER4_NATIVE_FILES, export_puffer4_assets
+from flightrl.puffer4_runtime import normalize_puffer_args, puffer_subprocess_env
 from flightrl.puffer4_sixdof_export import SIXDOF_NATIVE_FILES, export_sixdof_puffer4_assets, render_sixdof_puffer4_binding
 
 
@@ -96,3 +97,10 @@ def test_render_sixdof_binding_is_ocean_shaped() -> None:
     assert '#include "vecenv.h"' in binding
     assert "static void c_reset" in binding
     assert "static void c_step" in binding
+
+
+def test_cpu_puffer_runtime_sets_openmp_guard() -> None:
+    assert normalize_puffer_args((), "cpu") == ["--slowly"]
+    env = puffer_subprocess_env("cpu", ())
+    assert env["OMP_NUM_THREADS"] == "1"
+    assert env["KMP_DUPLICATE_LIB_OK"] == "TRUE"
