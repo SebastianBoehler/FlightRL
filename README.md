@@ -173,6 +173,15 @@ Simulation-only Crazyflie 6-DoF teacher imitation:
 ```bash
 python scripts/train_sixdof_teacher.py --task obstacle_avoidance
 python scripts/train_sixdof_teacher.py --task multitask
+python scripts/build_sixdof_teacher_dataset.py \
+  --task position_yaw,obstacle_avoidance,circle \
+  --output artifacts/datasets/sixdof_teacher_safe_tasks.npz
+python scripts/train_sixdof_offline.py \
+  --dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
+  --checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt
+python scripts/evaluate_sixdof_action_gap.py \
+  --checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt \
+  --dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz
 python scripts/rollout_sixdof_policy.py \
   --checkpoint artifacts/checkpoints/sixdof_obstacle_avoidance.pt \
   --output artifacts/trajectories/sixdof_obstacle_avoidance.csv

@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+import numpy as np
+import torch
+
+from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof.dataset import collect_teacher_dataset, load_dataset, write_dataset
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_collect_teacher_dataset_roundtrip(tmp_path: Path) -> None:
+    dataset = collect_teacher_dataset(
+        task_spec="position_yaw,obstacle_avoidance",
+        num_envs=4,
+        steps=3,
+        seed=5,
+        use_native_step=False,
+    )
+    path = write_dataset(tmp_path / "teacher.npz", dataset)
+    loaded = load_dataset(path)
+
+    assert loaded["observations"].shape == (12, 30)
+    assert loaded["actions"].shape == (12, 4)
+    assert loaded["metadata"]["tasks"] == ["position_yaw", "obstacle_avoidance"]
+    assert np.array_equal(loaded["task_indices"], dataset["task_indices"])
+
+
+def test_action_gap_cli_reports_per_task(tmp_path: Path) -> None:
+    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=2, seed=7, use_native_step=False)
+    dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)
+    checkpoint = tmp_path / "policy.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        checkpoint,
+    )
+    report_path = tmp_path / "gap.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "evaluate_sixdof_action_gap.py"),
+            "--checkpoint",
+            str(checkpoint),
+            "--dataset",
+            str(dataset_path),
+            "--output",
+            str(report_path),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads(report_path.read_text())
+    assert report["samples"] == 8
+    assert "position_yaw" in report["per_task"]
+
+
+def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
+    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=3, seed=9, use_native_step=False)
+    dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)
+    checkpoint = tmp_path / "offline.pt"
+    run = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "train_sixdof_offline.py"),
+            "--dataset",
+            str(dataset_path),
+            "--checkpoint",
+            str(checkpoint),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "8",
+            "--hidden-size",
+            "16",
+            "--eval-steps",
+            "4",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    saved = torch.load(checkpoint, map_location="cpu")
+    assert "checkpoint=" in run.stdout
+    assert saved["dataset"] == str(dataset_path)
+    assert saved["val_loss"] >= 0.0
