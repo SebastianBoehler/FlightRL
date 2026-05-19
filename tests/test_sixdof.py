@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -92,6 +93,8 @@ def test_sixdof_training_and_rollout_smoke(tmp_path: Path) -> None:
             "8",
             "--batch-size",
             "16",
+            "--eval-steps",
+            "4",
             "--checkpoint",
             str(checkpoint),
         ],
@@ -142,6 +145,8 @@ def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
             "8",
             "--batch-size",
             "16",
+            "--eval-steps",
+            "4",
             "--checkpoint",
             str(checkpoint),
         ],
@@ -196,7 +201,10 @@ def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
     )
-    assert '"gate"' in report.read_text()
+    evaluation = json.loads(report.read_text())
+    assert "gate" in evaluation
+    assert "teacher_action_l2_mean" in evaluation["metrics"]
+    assert "action_saturation_fraction" in evaluation["metrics"]
 
     teacher_report = tmp_path / "teacher_eval.json"
     subprocess.run(
@@ -218,7 +226,10 @@ def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
     )
-    assert '"controller": "teacher"' in teacher_report.read_text()
+    teacher_evaluation = json.loads(teacher_report.read_text())
+    assert teacher_evaluation["controller"] == "teacher"
+    assert "teacher_action_l2_mean" not in teacher_evaluation["metrics"]
+    assert "action_saturation_fraction" in teacher_evaluation["metrics"]
 
 
 def test_native_sixdof_step_matches_python_step() -> None:

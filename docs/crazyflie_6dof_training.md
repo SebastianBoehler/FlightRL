@@ -93,9 +93,11 @@ python scripts/evaluate_sixdof_checkpoint.py \
   --output artifacts/replay/sixdof_multitask_h256_gate.json
 ```
 
-The gate checks low-percentile simulated wall clearance, terminal-free completion fraction, and mean position error. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
+The gate checks low-percentile simulated wall clearance, terminal-free completion fraction, and mean position error. It also reports control diagnostics: action magnitude, saturation fraction, and learned-policy disagreement with the analytic teacher on the states visited by the policy. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
 
 Use the teacher gate first. If the analytic teacher fails a task, a learned checkpoint for that same task is not meaningful yet. Current evidence shows position/yaw, obstacle avoidance, and circle are feasible as a reference set, while the experimental attitude task needs a better physical objective before it belongs in multi-task training.
+
+Training uses the same 800-step horizon for checkpoint selection by default. For CI smoke tests or quick experiments, reduce it explicitly with `--eval-steps`.
 
 ## Native Benchmark
 
