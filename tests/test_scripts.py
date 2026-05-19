@@ -120,3 +120,40 @@ def test_policy_monitor_dry_run_writes_predictions(tmp_path: Path) -> None:
     )
     assert output.exists()
     assert "wrote 1 rows" in result.stdout
+
+
+def test_ranger_avoidance_training_and_dry_run_deploy(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "avoidance.pt"
+    train = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_ranger_avoidance.py",
+            "--samples",
+            "128",
+            "--epochs",
+            "2",
+            "--checkpoint",
+            str(checkpoint),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert checkpoint.exists()
+    assert "checkpoint=" in train.stdout
+
+    deploy = subprocess.run(
+        [
+            sys.executable,
+            "scripts/crazyflie_avoidance_policy.py",
+            "--checkpoint",
+            str(checkpoint),
+            "--dry-run",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "dry_run avoidance command" in deploy.stdout
