@@ -99,6 +99,8 @@ python scripts/crazyflie_hold_policy.py \
   --max-vertical-speed-m-s 0.14
 ```
 
+By default, the live runner captures the current `stateEstimate.x/y` after takeoff and holds that point. Pass `--target X Y Z` only when you intentionally want it to fly toward an explicit world-frame target.
+
 ## RL Boundary
 
 The current simulator is still planar and useful for fast hover/reach experiments. Hardware policy deployment must stay at the setpoint layer until FlightRL has a 6-DoF model, replay comparison, and broader safety gates. Learned policies should emit bounded velocity, altitude, and yaw setpoints through cflib; they should not command direct motors.

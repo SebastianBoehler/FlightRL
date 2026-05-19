@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
@@ -198,3 +199,35 @@ def test_ranger_hold_training_and_dry_run_deploy(tmp_path: Path) -> None:
     )
     assert output.exists()
     assert "wrote 1 rows" in deploy.stdout
+
+
+def test_hold_policy_waits_for_complete_telemetry() -> None:
+    spec = importlib.util.spec_from_file_location("crazyflie_hold_policy", ROOT / "scripts" / "crazyflie_hold_policy.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert not module.has_complete_policy_telemetry({"stateEstimate.x": 0.0})
+    assert module.has_complete_policy_telemetry(
+        {
+            "stabilizer.roll": 0.0,
+            "stabilizer.pitch": 0.0,
+            "stabilizer.yaw": 0.0,
+            "stateEstimate.x": 0.0,
+            "stateEstimate.y": 0.0,
+            "stateEstimate.z": 0.45,
+            "stateEstimate.vx": 0.0,
+            "stateEstimate.vy": 0.0,
+            "stateEstimate.vz": 0.0,
+            "gyro.x": 0.0,
+            "gyro.y": 0.0,
+            "gyro.z": 0.0,
+            "range.front": 1000.0,
+            "range.back": 1000.0,
+            "range.left": 1000.0,
+            "range.right": 1000.0,
+            "range.up": 2000.0,
+            "range.zrange": 450.0,
+            "pm.vbat": 3.8,
+        }
+    )

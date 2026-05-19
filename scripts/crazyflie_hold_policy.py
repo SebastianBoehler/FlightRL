@@ -25,6 +25,9 @@ from flightrl.hardware.preflight import require_supervisor_allows_flight
 from flightrl.hardware.telemetry import build_log_configs
 
 
+REQUIRED_POLICY_KEYS = frozenset(HOLD_LOG_VARIABLES)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a trained Crazyflie ranger/attitude hold policy")
     parser.add_argument("--checkpoint", default="artifacts/checkpoints/ranger_hold.pt")
@@ -32,7 +35,7 @@ def main() -> None:
     parser.add_argument("--output", default="artifacts/crazyflie_logs/ranger_hold_policy.csv")
     parser.add_argument("--duration-s", type=float, default=20.0)
     parser.add_argument("--height-m", type=float, default=0.45)
-    parser.add_argument("--target", type=float, nargs=3, metavar=("X", "Y", "Z"))
+    parser.add_argument("--target", type=float, nargs=3, metavar=("X", "Y", "Z"), help="Explicit world target. Defaults to current x/y after takeoff.")
     parser.add_argument("--max-speed-m-s", type=float, default=0.25)
     parser.add_argument("--max-vertical-speed-m-s", type=float, default=0.18)
     parser.add_argument("--max-yawrate-deg-s", type=float, default=45.0)
@@ -87,7 +90,7 @@ def run_live(model: RangerHoldPolicy, args) -> list[dict[str, float]]:
     install_legacy_hover_warning_filter()
     latest: dict[str, float] = {}
     rows: list[dict[str, float]] = []
-    target = target_tuple(args)
+    target = target_tuple(args) if args.target is not None else None
     with sync_crazyflie_context(config, modules) as scf:
         commander = scf.cf.commander
         motion = modules.motion_commander_cls(scf, default_height=args.height_m)
@@ -99,18 +102,33 @@ def run_live(model: RangerHoldPolicy, args) -> list[dict[str, float]]:
             airborne = True
             motion.stop()
             deadline = time() + args.duration_s
-            print(f"hold policy loop started: duration_s={args.duration_s:.1f}, target={target}", flush=True)
+            if target is not None:
+                print(f"hold policy loop started: duration_s={args.duration_s:.1f}, target={target}", flush=True)
             with modules.sync_logger_cls(scf, build_log_configs(modules, config)) as logger:
                 while time() < deadline:
                     _timestamp, values, _conf = next(logger)
                     latest.update({key: float(value) for key, value in values.items()})
+                    if not has_complete_policy_telemetry(latest):
+                        continue
+                    if target is None:
+                        target = (_get(latest, "stateEstimate.x"), _get(latest, "stateEstimate.y"), args.height_m)
+                        print(f"hold policy loop started: duration_s={args.duration_s:.1f}, target={target}", flush=True)
                     command = command_from_hold_model(model, hold_state_from_telemetry(latest, target)).clipped(
                         max_speed=args.max_speed_m_s,
                         max_vertical_speed=args.max_vertical_speed_m_s,
                         max_yawrate=args.max_yawrate_deg_s,
                     )
                     motion.start_linear_motion(command.vx_m_s, command.vy_m_s, command.vz_m_s, rate_yaw=command.yawrate_deg_s)
-                    rows.append({"host_time_s": time(), **latest, **hold_command_row(command)})
+                    rows.append(
+                        {
+                            "host_time_s": time(),
+                            "target_x_m": target[0],
+                            "target_y_m": target[1],
+                            "target_z_m": target[2],
+                            **latest,
+                            **hold_command_row(command),
+                        }
+                    )
         finally:
             if airborne:
                 motion.stop()
@@ -125,6 +143,14 @@ def run_live(model: RangerHoldPolicy, args) -> list[dict[str, float]]:
 def target_tuple(args) -> tuple[float, float, float]:
     values = args.target if args.target is not None else (0.0, 0.0, args.height_m)
     return (float(values[0]), float(values[1]), float(values[2]))
+
+
+def has_complete_policy_telemetry(values: dict[str, float]) -> bool:
+    return REQUIRED_POLICY_KEYS.issubset(values)
+
+
+def _get(values: dict[str, float], key: str) -> float:
+    return float(values.get(key, 0.0))
 
 
 def write_rows(path: str | Path, rows: list[dict[str, float]]) -> None:
