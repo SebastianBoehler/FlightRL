@@ -3,8 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 from flightrl.hardware.avoidance_policy import (
+    AvoidanceCommand,
     RangerAvoidancePolicy,
     RangerReading,
+    command_row,
     normalize_reading,
     teacher_command,
 )
@@ -33,3 +35,14 @@ def test_policy_forward_shape_matches_hover_command() -> None:
     output = model(np.asarray([observation], dtype=np.float32))
 
     assert output.shape == (1, 4)
+
+
+def test_command_row_serializes_slots_dataclass() -> None:
+    row = command_row(AvoidanceCommand(vx_m_s=0.1, vy_m_s=-0.2, yawrate_deg_s=3.0, zdistance_m=0.45))
+
+    assert row == {
+        "vx_m_s": 0.1,
+        "vy_m_s": -0.2,
+        "yawrate_deg_s": 3.0,
+        "zdistance_m": 0.45,
+    }

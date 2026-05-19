@@ -108,6 +108,15 @@ def command_array(command: AvoidanceCommand) -> np.ndarray:
     return np.asarray([command.vx_m_s, command.vy_m_s, command.yawrate_deg_s, command.zdistance_m], dtype=np.float32)
 
 
+def command_row(command: AvoidanceCommand) -> dict[str, float]:
+    return {
+        "vx_m_s": command.vx_m_s,
+        "vy_m_s": command.vy_m_s,
+        "yawrate_deg_s": command.yawrate_deg_s,
+        "zdistance_m": command.zdistance_m,
+    }
+
+
 def sample_readings(count: int, rng: np.random.Generator) -> list[RangerReading]:
     samples = []
     for _ in range(count):

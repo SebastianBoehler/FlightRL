@@ -7,7 +7,7 @@ from time import sleep, time
 
 import torch
 
-from flightrl.hardware.avoidance_policy import RangerAvoidancePolicy, command_from_model, reading_from_telemetry
+from flightrl.hardware.avoidance_policy import RangerAvoidancePolicy, command_from_model, command_row, reading_from_telemetry
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.motion import arm_for_flight, disarm_after_flight
@@ -69,7 +69,7 @@ def run_live(model: RangerAvoidancePolicy, args) -> list[dict[str, float]]:
                     latest.update({key: float(value) for key, value in values.items()})
                     command = command_from_model(model, reading_from_telemetry(latest))
                     commander.send_hover_setpoint(command.vx_m_s, command.vy_m_s, command.yawrate_deg_s, command.zdistance_m)
-                    rows.append({"host_time_s": time(), **latest, **command.__dict__})
+                    rows.append({"host_time_s": time(), **latest, **command_row(command)})
         finally:
             commander.send_hover_setpoint(0.0, 0.0, 0.0, args.height_m)
             sleep(0.5)
