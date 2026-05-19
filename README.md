@@ -181,6 +181,12 @@ python scripts/visualize_crazyflie_room.py \
 
 The 6-DoF checkpoints are not approved for live Crazyflie deployment. See [docs/crazyflie_6dof_training.md](docs/crazyflie_6dof_training.md).
 
+Native 6-DoF stepping benchmark:
+
+```bash
+python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
+```
+
 Environment-only throughput benchmark:
 
 ```bash

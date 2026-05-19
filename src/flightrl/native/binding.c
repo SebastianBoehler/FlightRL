@@ -1,5 +1,6 @@
 #include "binding_env.h"
 #include "binding_vec.h"
+#include "binding_sixdof.h"
 
 static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
     env->dt = (float)flightrl_unpack_number(kwargs, "dt");
@@ -140,6 +141,7 @@ static PyMethodDef methods[] = {
     {"vec_step", vec_step, METH_VARARGS, "Step all environments"},
     {"vec_log", vec_log, METH_VARARGS, "Aggregate episode logs"},
     {"vec_close", vec_close, METH_VARARGS, "Close all environments"},
+    {"sixdof_step", sixdof_step, METH_VARARGS, "Step vectorized 6-DoF Crazyflie state arrays"},
     {NULL, NULL, 0, NULL},
 };
 

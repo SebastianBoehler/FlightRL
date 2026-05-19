@@ -19,6 +19,8 @@ PUFFER4_NATIVE_FILES = (
     "native_reset.c",
     "native_reward.c",
     "native_rng.h",
+    "native_sixdof.c",
+    "native_sixdof.h",
     "native_tasks.c",
     "native_termination.c",
     "native_types.h",

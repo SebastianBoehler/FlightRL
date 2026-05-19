@@ -16,6 +16,8 @@ The `flightrl.sixdof` package adds a port-ready 6-DoF reference surface:
 
 The code is written as a Python/Numpy spec first so behavior can be tested quickly before lowering the same structure into the native C/PufferLib path.
 
+The first native lowering is available as `flightrl.sixdof.native_step`, backed by `src/flightrl/native/native_sixdof.c`. It currently mirrors one vectorized dynamics/raycast step and is exported with the PufferLib native files, but it is not yet a full standalone PufferLib/Ocean environment.
+
 ## Train Checkpoints
 
 Small smoke run:
@@ -69,6 +71,14 @@ python scripts/compare_crazyflie_replay.py \
 ```
 
 This currently compares replay summaries, not exact trajectory matching. Exact replay alignment needs matching initial state, command interface, and timebase.
+
+## Native Benchmark
+
+```bash
+python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
+```
+
+This compares the Python vectorized spec against the native C batch step. The benchmark is an implementation-health signal, not a policy-quality metric.
 
 ## Hardware Boundary
 

@@ -8,7 +8,7 @@ import sys
 import numpy as np
 
 from flightrl.hardware.ranger_map import points_from_rows
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, teacher_actions
+from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, native_step, teacher_actions
 from flightrl.sixdof.geometry import body_rays_world
 
 
@@ -114,3 +114,23 @@ def test_sixdof_training_and_rollout_smoke(tmp_path: Path) -> None:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 4
     assert "stateEstimate.x" in rows[0]
+
+
+def test_native_sixdof_step_matches_python_step() -> None:
+    env = SixDofCrazyflieEnv(num_envs=16, seed=31)
+    env.reset(seed=31)
+    actions = teacher_actions(env, task="position_yaw").astype(np.float32)
+    position = env.position.copy()
+    velocity = env.velocity.copy()
+    quaternion = env.quaternion.copy()
+    body_rates = env.body_rates.copy()
+    ranges = env.ranges_m.copy()
+
+    env.step(actions)
+    native_step(position, velocity, quaternion, body_rates, ranges, actions, env.dt)
+
+    assert np.allclose(position, env.position, atol=1e-7)
+    assert np.allclose(velocity, env.velocity, atol=1e-6)
+    assert np.allclose(quaternion, env.quaternion, atol=1e-6)
+    assert np.allclose(body_rates, env.body_rates, atol=1e-6)
+    assert np.allclose(ranges, env.ranges_m, atol=1e-5)

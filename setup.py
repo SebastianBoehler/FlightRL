@@ -28,6 +28,7 @@ extension = Extension(
         "src/flightrl/native/native_termination.c",
         "src/flightrl/native/native_dynamics.c",
         "src/flightrl/native/native_wind.c",
+        "src/flightrl/native/native_sixdof.c",
     ],
     include_dirs=[
         str(ROOT / "src" / "flightrl" / "native"),
