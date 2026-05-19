@@ -52,3 +52,71 @@ def test_crazyflie_motor_bench_dry_run_runs_without_cflib() -> None:
     )
     assert "dry_run motor bench" in result.stdout
     assert "m4" in result.stdout
+
+
+def test_imitation_hover_training_writes_checkpoint(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "policy.pt"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_imitation_hover.py",
+            "--config",
+            "configs/tasks/crazyflie_hover.toml",
+            "--updates",
+            "1",
+            "--steps-per-update",
+            "4",
+            "--num-envs",
+            "8",
+            "--checkpoint",
+            str(checkpoint),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert checkpoint.exists()
+    assert "checkpoint=" in result.stdout
+
+
+def test_policy_monitor_dry_run_writes_predictions(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "policy.pt"
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_imitation_hover.py",
+            "--config",
+            "configs/tasks/crazyflie_hover.toml",
+            "--updates",
+            "1",
+            "--steps-per-update",
+            "2",
+            "--num-envs",
+            "4",
+            "--checkpoint",
+            str(checkpoint),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = tmp_path / "monitor.csv"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/crazyflie_policy_monitor.py",
+            "--checkpoint",
+            str(checkpoint),
+            "--dry-run",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert output.exists()
+    assert "wrote 1 rows" in result.stdout

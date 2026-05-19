@@ -183,8 +183,8 @@ void my_init(Env* env, Dict* kwargs) {{
     env->num_agents = 1;
 {_generate_assignments()}
 {_generate_waypoint_assignments()}
-    if (env->inner.sensor_config.flags & (FLIGHT_OBS_RANGE | FLIGHT_OBS_VISION)) {{
-        fprintf(stderr, "FlightRL Puffer4 export does not support range or vision sensors\\n");
+    if (env->inner.sensor_config.flags & FLIGHT_OBS_VISION) {{
+        fprintf(stderr, "FlightRL Puffer4 export does not support vision sensors\\n");
         abort();
     }}
     env->terminal_flag = 0;

@@ -26,9 +26,9 @@ def test_motor_quad_config_changes_action_dim_and_observation_dim() -> None:
     assert config.observation_dim > 0
 
 
-def test_range_sensor_placeholder_fails_fast() -> None:
+def test_vision_sensor_placeholder_fails_fast() -> None:
     with pytest.raises(NotImplementedError):
         load_config(
             ROOT / "configs" / "tasks" / "hover.toml",
-            overrides={"sensors": {"include_range_sensor": True}},
+            overrides={"sensors": {"include_vision_sensor": True}},
         )

@@ -77,8 +77,8 @@ static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
         env->task_config.fixed_waypoints[i].z = (float)flightrl_unpack_number(kwargs, key_z);
     }
 
-    if (env->sensor_config.flags & (FLIGHT_OBS_RANGE | FLIGHT_OBS_VISION)) {
-        PyErr_SetString(PyExc_NotImplementedError, "range and vision sensors are placeholders in the MVP");
+    if (env->sensor_config.flags & FLIGHT_OBS_VISION) {
+        PyErr_SetString(PyExc_NotImplementedError, "vision sensors are placeholders in the MVP");
         return -1;
     }
     return PyErr_Occurred() ? -1 : 0;

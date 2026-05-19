@@ -6,6 +6,22 @@ from typing import Any
 
 import tomllib
 
+from .observation_schema import (
+    ANGULAR_VELOCITY_DIM,
+    ATTITUDE_DIM,
+    CRAZYFLIE_TELEMETRY_BASE_DIM,
+    HEALTH_DIM,
+    IDEAL_STATE_DIM,
+    IMU_DIM,
+    NOISY_STATE_DIM,
+    OBSERVATION_FLAG_BITS,
+    POSITION_DIM,
+    RANGE_SENSOR_DIM,
+    TARGET_VECTOR_DIM,
+    VELOCITY_DIM,
+    VISION_SENSOR_DIM,
+)
+
 
 MAX_WAYPOINTS = 8
 DEFAULT_FIXED_START = (0.0, 2.0)
@@ -59,6 +75,7 @@ class SensorConfig:
     include_imu: bool = False
     include_range_sensor: bool = False
     include_vision_sensor: bool = False
+    include_crazyflie_telemetry: bool = False
     state_noise_std: float = 0.01
     imu_noise_std: float = 0.02
 
@@ -178,21 +195,7 @@ class FlightConfig:
     def observation_flags(self) -> int:
         sensors = self.sensors
         flags = 0
-        mapping = {
-            "include_position": 1 << 0,
-            "include_velocity": 1 << 1,
-            "include_attitude": 1 << 2,
-            "include_angular_velocity": 1 << 3,
-            "include_target_vector": 1 << 4,
-            "include_previous_action": 1 << 5,
-            "include_health": 1 << 6,
-            "include_ideal_state": 1 << 7,
-            "include_noisy_state": 1 << 8,
-            "include_imu": 1 << 9,
-            "include_range_sensor": 1 << 10,
-            "include_vision_sensor": 1 << 11,
-        }
-        for attr, bit in mapping.items():
+        for attr, bit in OBSERVATION_FLAG_BITS.items():
             if getattr(sensors, attr):
                 flags |= bit
         return flags
@@ -200,18 +203,22 @@ class FlightConfig:
     @property
     def observation_dim(self) -> int:
         dims = 0
-        dims += 2 if self.sensors.include_position else 0
-        dims += 2 if self.sensors.include_velocity else 0
-        dims += 2 if self.sensors.include_attitude else 0
-        dims += 1 if self.sensors.include_angular_velocity else 0
-        dims += 2 if self.sensors.include_target_vector else 0
+        dims += POSITION_DIM if self.sensors.include_position else 0
+        dims += VELOCITY_DIM if self.sensors.include_velocity else 0
+        dims += ATTITUDE_DIM if self.sensors.include_attitude else 0
+        dims += ANGULAR_VELOCITY_DIM if self.sensors.include_angular_velocity else 0
+        dims += TARGET_VECTOR_DIM if self.sensors.include_target_vector else 0
         dims += self.action_dim if self.sensors.include_previous_action else 0
-        dims += 1 if self.sensors.include_health else 0
-        dims += 6 if self.sensors.include_ideal_state else 0
-        dims += 6 if self.sensors.include_noisy_state else 0
-        dims += 3 if self.sensors.include_imu else 0
-        if self.sensors.include_range_sensor or self.sensors.include_vision_sensor:
-            raise NotImplementedError("Range and vision sensors are placeholders in the MVP")
+        dims += HEALTH_DIM if self.sensors.include_health else 0
+        dims += IDEAL_STATE_DIM if self.sensors.include_ideal_state else 0
+        dims += NOISY_STATE_DIM if self.sensors.include_noisy_state else 0
+        dims += IMU_DIM if self.sensors.include_imu else 0
+        dims += RANGE_SENSOR_DIM if self.sensors.include_range_sensor else 0
+        dims += VISION_SENSOR_DIM if self.sensors.include_vision_sensor else 0
+        if self.sensors.include_crazyflie_telemetry:
+            dims += CRAZYFLIE_TELEMETRY_BASE_DIM + self.action_dim
+        if self.sensors.include_vision_sensor:
+            raise NotImplementedError("Vision sensors are placeholders in the MVP")
         return dims
 
 
