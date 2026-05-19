@@ -53,7 +53,7 @@ def scan_interfaces(modules: CflibModules | None = None) -> list[str]:
     interfaces = modules.crtp.scan_interfaces()
     uris: list[str] = []
     for item in interfaces:
-        uris.append(str(item[0] if isinstance(item, tuple) else item))
+        uris.append(str(item[0] if isinstance(item, (tuple, list)) else item))
     return uris
 
 
