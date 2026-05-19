@@ -187,6 +187,12 @@ Native 6-DoF stepping benchmark:
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
 ```
 
+Export the native 6-DoF environment into an upstream PufferLib 4 checkout:
+
+```bash
+python scripts/export_sixdof_puffer4.py --pufferlib-root /path/to/PufferLib
+```
+
 Environment-only throughput benchmark:
 
 ```bash

@@ -5,6 +5,7 @@ from pathlib import Path
 from flightrl import load_config
 from flightrl.puffer4_config import Puffer4ExportSettings
 from flightrl.puffer4_export import PUFFER4_NATIVE_FILES, export_puffer4_assets
+from flightrl.puffer4_sixdof_export import SIXDOF_NATIVE_FILES, export_sixdof_puffer4_assets, render_sixdof_puffer4_binding
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,3 +66,33 @@ def test_export_puffer4_assets_respects_overrides(tmp_path: Path) -> None:
     assert "hidden_size = 192" in ini_text
     assert "num_layers = 4" in ini_text
     assert "seed = 99" in ini_text
+
+
+def test_export_sixdof_puffer4_assets_writes_native_ocean_env(tmp_path: Path) -> None:
+    pufferlib_root = tmp_path / "PufferLib-4.0"
+    result = export_sixdof_puffer4_assets(
+        pufferlib_root,
+        settings=Puffer4ExportSettings(env_name="flightrl_sixdof_test", total_agents=2048, num_buffers=4, train_seed=17),
+    )
+    binding_text = (result.env_dir / "binding.c").read_text()
+    ini_text = result.config_path.read_text()
+
+    assert result.env_name == "flightrl_sixdof_test"
+    assert "#define OBS_SIZE 28" in binding_text
+    assert "#define NUM_ATNS 4" in binding_text
+    assert "flightrl_sixdof_step_env_batch" in binding_text
+    assert "native_sixdof.c" in binding_text
+    assert "env_name = flightrl_sixdof_test" in ini_text
+    assert "total_agents = 2048" in ini_text
+    assert "num_buffers = 4" in ini_text
+    assert "dt = 0.01" in ini_text
+    for filename in SIXDOF_NATIVE_FILES:
+        assert (result.env_dir / filename).exists()
+
+
+def test_render_sixdof_binding_is_ocean_shaped() -> None:
+    binding = render_sixdof_puffer4_binding()
+    assert "#define Env FlightRLSixDofEnv" in binding
+    assert '#include "vecenv.h"' in binding
+    assert "static void c_reset" in binding
+    assert "static void c_step" in binding

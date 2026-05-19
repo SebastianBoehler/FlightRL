@@ -82,6 +82,21 @@ python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
 
 This compares the Python vectorized spec, the raw native C dynamics/raycast kernel, and the native-backed environment hot loop. The benchmark is an implementation-health signal, not a policy-quality metric.
 
+## PufferLib Export
+
+```bash
+python scripts/export_sixdof_puffer4.py --pufferlib-root /path/to/PufferLib
+```
+
+This writes:
+
+- `ocean/flightrl_sixdof/binding.c`
+- `ocean/flightrl_sixdof/native_sixdof.c`
+- `ocean/flightrl_sixdof/native_sixdof.h`
+- `config/flightrl_sixdof.ini`
+
+The generated Ocean env is the first native PufferLib-oriented 6-DoF scaffold. It uses the same native hot loop as `SixDofCrazyflieEnv(use_native_step=True)`. The remaining work is building and training it inside a real upstream PufferLib checkout and adding exact replay/calibration gates.
+
 ## Hardware Boundary
 
 Do not run these checkpoints directly on the Crazyflie. They are simulation-only.
