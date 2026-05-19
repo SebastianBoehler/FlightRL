@@ -40,6 +40,7 @@ The implementation follows the current Ocean pattern:
 - `tests/`: lightweight regression and smoke coverage.
 - `docs/architecture.md`: module boundaries and extension path.
 - `docs/crazyflie_bringup.md`: Crazyflie 2.1 Brushless setup, dry-run checks, demo flight, and telemetry logging.
+- `docs/crazyflie_6dof_training.md`: simulation-only 6-DoF Crazyflie training, replay, and room visualization track.
 - `docs/sim_to_real_roadmap.md`: indoor-first hardware, VLA, and sim-to-real roadmap.
 
 ## Build
@@ -166,6 +167,19 @@ Reward comparison:
 ```bash
 python scripts/compare_rewards.py --left rollout_a.csv --right rollout_b.csv
 ```
+
+Simulation-only Crazyflie 6-DoF teacher imitation:
+
+```bash
+python scripts/train_sixdof_teacher.py --task obstacle_avoidance
+python scripts/rollout_sixdof_policy.py \
+  --checkpoint artifacts/checkpoints/sixdof_obstacle_avoidance.pt \
+  --output artifacts/trajectories/sixdof_obstacle_avoidance.csv
+python scripts/visualize_crazyflie_room.py \
+  --input artifacts/trajectories/sixdof_obstacle_avoidance.csv
+```
+
+The 6-DoF checkpoints are not approved for live Crazyflie deployment. See [docs/crazyflie_6dof_training.md](docs/crazyflie_6dof_training.md).
 
 Environment-only throughput benchmark:
 
