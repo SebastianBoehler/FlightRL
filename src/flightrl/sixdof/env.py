@@ -61,28 +61,18 @@ class SixDofCrazyflieEnv:
     def reset(self, seed: int | None = None) -> tuple[np.ndarray, list[dict[str, float]]]:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        self.position[:, 0] = self.rng.uniform(-0.8, 0.8, self.num_envs)
-        self.position[:, 1] = self.rng.uniform(-0.8, 0.8, self.num_envs)
-        self.position[:, 2] = self.rng.uniform(0.35, 0.9, self.num_envs)
-        self.velocity.fill(0.0)
-        self.body_rates.fill(0.0)
-        self.quaternion[:] = euler_to_quat(
-            self.rng.normal(0.0, 0.08, self.num_envs),
-            self.rng.normal(0.0, 0.08, self.num_envs),
-            self.rng.uniform(-np.pi, np.pi, self.num_envs),
-        )
-        self.target_position[:, 0] = self.rng.uniform(-1.0, 1.0, self.num_envs)
-        self.target_position[:, 1] = self.rng.uniform(-1.0, 1.0, self.num_envs)
-        self.target_position[:, 2] = self.rng.uniform(0.45, 0.9, self.num_envs)
-        self.target_yaw[:] = self.rng.uniform(-np.pi, np.pi, self.num_envs)
-        self.previous_action.fill(0.0)
-        self.step_count.fill(0)
-        self.rewards.fill(0.0)
-        self.terminals.fill(0)
-        self.truncations.fill(0)
+        self._reset_mask(np.ones(self.num_envs, dtype=bool))
         self._update_ranges()
         self.observations[:] = self.observation()
         return self.observations, []
+
+    def reset_done(self, done: np.ndarray) -> np.ndarray:
+        mask = np.asarray(done, dtype=bool)
+        if np.any(mask):
+            self._reset_mask(mask)
+            self._update_ranges()
+            self.observations[:] = self.observation()
+        return self.observations
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
@@ -148,6 +138,30 @@ class SixDofCrazyflieEnv:
             self.target_yaw.copy(),
             self.ranges_m.copy(),
         )
+
+    def _reset_mask(self, mask: np.ndarray) -> None:
+        count = int(np.sum(mask))
+        if count == 0:
+            return
+        self.position[mask, 0] = self.rng.uniform(-0.8, 0.8, count)
+        self.position[mask, 1] = self.rng.uniform(-0.8, 0.8, count)
+        self.position[mask, 2] = self.rng.uniform(0.35, 0.9, count)
+        self.velocity[mask] = 0.0
+        self.body_rates[mask] = 0.0
+        self.quaternion[mask] = euler_to_quat(
+            self.rng.normal(0.0, 0.08, count),
+            self.rng.normal(0.0, 0.08, count),
+            self.rng.uniform(-np.pi, np.pi, count),
+        )
+        self.target_position[mask, 0] = self.rng.uniform(-1.0, 1.0, count)
+        self.target_position[mask, 1] = self.rng.uniform(-1.0, 1.0, count)
+        self.target_position[mask, 2] = self.rng.uniform(0.45, 0.9, count)
+        self.target_yaw[mask] = self.rng.uniform(-np.pi, np.pi, count)
+        self.previous_action[mask] = 0.0
+        self.step_count[mask] = 0
+        self.rewards[mask] = 0.0
+        self.terminals[mask] = 0
+        self.truncations[mask] = 0
 
     def _update_ranges(self) -> None:
         rays = body_rays_world(self.quaternion)

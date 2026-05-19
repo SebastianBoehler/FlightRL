@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from .env import SixDofCrazyflieEnv
-from .policies import SixDofPolicy
+from .policies import SixDofPolicy, teacher_actions
 from .tasks import append_task_encoding, parse_task_spec
 
 
@@ -35,18 +35,39 @@ def evaluate_policy(
     use_native_step: bool = False,
 ) -> dict:
     per_task = {
-        task: evaluate_one(model, tasks, task, seed + idx, steps, num_envs, use_native_step) for idx, task in enumerate(tasks)
+        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step) for idx, task in enumerate(tasks)
     }
+    return aggregate_task_metrics(per_task)
+
+
+def evaluate_teacher(
+    tasks: tuple[str, ...],
+    *,
+    seed: int,
+    steps: int = 300,
+    num_envs: int = 128,
+    use_native_step: bool = False,
+) -> dict:
+    per_task = {
+        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step) for idx, task in enumerate(tasks)
+    }
+    return aggregate_task_metrics(per_task)
+
+
+def aggregate_task_metrics(per_task: dict[str, dict[str, float]]) -> dict:
     return {
         "mean_reward": float(np.mean([metrics["mean_reward"] for metrics in per_task.values()])),
         "mean_position_error_m": float(np.mean([metrics["mean_position_error_m"] for metrics in per_task.values()])),
         "min_clearance_m": float(np.min([metrics["min_clearance_m"] for metrics in per_task.values()])),
+        "clearance_p01_m": float(np.min([metrics["clearance_p01_m"] for metrics in per_task.values()])),
         "mean_completed_fraction": float(np.mean([metrics["completed_fraction"] for metrics in per_task.values()])),
+        "mean_terminal_fraction": float(np.mean([metrics["terminal_fraction"] for metrics in per_task.values()])),
         "per_task": per_task,
     }
 
 
 def evaluate_one(
+    action_fn,
     model: SixDofPolicy,
     tasks: tuple[str, ...],
     task: str,
@@ -60,27 +81,38 @@ def evaluate_one(
     task_indices = np.full(env.num_envs, tasks.index(task), dtype=np.int64)
     rewards = []
     min_clearance = []
-    completed = np.ones(env.num_envs, dtype=bool)
+    survived = np.ones(env.num_envs, dtype=bool)
     for _ in range(steps):
-        model_obs = append_task_encoding(obs, task_indices, len(tasks))
-        with torch.no_grad():
-            actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
+        actions = action_fn(model, env, obs, task_indices, tasks, task)
         obs, reward, terminals, truncations, _info = env.step(actions)
         rewards.append(reward)
         min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
-        completed &= ~(terminals.astype(bool) | truncations.astype(bool))
+        survived &= ~terminals.astype(bool)
     pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
+    clearances = np.concatenate(min_clearance)
     return {
         "mean_reward": float(np.mean(rewards)),
         "mean_position_error_m": float(np.mean(pos_error)),
-        "min_clearance_m": float(np.min(min_clearance)),
-        "completed_fraction": float(np.mean(completed)),
+        "min_clearance_m": float(np.min(clearances)),
+        "clearance_p01_m": float(np.quantile(clearances, 0.01)),
+        "completed_fraction": float(np.mean(survived)),
+        "terminal_fraction": float(1.0 - np.mean(survived)),
     }
+
+
+def model_actions(model: SixDofPolicy, _env, obs: np.ndarray, task_indices: np.ndarray, tasks: tuple[str, ...], _task: str) -> np.ndarray:
+    model_obs = append_task_encoding(obs, task_indices, len(tasks))
+    with torch.no_grad():
+        return model(torch.from_numpy(model_obs).float()).cpu().numpy()
+
+
+def teacher_action(_model, env: SixDofCrazyflieEnv, _obs, _task_indices, _tasks, task: str) -> np.ndarray:
+    return teacher_actions(env, task=task)
 
 
 def gate_status(metrics: dict, *, min_clearance_m: float, min_completed_fraction: float, max_position_error_m: float) -> dict:
     failures = []
-    if metrics["min_clearance_m"] < min_clearance_m:
+    if metrics.get("clearance_p01_m", metrics["min_clearance_m"]) < min_clearance_m:
         failures.append("min_clearance")
     if metrics["mean_completed_fraction"] < min_completed_fraction:
         failures.append("completion")

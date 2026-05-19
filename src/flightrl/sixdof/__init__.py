@@ -1,5 +1,5 @@
 from .env import SixDofCrazyflieEnv
-from .evaluation import checkpoint_tasks, evaluate_policy, gate_status, load_policy_from_checkpoint
+from .evaluation import checkpoint_tasks, evaluate_policy, evaluate_teacher, gate_status, load_policy_from_checkpoint
 from .geometry import BoxRoom
 from .native import native_step, native_step_env
 from .policies import SixDofPolicy, teacher_actions
@@ -14,6 +14,7 @@ __all__ = [
     "append_task_encoding",
     "checkpoint_tasks",
     "evaluate_policy",
+    "evaluate_teacher",
     "gate_status",
     "load_policy_from_checkpoint",
     "native_step",

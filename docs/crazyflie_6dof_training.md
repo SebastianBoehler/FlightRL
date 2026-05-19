@@ -82,12 +82,20 @@ This currently compares replay summaries, not exact trajectory matching. Exact r
 
 ```bash
 python scripts/evaluate_sixdof_checkpoint.py \
+  --teacher \
+  --task position_yaw,obstacle_avoidance,circle \
+  --native-step \
+  --output artifacts/replay/sixdof_teacher_safe_tasks_gate.json
+
+python scripts/evaluate_sixdof_checkpoint.py \
   --checkpoint artifacts/checkpoints/sixdof_multitask_h256.pt \
   --native-step \
   --output artifacts/replay/sixdof_multitask_h256_gate.json
 ```
 
-The gate checks minimum simulated wall clearance, completion fraction, and mean position error. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
+The gate checks low-percentile simulated wall clearance, terminal-free completion fraction, and mean position error. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
+
+Use the teacher gate first. If the analytic teacher fails a task, a learned checkpoint for that same task is not meaningful yet. Current evidence shows position/yaw, obstacle avoidance, and circle are feasible as a reference set, while the experimental attitude task needs a better physical objective before it belongs in multi-task training.
 
 ## Native Benchmark
 

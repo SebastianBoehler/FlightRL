@@ -28,6 +28,16 @@ def test_sixdof_env_shapes_and_teacher_step() -> None:
     assert truncations.shape == (4,)
 
 
+def test_sixdof_reset_done_only_resets_done_rows() -> None:
+    env = SixDofCrazyflieEnv(num_envs=4, seed=9)
+    env.reset(seed=9)
+    before = env.position.copy()
+    obs = env.reset_done(np.asarray([False, True, False, True]))
+    assert obs.shape == (4, 28)
+    assert np.allclose(env.position[[0, 2]], before[[0, 2]])
+    assert not np.allclose(env.position[[1, 3]], before[[1, 3]])
+
+
 def test_box_room_raycast_matches_axis_aligned_distance() -> None:
     room = BoxRoom(x_min=-1.0, x_max=1.0, y_min=-1.0, y_max=1.0, z_min=0.0, z_max=2.0)
     position = np.asarray([[0.25, 0.0, 0.5]], dtype=np.float32)
@@ -187,6 +197,28 @@ def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
         capture_output=True,
     )
     assert '"gate"' in report.read_text()
+
+    teacher_report = tmp_path / "teacher_eval.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "evaluate_sixdof_checkpoint.py"),
+            "--teacher",
+            "--task",
+            "position_yaw,obstacle_avoidance",
+            "--steps",
+            "4",
+            "--num-envs",
+            "8",
+            "--output",
+            str(teacher_report),
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert '"controller": "teacher"' in teacher_report.read_text()
 
 
 def test_native_sixdof_step_matches_python_step() -> None:

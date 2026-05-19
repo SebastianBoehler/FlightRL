@@ -179,6 +179,10 @@ python scripts/rollout_sixdof_policy.py \
 python scripts/evaluate_sixdof_checkpoint.py \
   --checkpoint artifacts/checkpoints/sixdof_multitask.pt \
   --output artifacts/replay/sixdof_multitask_gate.json
+python scripts/evaluate_sixdof_checkpoint.py \
+  --teacher \
+  --task position_yaw,obstacle_avoidance,circle \
+  --output artifacts/replay/sixdof_teacher_safe_tasks_gate.json
 python scripts/visualize_crazyflie_room.py \
   --input artifacts/trajectories/sixdof_obstacle_avoidance.csv
 ```

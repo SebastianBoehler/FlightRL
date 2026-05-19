@@ -55,7 +55,7 @@ def main() -> None:
                     actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
             obs, _rewards, terminals, truncations, _info = env.step(actions)
             if np.any(terminals) or np.any(truncations):
-                obs, _ = env.reset()
+                obs = env.reset_done(terminals | truncations)
 
         loss = train_epoch(model, optimizer, np.concatenate(obs_batch), np.concatenate(act_batch), args.batch_size)
         if update == 1 or update % max(1, args.updates // 10) == 0:
