@@ -4,7 +4,7 @@ import pytest
 
 from flightrl.hardware.config import CrazyflieHardwareConfig
 from flightrl.hardware.errors import HardwareSafetyError
-from flightrl.hardware.motion import DemoFlightPlan, execute_demo_flight
+from flightrl.hardware.motion import DemoFlightPlan, arm_for_flight, disarm_after_flight, execute_demo_flight
 
 
 class FakeCommander:
@@ -25,6 +25,14 @@ class FakeCommander:
 
     def land(self, velocity: float) -> None:
         self.calls.append(("land", (velocity,)))
+
+
+class FakeSupervisor:
+    def __init__(self) -> None:
+        self.requests: list[bool] = []
+
+    def send_arming_request(self, do_arm: bool) -> None:
+        self.requests.append(do_arm)
 
 
 def test_demo_sequence_uses_conservative_motion_primitives() -> None:
@@ -49,3 +57,12 @@ def test_demo_requires_confirmation_when_config_demands_it() -> None:
 
     with pytest.raises(HardwareSafetyError, match="manual confirmation"):
         DemoFlightPlan.from_config(config, confirmed=False)
+
+
+def test_arm_and_disarm_use_supervisor_requests() -> None:
+    supervisor = FakeSupervisor()
+
+    arm_for_flight(supervisor, sleep=lambda _: None)
+    disarm_after_flight(supervisor, sleep=lambda _: None)
+
+    assert supervisor.requests == [True, False]

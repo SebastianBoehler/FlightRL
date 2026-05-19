@@ -7,7 +7,13 @@ from pathlib import Path
 from flightrl.hardware.cflib_bridge import require_cflib, request_platform_info, scan_interfaces, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.errors import HardwareError
-from flightrl.hardware.motion import DemoFlightPlan, build_motion_commander, execute_demo_flight
+from flightrl.hardware.motion import (
+    DemoFlightPlan,
+    arm_for_flight,
+    build_motion_commander,
+    disarm_after_flight,
+    execute_demo_flight,
+)
 from flightrl.hardware.preflight import expected_deck_params, inspect_decks, inspect_log_variables
 
 
@@ -102,8 +108,12 @@ def _demo(config, dry_run: bool, confirmed: bool) -> int:
         return 0
     modules = require_cflib()
     with sync_crazyflie_context(config, modules) as scf:
-        commander = build_motion_commander(scf, modules, config)
-        execute_demo_flight(commander, plan)
+        try:
+            arm_for_flight(scf.cf.supervisor)
+            commander = build_motion_commander(scf, modules, config)
+            execute_demo_flight(commander, plan)
+        finally:
+            disarm_after_flight(scf.cf.supervisor)
     return 0
 
 

@@ -16,6 +16,10 @@ class MotionCommanderLike(Protocol):
     def land(self, velocity: float) -> None: ...
 
 
+class SupervisorLike(Protocol):
+    def send_arming_request(self, do_arm: bool) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DemoFlightPlan:
     default_height_m: float = 0.3
@@ -70,3 +74,13 @@ def execute_demo_flight(
 
 def build_motion_commander(scf, modules, config: CrazyflieHardwareConfig):
     return modules.motion_commander_cls(scf, default_height=config.safety.default_height_m)
+
+
+def arm_for_flight(supervisor: SupervisorLike, *, sleep: Callable[[float], None] = default_sleep) -> None:
+    supervisor.send_arming_request(True)
+    sleep(0.5)
+
+
+def disarm_after_flight(supervisor: SupervisorLike, *, sleep: Callable[[float], None] = default_sleep) -> None:
+    supervisor.send_arming_request(False)
+    sleep(0.2)
