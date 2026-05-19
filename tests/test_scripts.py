@@ -157,3 +157,44 @@ def test_ranger_avoidance_training_and_dry_run_deploy(tmp_path: Path) -> None:
         text=True,
     )
     assert "dry_run avoidance command" in deploy.stdout
+
+
+def test_ranger_hold_training_and_dry_run_deploy(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "hold.pt"
+    train = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_ranger_hold.py",
+            "--samples",
+            "128",
+            "--epochs",
+            "2",
+            "--checkpoint",
+            str(checkpoint),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert checkpoint.exists()
+    assert "checkpoint=" in train.stdout
+
+    output = tmp_path / "hold.csv"
+    deploy = subprocess.run(
+        [
+            sys.executable,
+            "scripts/crazyflie_hold_policy.py",
+            "--checkpoint",
+            str(checkpoint),
+            "--dry-run",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert output.exists()
+    assert "wrote 1 rows" in deploy.stdout

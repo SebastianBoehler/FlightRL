@@ -70,6 +70,35 @@ python scripts/crazyflie_log.py --duration-s 10
 
 CSV columns start with `host_time_s` and `crazyflie_time_ms`, followed by configured cflib log variables. These logs are intended for later parameter fitting and sim-to-real replay checks.
 
+## Ranger Hold Policy
+
+The current learned hardware policy runs above the Crazyflie firmware stabilizer. It emits bounded velocity, vertical velocity, and yaw-rate setpoints; it does not command motors directly.
+
+Train the checkpoint:
+
+```bash
+python scripts/train_ranger_hold.py --checkpoint artifacts/checkpoints/ranger_hold.pt
+```
+
+Dry-run the loader and command serialization:
+
+```bash
+python scripts/crazyflie_hold_policy.py \
+  --checkpoint artifacts/checkpoints/ranger_hold.pt \
+  --dry-run
+```
+
+After charging the battery and checking that the Bitcraze client is closed, run a cautious live test:
+
+```bash
+python scripts/crazyflie_hold_policy.py \
+  --checkpoint artifacts/checkpoints/ranger_hold.pt \
+  --confirm-flight \
+  --duration-s 15 \
+  --max-speed-m-s 0.20 \
+  --max-vertical-speed-m-s 0.14
+```
+
 ## RL Boundary
 
-The current simulator is still planar and useful for fast hover/reach experiments. Do not deploy FlightRL policies to the real Crazyflie yet. The next hardware-safe policy interface should emit bounded velocity, position, altitude, and yaw setpoints through cflib; it should not command direct motors.
+The current simulator is still planar and useful for fast hover/reach experiments. Hardware policy deployment must stay at the setpoint layer until FlightRL has a 6-DoF model, replay comparison, and broader safety gates. Learned policies should emit bounded velocity, altitude, and yaw setpoints through cflib; they should not command direct motors.
