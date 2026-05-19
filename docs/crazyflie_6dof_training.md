@@ -16,7 +16,7 @@ The `flightrl.sixdof` package adds a port-ready 6-DoF reference surface:
 
 The code is written as a Python/Numpy spec first so behavior can be tested quickly before lowering the same structure into the native C/PufferLib path.
 
-The first native lowering is available as `flightrl.sixdof.native_step`, backed by `src/flightrl/native/native_sixdof.c`. It currently mirrors one vectorized dynamics/raycast step and is exported with the PufferLib native files, but it is not yet a full standalone PufferLib/Ocean environment.
+The first native lowering is available through `SixDofCrazyflieEnv(use_native_step=True)`, backed by `src/flightrl/native/native_sixdof.c`. It now handles the hot path in C: dynamics, raycasts, step counters, observation assembly, rewards, termination flags, and previous-action recording. It is exported with the PufferLib native files, but it is not yet a full standalone PufferLib/Ocean environment.
 
 ## Train Checkpoints
 
@@ -38,6 +38,8 @@ python scripts/train_sixdof_teacher.py --task obstacle_avoidance --updates 400 -
 python scripts/train_sixdof_teacher.py --task attitude --updates 400 --num-envs 1024
 python scripts/train_sixdof_teacher.py --task circle --updates 400 --num-envs 1024
 ```
+
+Add `--native-step` to run the same training loop through the native C 6-DoF env hot path.
 
 Default outputs:
 
@@ -78,7 +80,7 @@ This currently compares replay summaries, not exact trajectory matching. Exact r
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
 ```
 
-This compares the Python vectorized spec against the native C batch step. The benchmark is an implementation-health signal, not a policy-quality metric.
+This compares the Python vectorized spec, the raw native C dynamics/raycast kernel, and the native-backed environment hot loop. The benchmark is an implementation-health signal, not a policy-quality metric.
 
 ## Hardware Boundary
 

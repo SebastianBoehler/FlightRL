@@ -52,6 +52,10 @@ class SixDofCrazyflieEnv:
         self.target_yaw = np.zeros(self.num_envs, dtype=np.float32)
         self.ranges_m = np.zeros((self.num_envs, 6), dtype=np.float32)
         self.step_count = np.zeros(self.num_envs, dtype=np.int32)
+        self.observations = np.zeros((self.num_envs, OBSERVATION_DIM), dtype=np.float32)
+        self.rewards = np.zeros(self.num_envs, dtype=np.float32)
+        self.terminals = np.zeros(self.num_envs, dtype=np.uint8)
+        self.truncations = np.zeros(self.num_envs, dtype=np.uint8)
         self.reset(seed=seed)
 
     def reset(self, seed: int | None = None) -> tuple[np.ndarray, list[dict[str, float]]]:
@@ -73,15 +77,20 @@ class SixDofCrazyflieEnv:
         self.target_yaw[:] = self.rng.uniform(-np.pi, np.pi, self.num_envs)
         self.previous_action.fill(0.0)
         self.step_count.fill(0)
+        self.rewards.fill(0.0)
+        self.terminals.fill(0)
+        self.truncations.fill(0)
         self._update_ranges()
-        return self.observation(), []
+        self.observations[:] = self.observation()
+        return self.observations, []
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
         if self.use_native_step:
-            from .native import native_step
+            from .native import native_step_env
 
-            native_step(self.position, self.velocity, self.quaternion, self.body_rates, self.ranges_m, clipped, self.dt)
+            native_step_env(self, clipped)
+            return self.observations, self.rewards, self.terminals, self.truncations, []
         else:
             self._python_step(clipped)
         self.step_count += 1
@@ -89,8 +98,11 @@ class SixDofCrazyflieEnv:
         terminated = ~self.room.contains(self.position)
         truncated = self.step_count >= 800
         self.previous_action[:] = clipped
-        obs = self.observation()
-        return obs, reward, terminated.astype(np.uint8), truncated.astype(np.uint8), []
+        self.observations[:] = self.observation()
+        self.rewards[:] = reward
+        self.terminals[:] = terminated.astype(np.uint8)
+        self.truncations[:] = truncated.astype(np.uint8)
+        return self.observations, self.rewards, self.terminals, self.truncations, []
 
     def _python_step(self, clipped: np.ndarray) -> None:
         thrust = self.mass * self.gravity * (1.0 + 0.75 * clipped[:, 0])

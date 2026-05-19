@@ -142,6 +142,7 @@ static PyMethodDef methods[] = {
     {"vec_log", vec_log, METH_VARARGS, "Aggregate episode logs"},
     {"vec_close", vec_close, METH_VARARGS, "Close all environments"},
     {"sixdof_step", sixdof_step, METH_VARARGS, "Step vectorized 6-DoF Crazyflie state arrays"},
+    {"sixdof_step_env", sixdof_step_env, METH_VARARGS, "Step vectorized 6-DoF Crazyflie env buffers"},
     {NULL, NULL, 0, NULL},
 };
 
