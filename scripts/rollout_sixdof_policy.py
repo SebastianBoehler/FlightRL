@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--task", default=None)
     parser.add_argument("--teacher", action="store_true")
+    parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--steps", type=int, default=600)
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--output", default="artifacts/trajectories/sixdof_rollout.csv")
@@ -23,7 +24,7 @@ def main() -> None:
 
     checkpoint = load_checkpoint(args.checkpoint) if args.checkpoint else None
     task = args.task or (checkpoint.get("task") if checkpoint else "position_yaw")
-    env = SixDofCrazyflieEnv(num_envs=1, seed=args.seed, task=task)
+    env = SixDofCrazyflieEnv(num_envs=1, seed=args.seed, task=task, use_native_step=args.native_step)
     model = load_model(checkpoint) if checkpoint and not args.teacher else None
     obs, _ = env.reset(seed=args.seed)
     rows = []

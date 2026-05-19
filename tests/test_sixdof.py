@@ -134,3 +134,21 @@ def test_native_sixdof_step_matches_python_step() -> None:
     assert np.allclose(quaternion, env.quaternion, atol=1e-6)
     assert np.allclose(body_rates, env.body_rates, atol=1e-6)
     assert np.allclose(ranges, env.ranges_m, atol=1e-5)
+
+
+def test_native_step_env_matches_python_env_rollout() -> None:
+    python_env = SixDofCrazyflieEnv(num_envs=8, seed=41, use_native_step=False)
+    native_env = SixDofCrazyflieEnv(num_envs=8, seed=41, use_native_step=True)
+    obs_py, _ = python_env.reset(seed=41)
+    obs_native, _ = native_env.reset(seed=41)
+    assert np.allclose(obs_py, obs_native)
+
+    rng = np.random.default_rng(41)
+    for _ in range(12):
+        actions = rng.uniform(-0.25, 0.25, size=(8, 4)).astype(np.float32)
+        obs_py, rewards_py, terminals_py, truncations_py, _ = python_env.step(actions)
+        obs_native, rewards_native, terminals_native, truncations_native, _ = native_env.step(actions)
+        assert np.allclose(obs_py, obs_native, atol=1e-5)
+        assert np.allclose(rewards_py, rewards_native, atol=1e-5)
+        assert np.array_equal(terminals_py, terminals_native)
+        assert np.array_equal(truncations_py, truncations_native)

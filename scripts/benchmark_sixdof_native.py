@@ -17,10 +17,13 @@ def main() -> None:
 
     actions = random_actions(args.num_envs, args.steps, args.seed)
     python_sps = benchmark_python(args.num_envs, actions, args.seed)
-    native_sps = benchmark_native(args.num_envs, actions, args.seed)
+    native_raw_sps = benchmark_native_raw(args.num_envs, actions, args.seed)
+    native_env_sps = benchmark_native_env(args.num_envs, actions, args.seed)
     print(f"python_steps_per_second={python_sps:.0f}")
-    print(f"native_steps_per_second={native_sps:.0f}")
-    print(f"speedup={native_sps / max(python_sps, 1.0):.2f}x")
+    print(f"native_raw_steps_per_second={native_raw_sps:.0f}")
+    print(f"native_env_steps_per_second={native_env_sps:.0f}")
+    print(f"raw_speedup={native_raw_sps / max(python_sps, 1.0):.2f}x")
+    print(f"env_speedup={native_env_sps / max(python_sps, 1.0):.2f}x")
 
 
 def random_actions(num_envs: int, steps: int, seed: int) -> np.ndarray:
@@ -29,7 +32,7 @@ def random_actions(num_envs: int, steps: int, seed: int) -> np.ndarray:
 
 
 def benchmark_python(num_envs: int, actions: np.ndarray, seed: int) -> float:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed)
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=False)
     env.reset(seed=seed)
     start = perf_counter()
     for action in actions:
@@ -37,12 +40,21 @@ def benchmark_python(num_envs: int, actions: np.ndarray, seed: int) -> float:
     return actions.shape[0] * num_envs / (perf_counter() - start)
 
 
-def benchmark_native(num_envs: int, actions: np.ndarray, seed: int) -> float:
+def benchmark_native_raw(num_envs: int, actions: np.ndarray, seed: int) -> float:
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed)
     env.reset(seed=seed)
     start = perf_counter()
     for action in actions:
         native_step(env.position, env.velocity, env.quaternion, env.body_rates, env.ranges_m, action, env.dt)
+    return actions.shape[0] * num_envs / (perf_counter() - start)
+
+
+def benchmark_native_env(num_envs: int, actions: np.ndarray, seed: int) -> float:
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=True)
+    env.reset(seed=seed)
+    start = perf_counter()
+    for action in actions:
+        env.step(action)
     return actions.shape[0] * num_envs / (perf_counter() - start)
 
 

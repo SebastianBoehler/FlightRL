@@ -30,10 +30,12 @@ class SixDofCrazyflieEnv:
         room: BoxRoom | None = None,
         dt: float = 0.01,
         task: str = "position_yaw",
+        use_native_step: bool = False,
     ) -> None:
         self.num_envs = int(num_envs)
         self.dt = float(dt)
         self.task = task
+        self.use_native_step = bool(use_native_step)
         self.room = room or BoxRoom()
         self.rng = np.random.default_rng(seed)
         self.mass = 0.036
@@ -76,6 +78,21 @@ class SixDofCrazyflieEnv:
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
+        if self.use_native_step:
+            from .native import native_step
+
+            native_step(self.position, self.velocity, self.quaternion, self.body_rates, self.ranges_m, clipped, self.dt)
+        else:
+            self._python_step(clipped)
+        self.step_count += 1
+        reward = self._reward(clipped)
+        terminated = ~self.room.contains(self.position)
+        truncated = self.step_count >= 800
+        self.previous_action[:] = clipped
+        obs = self.observation()
+        return obs, reward, terminated.astype(np.uint8), truncated.astype(np.uint8), []
+
+    def _python_step(self, clipped: np.ndarray) -> None:
         thrust = self.mass * self.gravity * (1.0 + 0.75 * clipped[:, 0])
         commanded_rates = clipped[:, 1:4] * self.max_rate
         alpha = self.dt / (self.rate_tau + self.dt)
@@ -87,14 +104,7 @@ class SixDofCrazyflieEnv:
         acceleration -= self.drag * self.velocity
         self.velocity += acceleration.astype(np.float32) * self.dt
         self.position += self.velocity * self.dt
-        self.step_count += 1
         self._update_ranges()
-        reward = self._reward(clipped)
-        terminated = ~self.room.contains(self.position)
-        truncated = self.step_count >= 800
-        self.previous_action[:] = clipped
-        obs = self.observation()
-        return obs, reward, terminated.astype(np.uint8), truncated.astype(np.uint8), []
 
     def observation(self) -> np.ndarray:
         pos_error = self.target_position - self.position

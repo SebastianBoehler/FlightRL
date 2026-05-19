@@ -26,12 +26,13 @@ def main() -> None:
     parser.add_argument("--student-rollout-after", type=int, default=12)
     parser.add_argument("--student-rollout-prob", type=float, default=0.5)
     parser.add_argument("--reset-each-update", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--native-step", action="store_true", help="Use the native C 6-DoF dynamics/raycast step")
     parser.add_argument("--seed", type=int, default=11)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    env = SixDofCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=args.task)
+    env = SixDofCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=args.task, use_native_step=args.native_step)
     model = SixDofPolicy(hidden_size=args.hidden_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
     obs, _ = env.reset(seed=args.seed)
@@ -65,7 +66,7 @@ def main() -> None:
 
     checkpoint = Path(args.checkpoint or f"artifacts/checkpoints/sixdof_{args.task}.pt")
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    metrics = evaluate(model, args.task, seed=args.seed + 999)
+    metrics = evaluate(model, args.task, seed=args.seed + 999, use_native_step=args.native_step)
     torch.save(
         {
             "state_dict": model.state_dict(),
@@ -74,6 +75,7 @@ def main() -> None:
             "observation_dim": 28,
             "action_dim": 4,
             "metrics": metrics,
+            "use_native_step": args.native_step,
             "note": "Simulation-only 6-DoF teacher imitation checkpoint; not approved for live hardware.",
         },
         checkpoint,
@@ -99,8 +101,8 @@ def train_epoch(model, optimizer, observations: np.ndarray, targets: np.ndarray,
     return float(np.mean(losses))
 
 
-def evaluate(model: SixDofPolicy, task: str, seed: int, steps: int = 300) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(num_envs=128, seed=seed, task=task)
+def evaluate(model: SixDofPolicy, task: str, seed: int, steps: int = 300, use_native_step: bool = False) -> dict[str, float]:
+    env = SixDofCrazyflieEnv(num_envs=128, seed=seed, task=task, use_native_step=use_native_step)
     obs, _ = env.reset(seed=seed)
     rewards = []
     min_clearance = []
