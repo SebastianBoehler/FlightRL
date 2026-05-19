@@ -40,3 +40,15 @@ def test_crazyflie_log_dry_run_does_not_record_fake_telemetry() -> None:
         text=True,
     )
     assert "no telemetry was recorded" in result.stdout
+
+
+def test_crazyflie_motor_bench_dry_run_runs_without_cflib() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/crazyflie_motor_bench.py", "--dry-run"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "dry_run motor bench" in result.stdout
+    assert "m4" in result.stdout

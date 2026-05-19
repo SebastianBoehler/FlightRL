@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from flightrl.hardware.cflib_bridge import require_cflib, scan_interfaces, sync_crazyflie_context
+from flightrl.hardware.cflib_bridge import require_cflib, request_platform_info, scan_interfaces, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.errors import HardwareError
 from flightrl.hardware.motion import DemoFlightPlan, build_motion_commander, execute_demo_flight
@@ -81,9 +81,10 @@ def _check(config, dry_run: bool) -> int:
         return 0
     modules = require_cflib()
     with sync_crazyflie_context(config, modules) as scf:
+        platform = request_platform_info(scf.cf)
         deck_report = inspect_decks(scf, config)
         log_report = inspect_log_variables(scf, config)
-    for name, value in {**deck_report.details, **log_report.details}.items():
+    for name, value in {**platform, **deck_report.details, **log_report.details}.items():
         print(f"{name}={value}")
     for warning in (*deck_report.warnings, *log_report.warnings):
         print(f"warning: {warning}", file=sys.stderr)

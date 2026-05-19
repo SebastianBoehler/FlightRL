@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
+from threading import Event
 from types import ModuleType
 from typing import Callable
 
@@ -62,3 +63,31 @@ def sync_crazyflie_context(config: CrazyflieHardwareConfig, modules: CflibModule
     init_drivers(modules)
     crazyflie = modules.crazyflie_cls(rw_cache=config.radio.cache_dir)
     return modules.sync_crazyflie_cls(config.radio.uri, cf=crazyflie)
+
+
+def request_platform_string(cf, command: int, *, timeout_s: float = 2.0) -> str:
+    from cflib.crtp.crtpstack import CRTPPacket, CRTPPort
+
+    version_channel = 1
+    event = Event()
+    result = {"value": "<timeout>"}
+
+    def callback(packet) -> None:
+        if packet.channel == version_channel and packet.data and packet.data[0] == command:
+            result["value"] = bytes(packet.data[1:]).decode("utf8", errors="replace").rstrip("\x00")
+            event.set()
+
+    cf.add_port_callback(CRTPPort.PLATFORM, callback)
+    packet = CRTPPacket()
+    packet.set_header(CRTPPort.PLATFORM, version_channel)
+    packet.data = (command,)
+    cf.send_packet(packet)
+    event.wait(timeout_s)
+    return result["value"]
+
+
+def request_platform_info(cf) -> dict[str, str]:
+    return {
+        "firmware_version": request_platform_string(cf, 1),
+        "device_type": request_platform_string(cf, 2),
+    }
