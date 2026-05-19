@@ -97,6 +97,27 @@ def teacher_command(
     return command.clipped(max_speed=max_speed_m_s)
 
 
+def reactive_clearance_command(
+    reading: RangerReading,
+    *,
+    clearance_m: float = 0.45,
+    hard_clearance_m: float = 0.10,
+    target_height_m: float = 0.45,
+    max_speed_m_s: float = 0.25,
+) -> AvoidanceCommand:
+    vx_pressure = _axis_clearance_pressure(reading.back_m, reading.front_m, clearance_m, hard_clearance_m)
+    vy_pressure = _axis_clearance_pressure(reading.right_m, reading.left_m, clearance_m, hard_clearance_m)
+    bottom_pressure = _clearance_pressure(reading.zrange_m, 0.35, hard_clearance_m)
+    top_pressure = _clearance_pressure(reading.up_m, clearance_m, hard_clearance_m)
+    command = AvoidanceCommand(
+        vx_m_s=max_speed_m_s * vx_pressure,
+        vy_m_s=max_speed_m_s * vy_pressure,
+        yawrate_deg_s=0.0,
+        zdistance_m=target_height_m + 0.30 * bottom_pressure - 0.25 * top_pressure,
+    )
+    return command.clipped(max_speed=max_speed_m_s)
+
+
 def command_from_model(model: RangerAvoidancePolicy, reading: RangerReading) -> AvoidanceCommand:
     obs = normalize_reading(reading)[None, :]
     with torch.no_grad():
@@ -117,6 +138,16 @@ def command_row(command: AvoidanceCommand) -> dict[str, float]:
     }
 
 
+def vertical_velocity_from_height_error(
+    command: AvoidanceCommand,
+    reading: RangerReading,
+    *,
+    gain: float = 0.8,
+    max_vertical_speed_m_s: float = 0.18,
+) -> float:
+    return float(np.clip(gain * (command.zdistance_m - reading.zrange_m), -max_vertical_speed_m_s, max_vertical_speed_m_s))
+
+
 def sample_readings(count: int, rng: np.random.Generator) -> list[RangerReading]:
     samples = []
     for _ in range(count):
@@ -132,6 +163,25 @@ def _norm(value: float, max_range_m: float) -> float:
 
 def _pressure(distance_m: float, min_distance_m: float) -> float:
     return float(np.clip((min_distance_m - distance_m) / min_distance_m, 0.0, 1.0))
+
+
+def _clearance_pressure(distance_m: float, clearance_m: float, hard_clearance_m: float) -> float:
+    if clearance_m <= hard_clearance_m:
+        raise ValueError("clearance_m must be greater than hard_clearance_m")
+    scaled = np.clip((clearance_m - distance_m) / (clearance_m - hard_clearance_m), 0.0, 1.0)
+    return float(np.sqrt(scaled))
+
+
+def _axis_clearance_pressure(positive_side_m: float, negative_side_m: float, clearance_m: float, hard_clearance_m: float) -> float:
+    if positive_side_m <= hard_clearance_m and positive_side_m < negative_side_m:
+        return 1.0
+    if negative_side_m <= hard_clearance_m and negative_side_m < positive_side_m:
+        return -1.0
+    return _clearance_pressure(positive_side_m, clearance_m, hard_clearance_m) - _clearance_pressure(
+        negative_side_m,
+        clearance_m,
+        hard_clearance_m,
+    )
 
 
 def _range_m(values: Mapping[str, float], key: str) -> float:

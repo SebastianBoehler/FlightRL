@@ -8,7 +8,9 @@ from flightrl.hardware.avoidance_policy import (
     RangerReading,
     command_row,
     normalize_reading,
+    reactive_clearance_command,
     teacher_command,
+    vertical_velocity_from_height_error,
 )
 
 
@@ -46,3 +48,30 @@ def test_command_row_serializes_slots_dataclass() -> None:
         "yawrate_deg_s": 3.0,
         "zdistance_m": 0.45,
     }
+
+
+def test_reactive_clearance_moves_away_from_each_side() -> None:
+    front = reactive_clearance_command(RangerReading(front_m=0.1, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
+    right = reactive_clearance_command(RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=0.1, up_m=2.0, zrange_m=0.45))
+    left = reactive_clearance_command(RangerReading(front_m=2.0, back_m=2.0, left_m=0.1, right_m=2.0, up_m=2.0, zrange_m=0.45))
+
+    assert front.vx_m_s < -0.2
+    assert right.vy_m_s > 0.2
+    assert left.vy_m_s < -0.2
+
+
+def test_vertical_velocity_uses_height_error() -> None:
+    command = reactive_clearance_command(
+        RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.12),
+        target_height_m=0.45,
+    )
+    vz = vertical_velocity_from_height_error(command, RangerReading(2.0, 2.0, 2.0, 2.0, 2.0, 0.12))
+
+    assert command.zdistance_m > 0.45
+    assert vz > 0.0
+
+
+def test_reactive_hard_clearance_dominates_opposite_sensor() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=0.20, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s == -0.25
