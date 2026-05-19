@@ -9,10 +9,11 @@ from .geometry import quat_to_matrix
 
 
 class SixDofPolicy(nn.Module):
-    def __init__(self, hidden_size: int = 128, output_dim: int = ACTION_DIM) -> None:
+    def __init__(self, hidden_size: int = 128, output_dim: int = ACTION_DIM, input_dim: int = OBSERVATION_DIM) -> None:
         super().__init__()
+        self.input_dim = int(input_dim)
         self.net = nn.Sequential(
-            nn.Linear(OBSERVATION_DIM, hidden_size),
+            nn.Linear(self.input_dim, hidden_size),
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.SiLU(),

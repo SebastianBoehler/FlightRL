@@ -172,9 +172,13 @@ Simulation-only Crazyflie 6-DoF teacher imitation:
 
 ```bash
 python scripts/train_sixdof_teacher.py --task obstacle_avoidance
+python scripts/train_sixdof_teacher.py --task multitask
 python scripts/rollout_sixdof_policy.py \
   --checkpoint artifacts/checkpoints/sixdof_obstacle_avoidance.pt \
   --output artifacts/trajectories/sixdof_obstacle_avoidance.csv
+python scripts/evaluate_sixdof_checkpoint.py \
+  --checkpoint artifacts/checkpoints/sixdof_multitask.pt \
+  --output artifacts/replay/sixdof_multitask_gate.json
 python scripts/visualize_crazyflie_room.py \
   --input artifacts/trajectories/sixdof_obstacle_avoidance.csv
 ```

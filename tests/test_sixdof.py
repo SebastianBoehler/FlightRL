@@ -116,6 +116,79 @@ def test_sixdof_training_and_rollout_smoke(tmp_path: Path) -> None:
     assert "stateEstimate.x" in rows[0]
 
 
+def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "sixdof_multitask.pt"
+    train = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "train_sixdof_teacher.py"),
+            "--task",
+            "position_yaw,obstacle_avoidance",
+            "--updates",
+            "1",
+            "--steps-per-update",
+            "2",
+            "--num-envs",
+            "8",
+            "--batch-size",
+            "16",
+            "--checkpoint",
+            str(checkpoint),
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert checkpoint.exists()
+    assert "per_task" in train.stdout
+
+    rollout = tmp_path / "multitask_rollout.csv"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "rollout_sixdof_policy.py"),
+            "--checkpoint",
+            str(checkpoint),
+            "--task",
+            "obstacle_avoidance",
+            "--steps",
+            "4",
+            "--output",
+            str(rollout),
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    with rollout.open() as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 4
+    assert "action_thrust" in rows[0]
+
+    report = tmp_path / "multitask_eval.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "evaluate_sixdof_checkpoint.py"),
+            "--checkpoint",
+            str(checkpoint),
+            "--steps",
+            "4",
+            "--num-envs",
+            "8",
+            "--output",
+            str(report),
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert '"gate"' in report.read_text()
+
+
 def test_native_sixdof_step_matches_python_step() -> None:
     env = SixDofCrazyflieEnv(num_envs=16, seed=31)
     env.reset(seed=31)

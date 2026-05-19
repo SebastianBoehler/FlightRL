@@ -7,15 +7,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, teacher_actions
-
-
-TASKS = ("position_yaw", "obstacle_avoidance", "attitude", "circle")
+from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, evaluate_policy, teacher_actions
+from flightrl.sixdof.tasks import MULTITASK, TASKS, append_task_encoding, parse_task_spec, select_task_actions, task_observation_dim
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train a vectorized 6-DoF Crazyflie teacher-imitation policy")
-    parser.add_argument("--task", choices=TASKS, default="position_yaw")
+    parser.add_argument("--task", default="position_yaw", help=f"One of {', '.join(TASKS)}, '{MULTITASK}', or comma-separated tasks")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--updates", type=int, default=240)
     parser.add_argument("--steps-per-update", type=int, default=48)
@@ -32,8 +30,11 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    env = SixDofCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=args.task, use_native_step=args.native_step)
-    model = SixDofPolicy(hidden_size=args.hidden_size)
+    tasks = parse_task_spec(args.task)
+    rng = np.random.default_rng(args.seed)
+    env = SixDofCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=tasks[0], use_native_step=args.native_step)
+    input_dim = 28 + task_observation_dim(tasks)
+    model = SixDofPolicy(hidden_size=args.hidden_size, input_dim=input_dim)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
     obs, _ = env.reset(seed=args.seed)
 
@@ -43,20 +44,22 @@ def main() -> None:
         obs_batch: list[np.ndarray] = []
         act_batch: list[np.ndarray] = []
         for _ in range(args.steps_per_update):
-            labels = teacher_actions(env, task=args.task)
-            obs_batch.append(obs.copy())
+            task_indices = sample_task_indices(rng, env.num_envs, tasks)
+            labels = teacher_labels(env, tasks, task_indices)
+            model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
+            obs_batch.append(model_obs)
             act_batch.append(labels.copy())
             actions = labels
             if update >= args.student_rollout_after and np.random.random() < args.student_rollout_prob:
                 with torch.no_grad():
-                    actions = model(torch.from_numpy(obs).float()).cpu().numpy()
+                    actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
             obs, _rewards, terminals, truncations, _info = env.step(actions)
             if np.any(terminals) or np.any(truncations):
                 obs, _ = env.reset()
 
         loss = train_epoch(model, optimizer, np.concatenate(obs_batch), np.concatenate(act_batch), args.batch_size)
         if update == 1 or update % max(1, args.updates // 10) == 0:
-            metrics = evaluate(model, args.task, seed=args.seed + update)
+            metrics = evaluate_policy(model, tasks, seed=args.seed + update)
             print(
                 f"update={update} loss={loss:.6f} "
                 f"reward={metrics['mean_reward']:.3f} pos_err={metrics['mean_position_error_m']:.3f} "
@@ -64,15 +67,19 @@ def main() -> None:
                 flush=True,
             )
 
-    checkpoint = Path(args.checkpoint or f"artifacts/checkpoints/sixdof_{args.task}.pt")
+    checkpoint_name = args.task.replace(",", "_")
+    checkpoint = Path(args.checkpoint or f"artifacts/checkpoints/sixdof_{checkpoint_name}.pt")
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    metrics = evaluate(model, args.task, seed=args.seed + 999, use_native_step=args.native_step)
+    metrics = evaluate_policy(model, tasks, seed=args.seed + 999, use_native_step=args.native_step)
     torch.save(
         {
             "state_dict": model.state_dict(),
             "task": args.task,
+            "tasks": list(tasks),
+            "task_conditioned": len(tasks) > 1,
             "hidden_size": args.hidden_size,
-            "observation_dim": 28,
+            "observation_dim": input_dim,
+            "base_observation_dim": 28,
             "action_dim": 4,
             "metrics": metrics,
             "use_native_step": args.native_step,
@@ -82,6 +89,18 @@ def main() -> None:
     )
     print(f"checkpoint={checkpoint}")
     print(f"metrics={metrics}")
+
+
+def sample_task_indices(rng: np.random.Generator, num_envs: int, tasks: tuple[str, ...]) -> np.ndarray:
+    if len(tasks) == 1:
+        return np.zeros(num_envs, dtype=np.int64)
+    return rng.integers(0, len(tasks), size=num_envs, dtype=np.int64)
+
+
+def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
+    if len(tasks) == 1:
+        return teacher_actions(env, task=tasks[0])
+    return select_task_actions({task: teacher_actions(env, task=task) for task in tasks}, task_indices, tasks)
 
 
 def train_epoch(model, optimizer, observations: np.ndarray, targets: np.ndarray, batch_size: int) -> float:
@@ -99,27 +118,6 @@ def train_epoch(model, optimizer, observations: np.ndarray, targets: np.ndarray,
         optimizer.step()
         losses.append(float(loss.detach()))
     return float(np.mean(losses))
-
-
-def evaluate(model: SixDofPolicy, task: str, seed: int, steps: int = 300, use_native_step: bool = False) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(num_envs=128, seed=seed, task=task, use_native_step=use_native_step)
-    obs, _ = env.reset(seed=seed)
-    rewards = []
-    min_clearance = []
-    for _ in range(steps):
-        with torch.no_grad():
-            actions = model(torch.from_numpy(obs).float()).cpu().numpy()
-        obs, reward, terminals, truncations, _info = env.step(actions)
-        rewards.append(reward)
-        min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
-        if np.any(terminals) or np.any(truncations):
-            obs, _ = env.reset()
-    pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
-    return {
-        "mean_reward": float(np.mean(rewards)),
-        "mean_position_error_m": float(np.mean(pos_error)),
-        "min_clearance_m": float(np.min(min_clearance)),
-    }
 
 
 if __name__ == "__main__":

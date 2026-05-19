@@ -37,6 +37,7 @@ python scripts/train_sixdof_teacher.py --task position_yaw --updates 400 --num-e
 python scripts/train_sixdof_teacher.py --task obstacle_avoidance --updates 400 --num-envs 1024
 python scripts/train_sixdof_teacher.py --task attitude --updates 400 --num-envs 1024
 python scripts/train_sixdof_teacher.py --task circle --updates 400 --num-envs 1024
+python scripts/train_sixdof_teacher.py --task multitask --updates 400 --num-envs 1024
 ```
 
 Add `--native-step` to run the same training loop through the native C 6-DoF env hot path.
@@ -47,6 +48,9 @@ Default outputs:
 - `artifacts/checkpoints/sixdof_obstacle_avoidance.pt`
 - `artifacts/checkpoints/sixdof_attitude.pt`
 - `artifacts/checkpoints/sixdof_circle.pt`
+- `artifacts/checkpoints/sixdof_multitask.pt`
+
+The `multitask` checkpoint is task-conditioned: the model sees the base 28-value 6-DoF observation plus a one-hot task vector for position/yaw, obstacle avoidance, attitude, or circle behavior.
 
 ## Roll Out And Visualize
 
@@ -73,6 +77,17 @@ python scripts/compare_crazyflie_replay.py \
 ```
 
 This currently compares replay summaries, not exact trajectory matching. Exact replay alignment needs matching initial state, command interface, and timebase.
+
+## Checkpoint Gates
+
+```bash
+python scripts/evaluate_sixdof_checkpoint.py \
+  --checkpoint artifacts/checkpoints/sixdof_multitask_h256.pt \
+  --native-step \
+  --output artifacts/replay/sixdof_multitask_h256_gate.json
+```
+
+The gate checks minimum simulated wall clearance, completion fraction, and mean position error. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
 
 ## Native Benchmark
 

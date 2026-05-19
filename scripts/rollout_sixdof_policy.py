@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, teacher_actions
+from flightrl.sixdof import SixDofCrazyflieEnv, checkpoint_tasks, load_policy_from_checkpoint, teacher_actions
+from flightrl.sixdof.tasks import append_task_encoding, parse_task_spec, task_indices_for_name
 
 
 def main() -> None:
@@ -23,10 +24,14 @@ def main() -> None:
     args = parser.parse_args()
 
     checkpoint = load_checkpoint(args.checkpoint) if args.checkpoint else None
-    task = args.task or (checkpoint.get("task") if checkpoint else "position_yaw")
+    tasks = checkpoint_tasks(checkpoint) if checkpoint else parse_task_spec(args.task or "position_yaw")
+    task = args.task or tasks[0]
+    if "," in task or task == "multitask":
+        raise SystemExit("--task must select one concrete task for rollout")
     env = SixDofCrazyflieEnv(num_envs=1, seed=args.seed, task=task, use_native_step=args.native_step)
-    model = load_model(checkpoint) if checkpoint and not args.teacher else None
+    model = load_policy_from_checkpoint(checkpoint) if checkpoint and not args.teacher else None
     obs, _ = env.reset(seed=args.seed)
+    task_indices = task_indices_for_name(task, tasks, env.num_envs)
     rows = []
     for step in range(args.steps):
         if args.teacher:
@@ -34,8 +39,9 @@ def main() -> None:
         else:
             if model is None:
                 raise SystemExit("--checkpoint is required unless --teacher is set")
+            model_obs = append_task_encoding(obs, task_indices, len(tasks))
             with torch.no_grad():
-                actions = model(torch.from_numpy(obs).float()).cpu().numpy()
+                actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
         obs, rewards, terminals, truncations, _info = env.step(actions)
         rows.append(row_from_env(env, actions[0], float(rewards[0]), step))
         if terminals[0] or truncations[0]:
@@ -48,13 +54,6 @@ def load_checkpoint(path: str | None) -> dict:
     if path is None:
         return {}
     return torch.load(path, map_location="cpu")
-
-
-def load_model(checkpoint: dict) -> SixDofPolicy:
-    model = SixDofPolicy(hidden_size=int(checkpoint.get("hidden_size", 128)))
-    model.load_state_dict(checkpoint["state_dict"])
-    model.eval()
-    return model
 
 
 def row_from_env(env: SixDofCrazyflieEnv, action: np.ndarray, reward: float, step: int) -> dict[str, float]:

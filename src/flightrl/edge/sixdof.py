@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof import load_policy_from_checkpoint
 
 
 @dataclass(slots=True)
@@ -26,8 +26,9 @@ def export_sixdof_torchscript(
     samples: int = 64,
 ) -> EdgeExportResult:
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    model = _load_policy(checkpoint)
-    example = _sample_observations(seed=seed, samples=samples)
+    model = load_policy_from_checkpoint(checkpoint)
+    observation_dim = int(checkpoint.get("observation_dim", 28))
+    example = _sample_observations(seed=seed, samples=samples, observation_dim=observation_dim)
 
     with torch.no_grad():
         expected = model.net(example)
@@ -50,9 +51,10 @@ def export_sixdof_torchscript(
                 "task": checkpoint.get("task", "unknown"),
                 "format": "torchscript-trace",
                 "observation": {
-                    "shape": [28],
+                    "shape": [observation_dim],
                     "dtype": "float32",
                     "source": "6-DoF sim/state/ranger observation contract",
+                    "task_conditioned": bool(checkpoint.get("task_conditioned", False)),
                 },
                 "action": {
                     "shape": [4],
@@ -74,16 +76,13 @@ def export_sixdof_torchscript(
     return EdgeExportResult(output, report, max_abs_error, mean_abs_error)
 
 
-def _load_policy(checkpoint: dict) -> SixDofPolicy:
-    model = SixDofPolicy(hidden_size=int(checkpoint.get("hidden_size", 128)))
-    model.load_state_dict(checkpoint["state_dict"])
-    model.eval()
-    return model
-
-
-def _sample_observations(*, seed: int, samples: int) -> torch.Tensor:
+def _sample_observations(*, seed: int, samples: int, observation_dim: int) -> torch.Tensor:
     generator = torch.Generator().manual_seed(seed)
-    observations = torch.empty((samples, 28), dtype=torch.float32).uniform_(-1.0, 1.0, generator=generator)
+    observations = torch.empty((samples, observation_dim), dtype=torch.float32).uniform_(-1.0, 1.0, generator=generator)
     observations[:, 6:10] = torch.nn.functional.normalize(observations[:, 6:10], dim=1)
     observations[:, 18:24] = torch.rand((samples, 6), generator=generator)
+    if observation_dim > 28:
+        task_dim = observation_dim - 28
+        observations[:, 28:] = 0.0
+        observations[torch.arange(samples), 28 + torch.arange(samples) % task_dim] = 1.0
     return observations
