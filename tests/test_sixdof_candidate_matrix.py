@@ -75,6 +75,26 @@ def test_candidate_matrix_prefers_passing_candidates() -> None:
     assert MATRIX.best_by_task(records)["position_yaw"]["label"] == "passed"
 
 
+def test_candidate_matrix_surfaces_best_multitask_candidate() -> None:
+    records = [
+        record("single", ["position_yaw"], completed=1.0, position_error=0.1),
+        record("multi_weak", ["position_yaw", "obstacle_avoidance"], completed=0.2, position_error=3.0),
+        record("multi_best", ["position_yaw", "obstacle_avoidance", "circle"], completed=0.8, position_error=0.5),
+    ]
+
+    best = MATRIX.best_multitask(records)
+
+    assert best["label"] == "multi_best"
+    assert best["tasks"] == ["position_yaw", "obstacle_avoidance", "circle"]
+
+
+def test_candidate_matrix_score_uses_yaw_for_position_yaw() -> None:
+    low_yaw = record("low_yaw", ["position_yaw"], completed=0.8, position_error=1.0, yaw_error=0.1)
+    high_yaw = record("high_yaw", ["position_yaw"], completed=0.8, position_error=1.0, yaw_error=0.8)
+
+    assert MATRIX.score(low_yaw) < MATRIX.score(high_yaw)
+
+
 def suite_record(label: str, checkpoint: Path) -> dict:
     return {
         "label": label,
@@ -91,4 +111,22 @@ def suite_record(label: str, checkpoint: Path) -> dict:
             "min_clearance_m": 0.2,
             "clearance_p01_m": 0.2,
         },
+    }
+
+
+def record(label: str, tasks: list[str], *, completed: float, position_error: float, yaw_error: float | None = None) -> dict:
+    return {
+        "label": label,
+        "checkpoint": f"{label}.pt",
+        "tasks": tasks,
+        "passed": True,
+        "failures": [],
+        "mean_completed_fraction": completed,
+        "mean_survival_fraction": completed,
+        "mean_position_error_m": position_error,
+        "mean_yaw_error_rad": yaw_error,
+        "yaw_error_p95_rad": yaw_error,
+        "clearance_p01_m": 0.2,
+        "edge_parity": {"present": True, "passed": True},
+        "edge_latency": {"present": True, "per_sample_us": 4.0},
     }

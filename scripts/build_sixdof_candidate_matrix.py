@@ -19,7 +19,12 @@ def main() -> None:
     parity = load_parity(args.parity)
     latency = load_labeled_reports(args.latency, "--latency")
     records = [record for suite in args.suite for record in checkpoint_records(Path(suite), parity, latency, args.max_parity_error)]
-    report = {"records": records, "best_by_task": best_by_task(records), "safety": "Simulation ranking only; not approved for live hardware."}
+    report = {
+        "records": records,
+        "best_by_task": best_by_task(records),
+        "best_multitask": best_multitask(records),
+        "safety": "Simulation ranking only; not approved for live hardware.",
+    }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -125,15 +130,33 @@ def best_by_task(records: list[dict]) -> dict[str, dict]:
     return {task: compact_record(record) for task, record in best.items()}
 
 
+def best_multitask(records: list[dict]) -> dict | None:
+    candidates = [record for record in records if len(record["tasks"]) > 1]
+    return compact_record(min(candidates, key=score)) if candidates else None
+
+
 def score(record: dict) -> tuple:
     return (
         0 if record["passed"] else 1,
         -record["mean_completed_fraction"],
         -record["mean_survival_fraction"],
         record["mean_position_error_m"],
+        yaw_score(record),
         -record["clearance_p01_m"],
-        0 if record["edge_parity"]["present"] else 1,
+        0 if record["edge_parity"].get("passed", False) else 1,
+        latency_score(record),
     )
+
+
+def yaw_score(record: dict) -> float:
+    if record.get("mean_yaw_error_rad") is None:
+        return 0.0 if "position_yaw" not in record["tasks"] else 999.0
+    return float(record["mean_yaw_error_rad"])
+
+
+def latency_score(record: dict) -> float:
+    latency = record.get("edge_latency", {}).get("per_sample_us")
+    return float(latency) if latency is not None else 999_999.0
 
 
 def compact_record(record: dict) -> dict:
@@ -141,6 +164,7 @@ def compact_record(record: dict) -> dict:
         key: record[key]
         for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")
     }
+    compact["tasks"] = record["tasks"]
     compact["mean_yaw_error_rad"] = record.get("mean_yaw_error_rad")
     compact["yaw_error_p95_rad"] = record.get("yaw_error_p95_rad")
     compact["edge_latency"] = record.get("edge_latency", {"present": False})
@@ -148,23 +172,37 @@ def compact_record(record: dict) -> dict:
 
 
 def render_markdown(report: dict) -> str:
-    lines = ["# 6-DoF Candidate Matrix", "", "| label | tasks | passed | edge | latency us | completed | survival | pos err m | clearance p01 m | obs mode |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    lines = ["# 6-DoF Candidate Matrix", "", "| label | tasks | passed | edge | latency us | completed | survival | pos err m | yaw err rad | yaw p95 rad | clearance p01 m | obs mode |", "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     for record in sorted(report["records"], key=score):
-        edge = "yes" if record["edge_parity"]["present"] else "no"
+        edge = edge_text(record["edge_parity"])
         latency = record["edge_latency"].get("per_sample_us")
         latency_text = f"{latency:.3f}" if latency is not None else "n/a"
         meta = record["checkpoint_meta"]
         lines.append(
             f"| {record['label']} | {', '.join(record['tasks'])} | {record['passed']} | {edge} | {latency_text} | "
             f"{record['mean_completed_fraction']:.4f} | {record['mean_survival_fraction']:.4f} | "
-            f"{record['mean_position_error_m']:.4f} | {record['clearance_p01_m']:.4f} | {meta.get('observation_mode', 'unknown')} |"
+            f"{record['mean_position_error_m']:.4f} | {fmt(record.get('mean_yaw_error_rad'))} | "
+            f"{fmt(record.get('yaw_error_p95_rad'))} | {record['clearance_p01_m']:.4f} | {meta.get('observation_mode', 'unknown')} |"
         )
     if report["best_by_task"]:
         lines.extend(["", "## Best By Task", ""])
         for task, record in report["best_by_task"].items():
             lines.append(f"- `{task}`: `{record['label']}` passed=`{record['passed']}` completed=`{record['mean_completed_fraction']:.4f}`")
+    if report.get("best_multitask"):
+        record = report["best_multitask"]
+        lines.extend(["", "## Best Multitask", "", f"- `{record['label']}` tasks=`{', '.join(record['tasks'])}` passed=`{record['passed']}` completed=`{record['mean_completed_fraction']:.4f}`"])
     lines.extend(["", report["safety"]])
     return "\n".join(lines)
+
+
+def edge_text(edge: dict) -> str:
+    if edge.get("passed"):
+        return "pass"
+    return "fail" if edge.get("present") else "missing"
+
+
+def fmt(value: float | None) -> str:
+    return f"{value:.4f}" if value is not None else "n/a"
 
 
 if __name__ == "__main__":
