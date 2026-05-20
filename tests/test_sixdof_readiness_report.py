@@ -60,6 +60,13 @@ def test_readiness_report_surfaces_missing_evidence() -> None:
     assert {"sim_gate", "edge_parity", "edge_latency_missing", "room_map", "native_parity"}.issubset(record["failures"])
 
 
+def test_readiness_report_rejects_native_termination_mismatch() -> None:
+    compact = READINESS.compact_native_parity(native_report(state_rmse=1e-8, range_rmse=0.1, mismatches=1), 1e-5, 1.0)
+
+    assert compact["passed"] is False
+    assert "termination_mismatch" in compact["failures"]
+
+
 def candidate_record(*, passed: bool = True, parity: bool = True, latency: float | None = 9.0) -> dict:
     return {
         "label": "candidate",
@@ -81,7 +88,7 @@ def room_report(*, mapping_ready: bool) -> dict:
     }
 
 
-def native_report(*, state_rmse: float, range_rmse: float) -> dict:
+def native_report(*, state_rmse: float, range_rmse: float, mismatches: int = 0) -> dict:
     return {
         "aligned": {
             "samples": 10,
@@ -90,5 +97,6 @@ def native_report(*, state_rmse: float, range_rmse: float) -> dict:
                 "stateEstimate.x": {"rmse": state_rmse},
                 "range.front": {"rmse": range_rmse},
             },
-        }
+        },
+        "profiles": [{"terminal_mismatches": mismatches, "truncation_mismatches": 0}],
     }

@@ -117,6 +117,9 @@ def compact_native_parity(report: dict | None, max_state_rmse: float, max_range_
         failures.append("state_rmse")
     if worst_range is None or worst_range > max_range_rmse:
         failures.append("range_rmse")
+    mismatches = native_mismatch_count(report)
+    if mismatches:
+        failures.append("termination_mismatch")
     return {
         "present": True,
         "passed": not failures,
@@ -125,12 +128,22 @@ def compact_native_parity(report: dict | None, max_state_rmse: float, max_range_
         "overlap_duration_s": report.get("aligned", {}).get("overlap_duration_s", 0.0),
         "worst_state_rmse": worst_state,
         "worst_range_rmse": worst_range,
+        "termination_mismatches": mismatches,
     }
 
 
 def worst_rmse(signals: dict, prefix: str) -> float | None:
     values = [metrics["rmse"] for key, metrics in signals.items() if key.startswith(prefix) and "rmse" in metrics]
     return max(values) if values else None
+
+
+def native_mismatch_count(report: dict) -> int:
+    return int(
+        sum(
+            int(profile.get("terminal_mismatches", 0)) + int(profile.get("truncation_mismatches", 0))
+            for profile in report.get("profiles", [])
+        )
+    )
 
 
 def summary(records: list[dict]) -> dict:
