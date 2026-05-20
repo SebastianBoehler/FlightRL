@@ -180,3 +180,30 @@ python scripts/train_sixdof_offline.py \
 ```
 
 The checkpoint stores `task_weights={"position_yaw": 1.5, "circle": 1.5}`. A 300-step native validation smoke did not pass (`completed=0.1953`, `pos_err=5.4099m`, `clearance_p01=0.0340m`), so this is a verified training knob, not a better candidate yet.
+
+Task-weight sweep runner: added `scripts/run_sixdof_task_weight_sweep.py` to compare task-weight variants with a train command plus suite gate command per variant.
+
+Dry-run manifest:
+
+```bash
+python scripts/run_sixdof_task_weight_sweep.py \
+  --max-variants 2 \
+  --report artifacts/replay/sixdof_task_weight_sweep_manifest.json \
+  --output-dir artifacts/task_weight_sweep/manifest
+```
+
+Short execution smoke:
+
+```bash
+python scripts/run_sixdof_task_weight_sweep.py \
+  --max-variants 1 \
+  --run \
+  --eval-steps 30 \
+  --eval-num-envs 32 \
+  --suite-steps 80 \
+  --suite-num-envs 64 \
+  --report artifacts/replay/sixdof_task_weight_sweep_smoke.json \
+  --output-dir artifacts/task_weight_sweep/smoke
+```
+
+Result: `balanced_control` completed the short suite with `completed=1.0000`, `pos_err=0.9555m`, and `clearance_p01=1.1176m`. This confirms the sweep automation path; it is not a replacement for the current 300-step validation gate.
