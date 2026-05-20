@@ -34,6 +34,8 @@ def main() -> None:
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--max-variants", type=int, default=None)
     parser.add_argument("--native-step", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-yaw-error-rad", type=float, default=0.35)
+    parser.add_argument("--max-yaw-p95-error-rad", type=float, default=0.60)
     args = parser.parse_args()
 
     variants = default_variants()
@@ -45,7 +47,7 @@ def main() -> None:
             record["results"] = run_commands(record["commands"])
             record["gates"] = load_gate_summaries(record)
 
-    report = {"run": args.run, "native_step": args.native_step, "records": records, "summary": sweep_summary(records)}
+    report = {"run": args.run, "native_step": args.native_step, "thresholds": yaw_thresholds(args), "records": records, "summary": sweep_summary(records)}
     output = Path(args.report)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -74,8 +76,8 @@ def variant_record(args: argparse.Namespace, variant: CurriculumVariant) -> dict
     broad_gate = base / "broad_gate.json"
     commands = dataset_paths["commands"]
     commands.append(train_command(dataset_paths["final"], checkpoint, variant, args.native_step))
-    commands.append(eval_command(checkpoint, medium_gate, "position_yaw_medium", variant.eval_steps, args.native_step))
-    commands.append(eval_command(checkpoint, broad_gate, "broad", 800, args.native_step))
+    commands.append(eval_command(checkpoint, medium_gate, "position_yaw_medium", variant.eval_steps, args))
+    commands.append(eval_command(checkpoint, broad_gate, "broad", 800, args))
     return {
         "variant": asdict(variant),
         "dataset": str(dataset_paths["final"]),
@@ -146,7 +148,7 @@ def train_command(dataset: Path, checkpoint: Path, variant: CurriculumVariant, n
     return command
 
 
-def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int, native_step: bool) -> list[str]:
+def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int, args: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         str(ROOT / "scripts" / "evaluate_sixdof_checkpoint.py"),
@@ -162,10 +164,18 @@ def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int,
         reset_profile,
         "--output",
         str(output),
+        "--max-yaw-error-rad",
+        str(args.max_yaw_error_rad),
+        "--max-yaw-p95-error-rad",
+        str(args.max_yaw_p95_error_rad),
     ]
-    if native_step:
+    if args.native_step:
         command.append("--native-step")
     return command
+
+
+def yaw_thresholds(args: argparse.Namespace) -> dict:
+    return {"max_yaw_error_rad": args.max_yaw_error_rad, "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad}
 
 
 def run_commands(commands: list[list[str]]) -> list[dict]:
@@ -193,6 +203,8 @@ def load_gate_summary(path: str) -> dict | None:
         "passed": report["gate"]["passed"],
         "failures": report["gate"]["failures"],
         "mean_position_error_m": metrics["mean_position_error_m"],
+        "mean_yaw_error_rad": metrics.get("mean_yaw_error_rad"),
+        "yaw_error_p95_rad": metrics.get("yaw_error_p95_rad"),
         "clearance_p01_m": metrics["clearance_p01_m"],
         "mean_completed_fraction": metrics["mean_completed_fraction"],
         "mean_survival_fraction": metrics["mean_survival_fraction"],
@@ -218,19 +230,11 @@ def best_record(records: list[dict], gate_name: str) -> dict | None:
         gate = (record.get("gates") or {}).get(gate_name)
         if gate is not None:
             candidates.append((gate_score(gate), compact_record(record, gate)))
-    if not candidates:
-        return None
-    return min(candidates, key=lambda item: item[0])[1]
+    return min(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
 def gate_score(gate: dict) -> tuple:
-    return (
-        0 if gate["passed"] else 1,
-        -gate["mean_completed_fraction"],
-        -gate["mean_survival_fraction"],
-        gate["mean_position_error_m"],
-        -gate["clearance_p01_m"],
-    )
+    return (0 if gate["passed"] else 1, -gate["mean_completed_fraction"], -gate["mean_survival_fraction"], gate["mean_position_error_m"], gate.get("mean_yaw_error_rad") or 0.0, -gate["clearance_p01_m"])
 
 
 def compact_record(record: dict, gate: dict) -> dict:
@@ -242,6 +246,8 @@ def compact_record(record: dict, gate: dict) -> dict:
         "mean_completed_fraction": gate["mean_completed_fraction"],
         "mean_survival_fraction": gate["mean_survival_fraction"],
         "mean_position_error_m": gate["mean_position_error_m"],
+        "mean_yaw_error_rad": gate.get("mean_yaw_error_rad"),
+        "yaw_error_p95_rad": gate.get("yaw_error_p95_rad"),
         "clearance_p01_m": gate["clearance_p01_m"],
     }
 
@@ -283,9 +289,7 @@ def render_markdown(report: dict) -> str:
 
 
 def format_completed(gate: dict | None) -> str:
-    if gate is None:
-        return "pending"
-    return f"{gate['mean_completed_fraction']:.4f}"
+    return "pending" if gate is None else f"{gate['mean_completed_fraction']:.4f}"
 
 
 if __name__ == "__main__":

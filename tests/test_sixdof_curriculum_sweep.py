@@ -44,11 +44,14 @@ def test_curriculum_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     )
     report = json.loads(output.read_text())
     assert report["run"] is False
+    assert report["thresholds"]["max_yaw_error_rad"] == 0.35
     assert len(report["records"]) == 1
     commands = report["records"][0]["commands"]
     assert any("--reset-profile" in command for command in commands)
     assert any("--observation-mode" in command for command in commands)
     assert any("--eval-reset-profile" in command for command in commands)
+    assert any("--max-yaw-error-rad" in command for command in commands)
+    assert any("--max-yaw-p95-error-rad" in command for command in commands)
     assert output.with_suffix(".md").exists()
 
 
@@ -68,6 +71,8 @@ def test_load_gate_summary_compacts_metrics(tmp_path: Path) -> None:
                 "gate": {"passed": False, "failures": ["completion"]},
                 "metrics": {
                     "mean_position_error_m": 1.2,
+                    "mean_yaw_error_rad": 0.2,
+                    "yaw_error_p95_rad": 0.4,
                     "clearance_p01_m": 0.3,
                     "mean_completed_fraction": 0.4,
                     "mean_survival_fraction": 0.8,
@@ -78,6 +83,7 @@ def test_load_gate_summary_compacts_metrics(tmp_path: Path) -> None:
     summary = SWEEP.load_gate_summary(str(gate))
     assert summary["passed"] is False
     assert summary["mean_survival_fraction"] == 0.8
+    assert summary["yaw_error_p95_rad"] == 0.4
 
 
 def test_sweep_summary_ranks_best_gate_candidate() -> None:
@@ -97,6 +103,8 @@ def record(name: str, *, completed: float, survival: float, position_error: floa
         "mean_completed_fraction": completed,
         "mean_survival_fraction": survival,
         "mean_position_error_m": position_error,
+        "mean_yaw_error_rad": 0.2,
+        "yaw_error_p95_rad": 0.4,
         "clearance_p01_m": 0.1,
     }
     return {

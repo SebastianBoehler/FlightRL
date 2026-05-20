@@ -140,3 +140,16 @@ python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_y
 | clean + recovery 0.015 | 0.5547 | 0.7926 | 21.3515 | 0.0763 | 0.1367 | 0.3762 | 91.3530 |
 
 Conclusion: noisy teacher execution is now available for recovery-data ablations, but these two static-imitation variants do not pass the position/yaw gate. Mild mixed recovery improves broad completion versus the `history1` baseline, while medium position error regresses badly. This supports moving the next position/yaw effort toward closed-loop PPO/DAgger or a recurrent policy instead of more unweighted one-step behavior cloning.
+
+Yaw gate propagation: the curriculum sweep now forwards the same yaw acceptance thresholds used by the checkpoint evaluator into every medium and broad gate command.
+
+Dry-run manifest:
+
+```bash
+python scripts/run_sixdof_curriculum_sweep.py \
+  --max-variants 1 \
+  --report artifacts/replay/sixdof_position_yaw_curriculum_yaw_gated_manifest.json \
+  --output-dir artifacts/curriculum/position_yaw_yaw_gated
+```
+
+The manifest records `max_yaw_error_rad = 0.35` and `max_yaw_p95_error_rad = 0.60`, and the generated eval commands include `--max-yaw-error-rad` plus `--max-yaw-p95-error-rad`. This keeps future offline/curriculum position-yaw checkpoints from ranking as candidates when they translate position but lose heading control.
