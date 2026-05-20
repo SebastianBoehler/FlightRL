@@ -160,3 +160,22 @@ python scripts/run_sixdof_ppo_sweep.py \
 | stable_ref8_std001_lr5e6 | 0.6367 | 0.8852 | 3.6613 | 0.0873 | 0.0234 | 108.7314 |
 
 Conclusion: stronger reference/imitation pressure prevents the severe divergence seen in the first history-PPO smoke, and `stable_ref8_std001_lr5e6` clears the medium clearance threshold. It still fails completion and position-error gates, and broad behavior remains poor. This suggests PPO fine-tuning is not enough unless paired with a better position/yaw objective or rollout curriculum.
+
+Yaw-gated PPO sweep update: `run_sixdof_ppo_sweep.py` now applies `--max-yaw-error-rad 0.35` and `--max-yaw-p95-error-rad 0.60` to every medium/broad checkpoint evaluation. The first yaw-gated smoke re-ran `stable_ref4_std002_lr1e5` from the history checkpoint:
+
+```bash
+python scripts/run_sixdof_ppo_sweep.py \
+  --run \
+  --max-variants 1 \
+  --init-checkpoint artifacts/curriculum/position_yaw/easy_medium_history1_h128/checkpoint.pt \
+  --output-dir artifacts/ppo/position_yaw_history1_yaw_gated \
+  --report artifacts/replay/sixdof_position_yaw_ppo_history1_yaw_gated_smoke.json \
+  --native-step
+```
+
+| profile | completed | pos err m | mean yaw err rad | yaw p95 rad | failures |
+| --- | ---: | ---: | ---: | ---: | --- |
+| medium | 0.5898 | 3.6753 | 0.1064 | 0.4559 | min_clearance, completion, position_error |
+| broad | 0.0078 | 108.9331 | 1.1170 | 2.7466 | min_clearance, completion, position_error, yaw_error, yaw_error_p95 |
+
+Result: medium behavior is not primarily yaw-limited, but broad reset failure now explicitly includes heading/orientation drift. Future PPO sweep reports should be interpreted with these yaw gates enabled.

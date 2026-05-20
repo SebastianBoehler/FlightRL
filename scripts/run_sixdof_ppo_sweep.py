@@ -34,6 +34,8 @@ def main() -> None:
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--max-variants", type=int, default=None)
     parser.add_argument("--native-step", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-yaw-error-rad", type=float, default=0.35)
+    parser.add_argument("--max-yaw-p95-error-rad", type=float, default=0.60)
     args = parser.parse_args()
 
     variants = default_variants()
@@ -44,7 +46,7 @@ def main() -> None:
         for record in records:
             record["results"] = run_commands(record["commands"])
             record["gates"] = load_gate_summaries(record)
-    report = {"run": args.run, "records": records, "summary": sweep_summary(records)}
+    report = {"run": args.run, "thresholds": yaw_thresholds(args), "records": records, "summary": sweep_summary(records)}
     output = Path(args.report)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -91,8 +93,8 @@ def variant_record(args: argparse.Namespace, variant: PpoVariant) -> dict:
     broad_gate = base / "broad_gate.json"
     commands = [
         train_command(args.init_checkpoint, checkpoint, variant, args.native_step),
-        eval_command(checkpoint, medium_gate, "position_yaw_medium", 400, args.native_step),
-        eval_command(checkpoint, broad_gate, "broad", 800, args.native_step),
+        eval_command(checkpoint, medium_gate, "position_yaw_medium", 400, args),
+        eval_command(checkpoint, broad_gate, "broad", 800, args),
     ]
     return {
         "variant": asdict(variant),
@@ -145,7 +147,7 @@ def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, n
     return command
 
 
-def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int, native_step: bool) -> list[str]:
+def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int, args: argparse.Namespace) -> list[str]:
     command = [
         sys.executable,
         str(ROOT / "scripts" / "evaluate_sixdof_checkpoint.py"),
@@ -161,10 +163,18 @@ def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int,
         reset_profile,
         "--output",
         str(output),
+        "--max-yaw-error-rad",
+        str(args.max_yaw_error_rad),
+        "--max-yaw-p95-error-rad",
+        str(args.max_yaw_p95_error_rad),
     ]
-    if native_step:
+    if args.native_step:
         command.append("--native-step")
     return command
+
+
+def yaw_thresholds(args: argparse.Namespace) -> dict:
+    return {"max_yaw_error_rad": args.max_yaw_error_rad, "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad}
 
 
 def run_commands(commands: list[list[str]]) -> list[dict]:
@@ -194,6 +204,8 @@ def load_gate_summary(path: str) -> dict | None:
         "mean_completed_fraction": metrics["mean_completed_fraction"],
         "mean_survival_fraction": metrics["mean_survival_fraction"],
         "mean_position_error_m": metrics["mean_position_error_m"],
+        "mean_yaw_error_rad": metrics.get("mean_yaw_error_rad"),
+        "yaw_error_p95_rad": metrics.get("yaw_error_p95_rad"),
         "clearance_p01_m": metrics["clearance_p01_m"],
     }
 
@@ -221,7 +233,7 @@ def best_record(records: list[dict], gate_name: str) -> dict | None:
 
 
 def gate_score(gate: dict) -> tuple:
-    return (0 if gate["passed"] else 1, -gate["mean_completed_fraction"], -gate["mean_survival_fraction"], gate["mean_position_error_m"])
+    return (0 if gate["passed"] else 1, -gate["mean_completed_fraction"], -gate["mean_survival_fraction"], gate["mean_position_error_m"], gate.get("mean_yaw_error_rad") or 0.0)
 
 
 def compact_record(record: dict, gate: dict) -> dict:
@@ -233,6 +245,8 @@ def compact_record(record: dict, gate: dict) -> dict:
         "mean_completed_fraction": gate["mean_completed_fraction"],
         "mean_survival_fraction": gate["mean_survival_fraction"],
         "mean_position_error_m": gate["mean_position_error_m"],
+        "mean_yaw_error_rad": gate.get("mean_yaw_error_rad"),
+        "yaw_error_p95_rad": gate.get("yaw_error_p95_rad"),
         "clearance_p01_m": gate["clearance_p01_m"],
     }
 

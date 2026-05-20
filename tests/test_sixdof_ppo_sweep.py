@@ -43,11 +43,15 @@ def test_ppo_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     )
     report = json.loads(output.read_text())
     assert report["run"] is False
+    assert report["thresholds"]["max_yaw_error_rad"] == 0.35
     assert len(report["records"]) == 1
     command = report["records"][0]["commands"][0]
+    eval_command = report["records"][0]["commands"][1]
     assert "--reference-coef" in command
     assert "--reward-mode" in command
     assert "--reset-profile" in command
+    assert "--max-yaw-error-rad" in eval_command
+    assert "--max-yaw-p95-error-rad" in eval_command
     assert output.with_suffix(".md").exists()
 
 
