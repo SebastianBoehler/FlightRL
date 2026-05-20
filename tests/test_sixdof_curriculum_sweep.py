@@ -20,6 +20,7 @@ def test_default_curriculum_sweep_covers_staged_profiles() -> None:
     profiles = {profile for variant in variants for profile in variant.profiles}
     assert {"position_yaw_easy", "position_yaw_medium", "position_yaw_wide", "broad"} <= profiles
     assert {variant.hidden_size for variant in variants} >= {128, 256}
+    assert "history1" in {variant.observation_mode for variant in variants}
 
 
 def test_curriculum_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
@@ -45,6 +46,7 @@ def test_curriculum_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     assert len(report["records"]) == 1
     commands = report["records"][0]["commands"]
     assert any("--reset-profile" in command for command in commands)
+    assert any("--observation-mode" in command for command in commands)
     assert any("--eval-reset-profile" in command for command in commands)
     assert output.with_suffix(".md").exists()
 

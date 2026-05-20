@@ -23,6 +23,7 @@ class CurriculumVariant:
     learning_rate: float
     eval_profile: str
     eval_steps: int
+    observation_mode: str = "base"
 
 
 def main() -> None:
@@ -57,6 +58,7 @@ def default_variants() -> list[CurriculumVariant]:
         CurriculumVariant("easy_medium_h128", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 128, 1e-3, "position_yaw_medium", 400),
         CurriculumVariant("easy_medium_h256", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 256, 1e-3, "position_yaw_medium", 400),
         CurriculumVariant("medium_h256_long", ("position_yaw_medium",), 1024, 384, 16, 256, 7e-4, "position_yaw_medium", 600),
+        CurriculumVariant("easy_medium_history1_h128", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 128, 1e-3, "position_yaw_medium", 400, "history1"),
         CurriculumVariant("easy_medium_wide_h128", ("position_yaw_easy", "position_yaw_medium", "position_yaw_wide"), 512, 192, 14, 128, 8e-4, "position_yaw_wide", 500),
         CurriculumVariant("easy_medium_broad_h256", ("position_yaw_easy", "position_yaw_medium", "broad"), 512, 192, 16, 256, 7e-4, "broad", 600),
     ]
@@ -100,6 +102,8 @@ def dataset_commands(base: Path, variant: CurriculumVariant, native_step: bool) 
             str(700 + index),
             "--reset-profile",
             profile,
+            "--observation-mode",
+            variant.observation_mode,
             "--output",
             str(dataset),
         ]

@@ -8,6 +8,7 @@ import torch
 from .dataset import merge_datasets, sample_task_indices, teacher_labels
 from .env import SixDofCrazyflieEnv
 from .evaluation import checkpoint_tasks, load_policy_from_checkpoint
+from .observation import augment_observation
 from .tasks import append_task_encoding, parse_task_spec
 
 
@@ -32,21 +33,34 @@ def collect_policy_dataset(
     obs, _ = env.reset(seed=seed)
     observations, actions, task_indices_all, terminals = [], [], [], []
     beta = float(np.clip(beta, 0.0, 1.0))
+    observation_mode = str(checkpoint.get("observation_mode", "base"))
+    previous_obs = None
+    previous_action = np.zeros((num_envs, 4), dtype=np.float32)
+    fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
         local_indices = sample_task_indices(rng, num_envs, selected_tasks)
         policy_indices = policy_task_indices(selected_tasks, policy_tasks, local_indices)
         labels = teacher_labels(env, selected_tasks, local_indices)
         model_obs = append_task_encoding(obs.copy(), policy_indices, len(policy_tasks))
-        policy_actions = predict_actions(model, model_obs)
+        if previous_obs is None:
+            previous_obs = model_obs.copy()
+        previous_obs[fresh] = model_obs[fresh]
+        policy_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
+        policy_actions = predict_actions(model, policy_obs)
         executed = beta * labels + (1.0 - beta) * policy_actions
-        observations.append(model_obs.copy())
+        observations.append(policy_obs.copy())
         actions.append(labels.copy())
         task_indices_all.append(policy_indices.copy())
         obs, _reward, terminal, truncation, _info = env.step(executed)
         terminals.append(terminal.copy())
+        previous_obs = model_obs.copy()
+        previous_action = executed.copy()
+        fresh[:] = False
         done = terminal | truncation
         if np.any(done):
             obs = env.reset_done(done)
+            previous_action[done.astype(bool)] = 0.0
+            fresh = done.astype(bool)
     return build_dataset(
         observations,
         actions,
@@ -64,6 +78,7 @@ def collect_policy_dataset(
             "seed": seed,
             "native_step": use_native_step,
             "reset_profile": env.reset_profile.name,
+            "observation_mode": observation_mode,
         },
     )
 
@@ -103,4 +118,3 @@ def validate_selected_tasks(selected_tasks: tuple[str, ...], policy_tasks: tuple
     missing = [task for task in selected_tasks if task not in policy_tasks]
     if missing:
         raise ValueError(f"selected task(s) not present in checkpoint: {', '.join(missing)}")
-

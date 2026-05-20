@@ -48,6 +48,7 @@ def main() -> None:
             use_native_step=args.native_step,
             eval_tasks=tasks,
             reset_profile=args.reset_profile,
+            observation_mode=checkpoint.get("observation_mode", "base"),
         )
     gate = gate_status(
         metrics,

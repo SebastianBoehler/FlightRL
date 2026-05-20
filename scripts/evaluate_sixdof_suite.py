@@ -82,6 +82,7 @@ def evaluate_candidate(label: str, checkpoint_path: Path, task_spec: str, args: 
         use_native_step=args.native_step,
         eval_tasks=tasks,
         reset_profile=args.reset_profile,
+        observation_mode=checkpoint.get("observation_mode", "base"),
     )
     return build_record(label, "checkpoint", checkpoint_path, tasks, metrics, thresholds)
 

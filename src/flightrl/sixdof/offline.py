@@ -40,7 +40,8 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
     for epoch in range(1, config.epochs + 1):
         train_loss = train_epoch(model, optimizer, observations[train_idx], actions[train_idx], config.batch_size)
         val_loss = dataset_loss(model, observations[val_idx], actions[val_idx], config.batch_size)
-        eval_metrics = evaluation_metrics(model, tasks, config) if config.select_by_eval else None
+        observation_mode = str(metadata.get("observation_mode", "base"))
+        eval_metrics = evaluation_metrics(model, tasks, config, observation_mode) if config.select_by_eval else None
         history.append(history_entry(epoch, train_loss, val_loss, eval_metrics))
         candidate = payload(model, config, metadata, tasks, val_loss, epoch, eval_metrics)
         if best is None or checkpoint_score(candidate, config) < checkpoint_score(best, config):
@@ -56,11 +57,12 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
         num_envs=config.eval_num_envs,
         use_native_step=config.use_native_step,
         reset_profile=config.eval_reset_profile,
+        observation_mode=str(metadata.get("observation_mode", "base")),
     )
     return best
 
 
-def evaluation_metrics(model, tasks: tuple[str, ...], config: OfflineTrainConfig) -> dict:
+def evaluation_metrics(model, tasks: tuple[str, ...], config: OfflineTrainConfig, observation_mode: str) -> dict:
     return evaluate_policy(
         model,
         tasks,
@@ -69,6 +71,7 @@ def evaluation_metrics(model, tasks: tuple[str, ...], config: OfflineTrainConfig
         num_envs=config.eval_num_envs,
         use_native_step=config.use_native_step,
         reset_profile=config.eval_reset_profile,
+        observation_mode=observation_mode,
     )
 
 
@@ -141,6 +144,7 @@ def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str,
         "selection_epoch": epoch,
         "selection_mode": "eval" if config.select_by_eval else "val_loss",
         "eval_reset_profile": config.eval_reset_profile or "broad",
+        "observation_mode": metadata.get("observation_mode", "base"),
         "selection_metrics": selection_metrics,
         "val_loss": val_loss,
         "note": "Offline teacher-imitation checkpoint; simulation-only and not approved for live hardware.",

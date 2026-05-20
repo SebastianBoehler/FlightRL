@@ -49,6 +49,19 @@ def test_collect_teacher_dataset_uses_reset_profile() -> None:
     assert np.max(np.abs(obs[:, 2] * 1.5)) <= 0.07
 
 
+def test_collect_teacher_dataset_supports_history_observation_mode() -> None:
+    dataset = collect_teacher_dataset(
+        task_spec="position_yaw",
+        num_envs=4,
+        steps=2,
+        seed=6,
+        use_native_step=False,
+        observation_mode="history1",
+    )
+    assert dataset["observations"].shape == (8, 60)
+    assert dataset["metadata"]["observation_mode"] == "history1"
+
+
 def test_action_gap_cli_reports_per_task(tmp_path: Path) -> None:
     dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=2, seed=7, use_native_step=False)
     dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)
@@ -86,7 +99,7 @@ def test_action_gap_cli_reports_per_task(tmp_path: Path) -> None:
 
 
 def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
-    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=3, seed=9, use_native_step=False)
+    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=3, seed=9, use_native_step=False, observation_mode="history1")
     dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)
     checkpoint = tmp_path / "offline.pt"
     run = subprocess.run(
@@ -117,6 +130,8 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
     saved = torch.load(checkpoint, map_location="cpu")
     assert "checkpoint=" in run.stdout
     assert saved["dataset"] == str(dataset_path)
+    assert saved["observation_dim"] == 60
+    assert saved["observation_mode"] == "history1"
     assert saved["val_loss"] >= 0.0
     assert saved["selection_mode"] == "eval"
     assert saved["selection_metrics"] is not None

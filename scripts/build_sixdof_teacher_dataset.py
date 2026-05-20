@@ -4,6 +4,7 @@ import argparse
 import json
 
 from flightrl.sixdof.dataset import collect_teacher_dataset, merge_datasets, write_dataset
+from flightrl.sixdof.observation import OBSERVATION_MODES
 
 
 def main() -> None:
@@ -14,6 +15,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--reset-profile", default=None, help="Named reset curriculum, for example position_yaw_easy or position_yaw_medium.")
+    parser.add_argument("--observation-mode", default="base", choices=OBSERVATION_MODES)
     parser.add_argument("--append-dataset", action="append", default=[], help="Existing compatible dataset to prepend.")
     parser.add_argument("--output", default="artifacts/datasets/sixdof_teacher_safe_tasks.npz")
     args = parser.parse_args()
@@ -25,6 +27,7 @@ def main() -> None:
         seed=args.seed,
         use_native_step=args.native_step,
         reset_profile=args.reset_profile,
+        observation_mode=args.observation_mode,
     )
     if args.append_dataset:
         dataset = merge_datasets(args.append_dataset, dataset)

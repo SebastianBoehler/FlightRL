@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from .env import SixDofCrazyflieEnv
+from .observation import OBSERVATION_MODES, augment_observation
 from .policies import teacher_actions
 from .tasks import append_task_encoding, parse_task_spec, select_task_actions, task_observation_dim
 
@@ -18,7 +19,10 @@ def collect_teacher_dataset(
     seed: int,
     use_native_step: bool,
     reset_profile: str | None = None,
+    observation_mode: str = "base",
 ) -> dict[str, np.ndarray | dict]:
+    if observation_mode not in OBSERVATION_MODES:
+        raise ValueError(f"unknown observation mode {observation_mode!r}")
     tasks = parse_task_spec(task_spec)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
@@ -27,17 +31,29 @@ def collect_teacher_dataset(
     actions = []
     task_indices_all = []
     terminals = []
+    previous_obs = None
+    previous_action = np.zeros((num_envs, 4), dtype=np.float32)
+    fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
         task_indices = sample_task_indices(rng, num_envs, tasks)
         labels = teacher_labels(env, tasks, task_indices)
-        observations.append(append_task_encoding(obs.copy(), task_indices, len(tasks)))
+        model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
+        if previous_obs is None:
+            previous_obs = model_obs.copy()
+        previous_obs[fresh] = model_obs[fresh]
+        observations.append(augment_observation(model_obs, previous_obs, previous_action, observation_mode))
         actions.append(labels.copy())
         task_indices_all.append(task_indices.copy())
         obs, _reward, terminal, truncation, _info = env.step(labels)
         terminals.append(terminal.copy())
+        previous_obs = model_obs.copy()
+        previous_action = labels.copy()
+        fresh[:] = False
         done = terminal | truncation
         if np.any(done):
             obs = env.reset_done(done)
+            previous_action[done.astype(bool)] = 0.0
+            fresh = done.astype(bool)
     stacked_obs = np.concatenate(observations).astype(np.float32)
     stacked_actions = np.concatenate(actions).astype(np.float32)
     stacked_tasks = np.concatenate(task_indices_all).astype(np.int64)
@@ -50,6 +66,7 @@ def collect_teacher_dataset(
         "seed": seed,
         "native_step": use_native_step,
         "reset_profile": env.reset_profile.name,
+        "observation_mode": observation_mode,
         "observation_dim": int(stacked_obs.shape[1]),
         "base_observation_dim": 28,
         "action_dim": int(stacked_actions.shape[1]),

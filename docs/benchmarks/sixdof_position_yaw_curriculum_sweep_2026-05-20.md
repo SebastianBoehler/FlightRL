@@ -72,3 +72,20 @@ Staged wide result:
 | broad | 0.0352 | 0.3267 | 116.1111 | 0.0437 | no |
 
 Conclusion: staged target-distance imitation is now represented in the code and artifacts, but the first wide checkpoint is worse than `easy_medium_h128` on medium and does not bridge to broad. This strengthens the case for a closed-loop rollout objective or recurrent/stateful policy rather than more static imitation data.
+
+State-augmented observation pass: added `--observation-mode history1`, which trains/evaluates with current observation, one-step observation delta, and previous executed action. This is a feed-forward approximation to short memory that remains compatible with vectorized native/Puffer-style stepping.
+
+Command:
+
+```bash
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 711 --reset-profile position_yaw_easy --observation-mode history1 --output artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_01_position_yaw_easy.npz --native-step
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 712 --reset-profile position_yaw_medium --observation-mode history1 --output artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_02_position_yaw_medium.npz --append-dataset artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_01_position_yaw_easy.npz --native-step
+python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_02_position_yaw_medium.npz --checkpoint artifacts/curriculum/position_yaw/easy_medium_history1_h128/checkpoint.pt --epochs 12 --hidden-size 128 --learning-rate 1e-3 --eval-steps 400 --eval-num-envs 256 --select-by-eval --eval-reset-profile position_yaw_medium --native-step
+```
+
+| profile | completed | survival | pos err m | clearance p01 m | passed |
+| --- | ---: | ---: | ---: | ---: | --- |
+| medium | 0.6250 | 0.8845 | 3.6545 | 0.0788 | no |
+| broad | 0.0234 | 0.2786 | 109.1113 | 0.0500 | no |
+
+Conclusion: `history1` improves medium clearance and keeps medium completion near the best static-imitation checkpoint, but broad survival regresses. It is useful scaffolding for future rollout/recurrent work, not a deployable position/yaw checkpoint.

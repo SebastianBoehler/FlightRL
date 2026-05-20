@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from .env import SixDofCrazyflieEnv
+from .observation import augment_observation
 from .policies import SixDofPolicy, teacher_actions
 from .tasks import append_task_encoding, parse_task_spec
 
@@ -35,11 +36,12 @@ def evaluate_policy(
     use_native_step: bool = False,
     eval_tasks: tuple[str, ...] | None = None,
     reset_profile: str | None = None,
+    observation_mode: str = "base",
 ) -> dict:
     selected_tasks = eval_tasks or tasks
     validate_task_subset(selected_tasks, tasks)
     per_task = {
-        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile)
+        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, observation_mode)
         for idx, task in enumerate(selected_tasks)
     }
     return aggregate_task_metrics(per_task)
@@ -55,7 +57,8 @@ def evaluate_teacher(
     reset_profile: str | None = None,
 ) -> dict:
     per_task = {
-        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile) for idx, task in enumerate(tasks)
+        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, "base")
+        for idx, task in enumerate(tasks)
     }
     return aggregate_task_metrics(per_task)
 
@@ -89,6 +92,7 @@ def evaluate_one(
     num_envs: int,
     use_native_step: bool,
     reset_profile: str | None,
+    observation_mode: str,
 ) -> dict[str, float]:
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
@@ -99,17 +103,29 @@ def evaluate_one(
     action_l2 = []
     survived = np.ones(env.num_envs, dtype=bool)
     alive_samples = []
+    previous_obs = None
+    previous_action = np.zeros((env.num_envs, 4), dtype=np.float32)
+    fresh = np.ones(env.num_envs, dtype=bool)
     for _ in range(steps):
-        actions = action_fn(model, env, obs, task_indices, tasks, task)
+        model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
+        if previous_obs is None:
+            previous_obs = model_obs.copy()
+        previous_obs[fresh] = model_obs[fresh]
+        policy_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
+        actions = action_fn(model, env, policy_obs, task_indices, tasks, task)
         teacher = teacher_actions(env, task=task)
         action_abs.append(np.abs(actions))
         if model is not None:
             action_l2.append(np.linalg.norm(actions - teacher, axis=1))
         obs, reward, terminals, truncations, _info = env.step(actions)
+        previous_obs = model_obs.copy()
+        previous_action = actions.copy()
         rewards.append(reward)
         min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
         survived &= ~terminals.astype(bool)
         alive_samples.append(survived.astype(np.float32))
+        fresh = (terminals | truncations).astype(bool)
+        previous_action[fresh] = 0.0
     pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
     clearances = np.concatenate(min_clearance)
     result = {
@@ -132,9 +148,8 @@ def evaluate_one(
 
 
 def model_actions(model: SixDofPolicy, _env, obs: np.ndarray, task_indices: np.ndarray, tasks: tuple[str, ...], _task: str) -> np.ndarray:
-    model_obs = append_task_encoding(obs, task_indices, len(tasks))
     with torch.no_grad():
-        return model(torch.from_numpy(model_obs).float()).cpu().numpy()
+        return model(torch.from_numpy(obs).float()).cpu().numpy()
 
 
 def teacher_action(_model, env: SixDofCrazyflieEnv, _obs, _task_indices, _tasks, task: str) -> np.ndarray:
