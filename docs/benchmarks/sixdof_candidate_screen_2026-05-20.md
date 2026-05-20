@@ -168,6 +168,18 @@ python scripts/train_sixdof_dagger.py \
 
 This wrote `artifacts/dagger/task_probability_smoke/summary.json` with DAgger metadata preserving the same sampling probabilities.
 
+Repeatable sweep entrypoint:
+
+```bash
+python scripts/run_sixdof_task_probability_sweep.py \
+  --run \
+  --baseline-checkpoint artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt \
+  --report artifacts/replay/sixdof_task_probability_sweep.json \
+  --output-dir artifacts/task_probability_sweep/safe_tasks
+```
+
+The sweep variants compare uniform DAgger collection against position/circle-oversampled collection and a small teacher-mixing variant. A tiny smoke run wrote `artifacts/replay/sixdof_task_probability_sweep_run_smoke.md`; the short horizon is only a script check, not model evidence.
+
 ```bash
 python scripts/build_sixdof_candidate_matrix.py \
   --suite artifacts/replay/sixdof_candidate_suite_safe_tasks.json \
