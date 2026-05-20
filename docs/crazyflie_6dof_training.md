@@ -96,6 +96,17 @@ python scripts/evaluate_sixdof_action_gap.py \
   --dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
   --output artifacts/replay/sixdof_safe_tasks_offline_action_gap.json
 
+python scripts/build_sixdof_dagger_dataset.py \
+  --checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt \
+  --append-dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
+  --native-step \
+  --output artifacts/datasets/sixdof_safe_tasks_dagger.npz
+
+python scripts/train_sixdof_offline.py \
+  --dataset artifacts/datasets/sixdof_safe_tasks_dagger.npz \
+  --checkpoint artifacts/checkpoints/sixdof_safe_tasks_dagger.pt \
+  --native-step
+
 python scripts/evaluate_sixdof_checkpoint.py \
   --teacher \
   --task position_yaw,obstacle_avoidance,circle \
@@ -113,6 +124,8 @@ The gate checks low-percentile simulated wall clearance, terminal-free completio
 Use the teacher gate first. If the analytic teacher fails a task, a learned checkpoint for that same task is not meaningful yet. Current evidence shows position/yaw, obstacle avoidance, and circle are feasible as a reference set, while the experimental attitude task needs a better physical objective before it belongs in multi-task training.
 
 Use the offline action-gap report before closed-loop gates. If a policy cannot match teacher actions on teacher-visited states, closed-loop rollout failures are expected and more DAgger/RL training is premature.
+
+If teacher-state imitation has a low action gap but fails closed-loop, collect DAgger data with `build_sixdof_dagger_dataset.py`. That script rolls out the checkpoint, records policy-visited states, labels those states with the analytic teacher, and optionally prepends an existing compatible dataset. This directly targets distribution shift between the teacher rollouts and states induced by the learned policy.
 
 Training uses the same 800-step horizon for checkpoint selection by default. For CI smoke tests or quick experiments, reduce it explicitly with `--eval-steps`.
 

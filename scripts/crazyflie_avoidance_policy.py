@@ -26,7 +26,21 @@ from flightrl.hardware.preflight import require_supervisor_allows_flight
 from flightrl.hardware.telemetry import build_log_configs
 
 
-AVOIDANCE_LOG_VARIABLES = ("range.front", "range.back", "range.left", "range.right", "range.up", "range.zrange", "pm.vbat")
+AVOIDANCE_LOG_VARIABLES = (
+    "range.front",
+    "range.back",
+    "range.left",
+    "range.right",
+    "range.up",
+    "range.zrange",
+    "stateEstimate.x",
+    "stateEstimate.y",
+    "stateEstimate.z",
+    "stabilizer.roll",
+    "stabilizer.pitch",
+    "stabilizer.yaw",
+    "pm.vbat",
+)
 
 
 def main() -> None:

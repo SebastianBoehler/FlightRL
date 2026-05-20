@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof.dagger import collect_policy_dataset
 from flightrl.sixdof.dataset import collect_teacher_dataset, load_dataset, write_dataset
 
 
@@ -98,3 +99,72 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
     assert "checkpoint=" in run.stdout
     assert saved["dataset"] == str(dataset_path)
     assert saved["val_loss"] >= 0.0
+
+
+def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "policy.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        checkpoint,
+    )
+    dataset = collect_policy_dataset(
+        checkpoint_path=checkpoint,
+        task_spec=None,
+        num_envs=4,
+        steps=3,
+        seed=11,
+        use_native_step=False,
+    )
+    path = write_dataset(tmp_path / "dagger.npz", dataset)
+    loaded = load_dataset(path)
+
+    assert loaded["observations"].shape == (12, 28)
+    assert loaded["actions"].shape == (12, 4)
+    assert loaded["metadata"]["rollout_policy"] == "checkpoint"
+    assert loaded["metadata"]["source_checkpoint"] == str(checkpoint)
+
+
+def test_dagger_dataset_cli_appends_compatible_dataset(tmp_path: Path) -> None:
+    base = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=2, seed=13, use_native_step=False)
+    base_path = write_dataset(tmp_path / "base.npz", base)
+    checkpoint = tmp_path / "policy.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        checkpoint,
+    )
+    output = tmp_path / "merged.npz"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "build_sixdof_dagger_dataset.py"),
+            "--checkpoint",
+            str(checkpoint),
+            "--append-dataset",
+            str(base_path),
+            "--output",
+            str(output),
+            "--num-envs",
+            "4",
+            "--steps",
+            "2",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    merged = load_dataset(output)
+    assert merged["observations"].shape == (16, 28)
+    assert merged["metadata"]["samples"] == 16
