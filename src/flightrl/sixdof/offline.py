@@ -24,6 +24,7 @@ class OfflineTrainConfig:
     select_by_eval: bool = False
     use_native_step: bool = False
     eval_reset_profile: str | None = None
+    action_weighting: str = "none"
 
 
 def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
@@ -35,11 +36,12 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
     train_idx, val_idx = split_indices(len(observations), config.val_ratio, config.seed)
     model = SixDofPolicy(hidden_size=config.hidden_size, input_dim=observations.shape[1])
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=1e-5)
+    action_weights = compute_action_weights(actions, config.action_weighting)
     best = None
     history = []
     for epoch in range(1, config.epochs + 1):
-        train_loss = train_epoch(model, optimizer, observations[train_idx], actions[train_idx], config.batch_size)
-        val_loss = dataset_loss(model, observations[val_idx], actions[val_idx], config.batch_size)
+        train_loss = train_epoch(model, optimizer, observations[train_idx], actions[train_idx], config.batch_size, action_weights)
+        val_loss = dataset_loss(model, observations[val_idx], actions[val_idx], config.batch_size, action_weights)
         observation_mode = str(metadata.get("observation_mode", "base"))
         eval_metrics = evaluation_metrics(model, tasks, config, observation_mode) if config.select_by_eval else None
         history.append(history_entry(epoch, train_loss, val_loss, eval_metrics))
@@ -97,6 +99,16 @@ def checkpoint_score(checkpoint: dict, config: OfflineTrainConfig) -> tuple:
     )
 
 
+def compute_action_weights(actions: np.ndarray, mode: str) -> np.ndarray:
+    if mode == "none":
+        return np.ones(actions.shape[1], dtype=np.float32)
+    if mode == "inverse_std":
+        std = np.std(actions, axis=0).astype(np.float32)
+        weights = 1.0 / np.maximum(std, 1e-3)
+        return (weights / np.mean(weights)).astype(np.float32)
+    raise ValueError(f"unknown action weighting mode {mode!r}")
+
+
 def split_indices(count: int, val_ratio: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     indices = rng.permutation(count)
@@ -104,14 +116,15 @@ def split_indices(count: int, val_ratio: float, seed: int) -> tuple[np.ndarray, 
     return indices[val_count:], indices[:val_count]
 
 
-def train_epoch(model, optimizer, observations: np.ndarray, actions: np.ndarray, batch_size: int) -> float:
+def train_epoch(model, optimizer, observations: np.ndarray, actions: np.ndarray, batch_size: int, action_weights: np.ndarray) -> float:
     order = torch.randperm(len(observations))
     obs = torch.from_numpy(observations).float()
     target = torch.from_numpy(actions).float()
+    weights = torch.from_numpy(action_weights).float()
     losses = []
     for start in range(0, len(order), batch_size):
         idx = order[start : start + batch_size]
-        loss = F.mse_loss(model(obs[idx]), target[idx])
+        loss = F.mse_loss((model(obs[idx]) - target[idx]) * weights, torch.zeros_like(target[idx]))
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -120,13 +133,14 @@ def train_epoch(model, optimizer, observations: np.ndarray, actions: np.ndarray,
     return float(np.mean(losses))
 
 
-def dataset_loss(model, observations: np.ndarray, actions: np.ndarray, batch_size: int) -> float:
+def dataset_loss(model, observations: np.ndarray, actions: np.ndarray, batch_size: int, action_weights: np.ndarray) -> float:
+    weights = torch.from_numpy(action_weights).float()
     losses = []
     with torch.no_grad():
         for start in range(0, len(observations), batch_size):
             obs = torch.from_numpy(observations[start : start + batch_size]).float()
             target = torch.from_numpy(actions[start : start + batch_size]).float()
-            losses.append(float(F.mse_loss(model(obs), target)))
+            losses.append(float(F.mse_loss((model(obs) - target) * weights, torch.zeros_like(target))))
     return float(np.mean(losses))
 
 
@@ -145,6 +159,7 @@ def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str,
         "selection_mode": "eval" if config.select_by_eval else "val_loss",
         "eval_reset_profile": config.eval_reset_profile or "broad",
         "observation_mode": metadata.get("observation_mode", "base"),
+        "action_weighting": config.action_weighting,
         "selection_metrics": selection_metrics,
         "val_loss": val_loss,
         "note": "Offline teacher-imitation checkpoint; simulation-only and not approved for live hardware.",

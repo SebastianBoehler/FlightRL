@@ -24,6 +24,7 @@ class CurriculumVariant:
     eval_profile: str
     eval_steps: int
     observation_mode: str = "base"
+    action_weighting: str = "none"
 
 
 def main() -> None:
@@ -59,6 +60,7 @@ def default_variants() -> list[CurriculumVariant]:
         CurriculumVariant("easy_medium_h256", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 256, 1e-3, "position_yaw_medium", 400),
         CurriculumVariant("medium_h256_long", ("position_yaw_medium",), 1024, 384, 16, 256, 7e-4, "position_yaw_medium", 600),
         CurriculumVariant("easy_medium_history1_h128", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 128, 1e-3, "position_yaw_medium", 400, "history1"),
+        CurriculumVariant("easy_medium_history1_inverse_std_h128", ("position_yaw_easy", "position_yaw_medium"), 512, 192, 12, 128, 1e-3, "position_yaw_medium", 400, "history1", "inverse_std"),
         CurriculumVariant("easy_medium_wide_h128", ("position_yaw_easy", "position_yaw_medium", "position_yaw_wide"), 512, 192, 14, 128, 8e-4, "position_yaw_wide", 500),
         CurriculumVariant("easy_medium_broad_h256", ("position_yaw_easy", "position_yaw_medium", "broad"), 512, 192, 16, 256, 7e-4, "broad", 600),
     ]
@@ -137,6 +139,8 @@ def train_command(dataset: Path, checkpoint: Path, variant: CurriculumVariant, n
         "--eval-reset-profile",
         variant.eval_profile,
     ]
+    if variant.action_weighting != "none":
+        command.extend(["--action-weighting", variant.action_weighting])
     if native_step:
         command.append("--native-step")
     return command
@@ -246,8 +250,8 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Position/Yaw Curriculum Sweep",
         "",
-        "| variant | profiles | hidden | epochs | eval profile | status | medium completed | broad completed |",
-        "| --- | --- | ---: | ---: | --- | --- | ---: | ---: |",
+        "| variant | profiles | hidden | weighting | epochs | eval profile | status | medium completed | broad completed |",
+        "| --- | --- | ---: | --- | ---: | --- | --- | ---: | ---: |",
     ]
     for record in report["records"]:
         variant = record["variant"]
@@ -260,7 +264,8 @@ def render_markdown(report: dict) -> str:
         broad_completed = format_completed(gates.get("broad"))
         lines.append(
             f"| {variant['name']} | {', '.join(variant['profiles'])} | {variant['hidden_size']} | "
-            f"{variant['epochs']} | {variant['eval_profile']} | {status} | {medium_completed} | {broad_completed} |"
+            f"{variant.get('action_weighting', 'none')} | {variant['epochs']} | {variant['eval_profile']} | "
+            f"{status} | {medium_completed} | {broad_completed} |"
         )
     summary = report.get("summary") or {}
     if summary.get("best_medium") or summary.get("best_broad"):

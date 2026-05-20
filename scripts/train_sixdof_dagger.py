@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--reset-profile", default=None, help="Named reset curriculum for DAgger rollout collection.")
     parser.add_argument("--eval-reset-profile", default=None, help="Named reset profile used for eval-based selection and iteration reports.")
+    parser.add_argument("--action-weighting", default="none", choices=("none", "inverse_std"))
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
@@ -73,6 +74,7 @@ def main() -> None:
             select_by_eval=args.select_by_eval,
             use_native_step=args.native_step,
             eval_reset_profile=args.eval_reset_profile,
+            action_weighting=args.action_weighting,
         )
         checkpoint = train_offline_policy(load_dataset(dataset_path), train_config)
         torch.save(checkpoint, checkpoint_path)

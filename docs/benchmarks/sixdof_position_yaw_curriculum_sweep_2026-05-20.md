@@ -89,3 +89,29 @@ python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_y
 | broad | 0.0234 | 0.2786 | 109.1113 | 0.0500 | no |
 
 Conclusion: `history1` improves medium clearance and keeps medium completion near the best static-imitation checkpoint, but broad survival regresses. It is useful scaffolding for future rollout/recurrent work, not a deployable position/yaw checkpoint.
+
+Action-weighting ablation: added `--action-weighting inverse_std` to offline and DAgger training, plus a weighted curriculum variant in `run_sixdof_curriculum_sweep.py`. The intent was to make small control channels matter more than raw unweighted MSE.
+
+Command:
+
+```bash
+python scripts/train_sixdof_offline.py \
+  --dataset artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_02_position_yaw_medium.npz \
+  --checkpoint artifacts/checkpoints/sixdof_position_yaw_history1_weighted_h128.pt \
+  --epochs 24 \
+  --hidden-size 128 \
+  --learning-rate 1e-3 \
+  --eval-steps 500 \
+  --eval-num-envs 256 \
+  --select-by-eval \
+  --eval-reset-profile position_yaw_medium \
+  --native-step \
+  --action-weighting inverse_std
+```
+
+| variant | medium completed | medium survival | medium pos err m | medium clearance p01 m | broad completed | broad survival | broad pos err m |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| history1 control 24ep | 0.2703 | 0.6550 | 36.6386 | 0.0622 | 0.0312 | 0.2714 | 121.6190 |
+| history1 inverse_std 24ep | 0.3672 | 0.7021 | 35.3566 | 0.0722 | 0.0742 | 0.3162 | 120.2756 |
+
+Conclusion: inverse-std weighting slightly improves this same-budget control run, but both are much worse than the earlier `history1_h128` candidate. The weighting knob is useful for reproducible ablations, but it is not the missing ingredient for position/yaw. The next serious attempt should be closed-loop optimization or dataset aggregation that explicitly samples failure recovery states.

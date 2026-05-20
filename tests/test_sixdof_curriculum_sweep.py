@@ -21,6 +21,7 @@ def test_default_curriculum_sweep_covers_staged_profiles() -> None:
     assert {"position_yaw_easy", "position_yaw_medium", "position_yaw_wide", "broad"} <= profiles
     assert {variant.hidden_size for variant in variants} >= {128, 256}
     assert "history1" in {variant.observation_mode for variant in variants}
+    assert "inverse_std" in {variant.action_weighting for variant in variants}
 
 
 def test_curriculum_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
@@ -49,6 +50,14 @@ def test_curriculum_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     assert any("--observation-mode" in command for command in commands)
     assert any("--eval-reset-profile" in command for command in commands)
     assert output.with_suffix(".md").exists()
+
+
+def test_curriculum_weighted_variant_forwards_action_weighting() -> None:
+    variant = [item for item in SWEEP.default_variants() if item.action_weighting == "inverse_std"][0]
+    command = SWEEP.train_command(Path("dataset.npz"), Path("checkpoint.pt"), variant, native_step=True)
+
+    assert "--action-weighting" in command
+    assert "inverse_std" in command
 
 
 def test_load_gate_summary_compacts_metrics(tmp_path: Path) -> None:
