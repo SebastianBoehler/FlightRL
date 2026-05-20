@@ -17,8 +17,8 @@ SPEC.loader.exec_module(SWEEP)
 
 def test_default_ppo_sweep_covers_reference_and_action_knobs() -> None:
     variants = SWEEP.default_variants()
-    assert {variant.reference_coef for variant in variants} >= {1.0, 2.0}
-    assert {variant.action_std for variant in variants} >= {0.04, 0.06}
+    assert {variant.reference_coef for variant in variants} >= {1.0, 2.0, 4.0, 8.0}
+    assert {variant.action_std for variant in variants} >= {0.01, 0.02, 0.04, 0.06}
     assert {variant.reward_mode for variant in variants} >= {"env", "progress", "progress_clearance"}
     assert "broad" in {variant.reset_profile for variant in variants}
 

@@ -55,6 +55,8 @@ def main() -> None:
 
 def default_variants() -> list[PpoVariant]:
     return [
+        PpoVariant(name="stable_ref4_std002_lr1e5", learning_rate=1e-5, action_std=0.02, imitation_coef=0.20, reference_coef=4.0, reward_mode="progress_clearance", updates=12),
+        PpoVariant(name="stable_ref8_std001_lr5e6", learning_rate=5e-6, action_std=0.01, imitation_coef=0.30, reference_coef=8.0, reward_mode="progress_clearance", updates=12),
         PpoVariant(name="ref1_std006_lr5e5", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=1.0),
         PpoVariant(name="ref2_std006_lr5e5", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=2.0),
         PpoVariant(name="progress_ref1_std006", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=1.0, reward_mode="progress"),

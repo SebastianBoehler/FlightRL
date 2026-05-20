@@ -141,3 +141,22 @@ python scripts/train_sixdof_ppo.py \
 | 4 | 0.0938 | 0.6867 | 4.4998 | 0.0610 |
 
 Full medium/broad gate evaluation of the saved checkpoint still failed: medium completion `0.2188`, medium survival `0.5770`, medium position error `32.1645m`, and broad completion `0.0195`. The interface is now correct for closed-loop history PPO, but this smoke setting drifts too far from the initialized policy; future runs should use lower learning rate/action std or stronger reference/imitation regularization.
+
+Conservative history-PPO sweep: the default PPO sweep now starts with two lower-noise, higher-reference variants intended for continuing from a `history1` imitation checkpoint without immediately drifting away.
+
+```bash
+python scripts/run_sixdof_ppo_sweep.py \
+  --run \
+  --max-variants 2 \
+  --init-checkpoint artifacts/curriculum/position_yaw/easy_medium_history1_h128/checkpoint.pt \
+  --output-dir artifacts/ppo/position_yaw_history1_stable \
+  --report artifacts/replay/sixdof_position_yaw_ppo_history1_stable_sweep.json \
+  --native-step
+```
+
+| variant | medium completed | medium survival | medium pos err m | medium clearance p01 m | broad completed | broad pos err m |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| stable_ref4_std002_lr1e5 | 0.5898 | 0.8653 | 3.6753 | 0.0729 | 0.0078 | 108.9331 |
+| stable_ref8_std001_lr5e6 | 0.6367 | 0.8852 | 3.6613 | 0.0873 | 0.0234 | 108.7314 |
+
+Conclusion: stronger reference/imitation pressure prevents the severe divergence seen in the first history-PPO smoke, and `stable_ref8_std001_lr5e6` clears the medium clearance threshold. It still fails completion and position-error gates, and broad behavior remains poor. This suggests PPO fine-tuning is not enough unless paired with a better position/yaw objective or rollout curriculum.
