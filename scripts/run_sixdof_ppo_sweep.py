@@ -4,13 +4,11 @@ import argparse
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
-import subprocess
 import sys
-from time import perf_counter
 
+from flightrl.sixdof.sweep import all_success, run_commands
 
 ROOT = Path(__file__).resolve().parents[1]
-
 
 @dataclass(slots=True)
 class PpoVariant:
@@ -25,14 +23,22 @@ class PpoVariant:
     updates: int = 16
     update_epochs: int = 2
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run 6-DoF position/yaw PPO tuning sweeps")
     parser.add_argument("--init-checkpoint", default="artifacts/curriculum/position_yaw/easy_medium_h128/checkpoint.pt")
+    parser.add_argument("--baseline-checkpoint", default=None)
     parser.add_argument("--output-dir", default="artifacts/ppo/position_yaw")
     parser.add_argument("--report", default="artifacts/replay/sixdof_position_yaw_ppo_sweep.json")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--max-variants", type=int, default=None)
+    parser.add_argument("--task", default="position_yaw")
+    parser.add_argument("--train-num-envs", type=int, default=512)
+    parser.add_argument("--horizon", type=int, default=64)
+    parser.add_argument("--minibatch-size", type=int, default=8192)
+    parser.add_argument("--train-eval-steps", type=int, default=400)
+    parser.add_argument("--eval-num-envs", type=int, default=256)
+    parser.add_argument("--medium-steps", type=int, default=400)
+    parser.add_argument("--broad-steps", type=int, default=800)
     parser.add_argument("--native-step", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-yaw-error-rad", type=float, default=0.35)
     parser.add_argument("--max-yaw-p95-error-rad", type=float, default=0.60)
@@ -41,10 +47,10 @@ def main() -> None:
     variants = default_variants()
     if args.max_variants is not None:
         variants = variants[: args.max_variants]
-    records = [variant_record(args, variant) for variant in variants]
+    records = baseline_records(args) + [variant_record(args, variant) for variant in variants]
     if args.run:
         for record in records:
-            record["results"] = run_commands(record["commands"])
+            record["results"] = run_commands(record["commands"], cwd=ROOT)
             record["gates"] = load_gate_summaries(record)
     report = {"run": args.run, "thresholds": yaw_thresholds(args), "records": records, "summary": sweep_summary(records)}
     output = Path(args.report)
@@ -53,7 +59,6 @@ def main() -> None:
     output.with_suffix(".md").write_text(render_markdown(report) + "\n")
     print(f"summary={output}")
     print(f"markdown={output.with_suffix('.md')}")
-
 
 def default_variants() -> list[PpoVariant]:
     return [
@@ -85,16 +90,15 @@ def default_variants() -> list[PpoVariant]:
         ),
     ]
 
-
 def variant_record(args: argparse.Namespace, variant: PpoVariant) -> dict:
     base = Path(args.output_dir) / variant.name
     checkpoint = base / "checkpoint.pt"
     medium_gate = base / "medium_gate.json"
     broad_gate = base / "broad_gate.json"
     commands = [
-        train_command(args.init_checkpoint, checkpoint, variant, args.native_step),
-        eval_command(checkpoint, medium_gate, "position_yaw_medium", 400, args),
-        eval_command(checkpoint, broad_gate, "broad", 800, args),
+        train_command(args, checkpoint, variant),
+        eval_command(checkpoint, medium_gate, "position_yaw_medium", args.medium_steps, args),
+        eval_command(checkpoint, broad_gate, "broad", args.broad_steps, args),
     ]
     return {
         "variant": asdict(variant),
@@ -104,21 +108,43 @@ def variant_record(args: argparse.Namespace, variant: PpoVariant) -> dict:
         "commands": commands,
     }
 
+def baseline_records(args: argparse.Namespace) -> list[dict]:
+    if not args.baseline_checkpoint:
+        return []
+    base = Path(args.output_dir) / "baseline"
+    medium_gate = base / "medium_gate.json"
+    broad_gate = base / "broad_gate.json"
+    checkpoint = Path(args.baseline_checkpoint)
+    variant = {"name": "baseline", "learning_rate": None, "action_std": None, "imitation_coef": None, "reference_coef": None}
+    return [
+        {
+            "variant": variant,
+            "checkpoint": str(checkpoint),
+            "medium_gate": str(medium_gate),
+            "broad_gate": str(broad_gate),
+            "commands": [
+                eval_command(checkpoint, medium_gate, "position_yaw_medium", args.medium_steps, args),
+                eval_command(checkpoint, broad_gate, "broad", args.broad_steps, args),
+            ],
+        }
+    ]
 
-def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, native_step: bool) -> list[str]:
+def train_command(args: argparse.Namespace, checkpoint: Path, variant: PpoVariant) -> list[str]:
     command = [
         sys.executable,
         str(ROOT / "scripts" / "train_sixdof_ppo.py"),
         "--init-checkpoint",
-        init_checkpoint,
+        args.init_checkpoint,
         "--checkpoint",
         str(checkpoint),
+        "--task",
+        args.task,
         "--updates",
         str(variant.updates),
         "--num-envs",
-        "512",
+        str(args.train_num_envs),
         "--horizon",
-        "64",
+        str(args.horizon),
         "--hidden-size",
         "128",
         "--learning-rate",
@@ -126,7 +152,7 @@ def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, n
         "--update-epochs",
         str(variant.update_epochs),
         "--minibatch-size",
-        "8192",
+        str(args.minibatch_size),
         "--action-std",
         str(variant.action_std),
         "--imitation-coef",
@@ -140,9 +166,9 @@ def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, n
         "--eval-reset-profile",
         variant.eval_reset_profile,
         "--eval-steps",
-        "400",
+        str(args.train_eval_steps),
     ]
-    if native_step:
+    if args.native_step:
         command.append("--native-step")
     return command
 
@@ -154,11 +180,11 @@ def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int,
         "--checkpoint",
         str(checkpoint),
         "--task",
-        "position_yaw",
+        args.task,
         "--steps",
         str(steps),
         "--num-envs",
-        "256",
+        str(args.eval_num_envs),
         "--reset-profile",
         reset_profile,
         "--output",
@@ -175,17 +201,6 @@ def eval_command(checkpoint: Path, output: Path, reset_profile: str, steps: int,
 
 def yaw_thresholds(args: argparse.Namespace) -> dict:
     return {"max_yaw_error_rad": args.max_yaw_error_rad, "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad}
-
-
-def run_commands(commands: list[list[str]]) -> list[dict]:
-    results = []
-    for command in commands:
-        start = perf_counter()
-        completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
-        results.append({"command": command, "returncode": completed.returncode, "elapsed_s": perf_counter() - start})
-        if completed.returncode != 0:
-            break
-    return results
 
 
 def load_gate_summaries(record: dict) -> dict:
@@ -217,10 +232,6 @@ def sweep_summary(records: list[dict]) -> dict:
         "best_medium": best_record(records, "medium"),
         "best_broad": best_record(records, "broad"),
     }
-
-
-def all_success(results: list[dict] | None) -> bool:
-    return bool(results) and all(result["returncode"] == 0 for result in results)
 
 
 def best_record(records: list[dict], gate_name: str) -> dict | None:
