@@ -112,3 +112,23 @@ python scripts/run_sixdof_puffer_sweep.py \
 | large_h32_rr1_h128 | 8192 | 8 | 32 | 1 | 128 | 472400 |
 
 Current fastest short-run Puffer setting: `fast_h32_rr1_h128`, narrowly ahead of `large_h32_rr1_h128`. Wider hidden size 256 roughly halves train SPS in this setup.
+
+## PPO Training Throughput
+
+Native env stepping is not the full training bottleneck, so `scripts/benchmark_sixdof_training_throughput.py` measures rollout collection plus one PPO update over common local configurations.
+
+```bash
+python scripts/benchmark_sixdof_training_throughput.py \
+  --output artifacts/replay/sixdof_training_throughput_latest.json \
+  --native-step
+```
+
+| variant | collect SPS | update SPS | total SPS |
+| --- | ---: | ---: | ---: |
+| smoke_64x16_h64 | 328302 | 306748 | 158579 |
+| base_256x32_h128 | 647316 | 421401 | 255240 |
+| wide_256x32_h256 | 288457 | 300941 | 147283 |
+| large_512x32_h128 | 447155 | 591789 | 254702 |
+| long_256x64_h128 | 479504 | 623918 | 271130 |
+
+Current fastest end-to-end PPO local setting: `long_256x64_h128` at `271130` samples/sec. Best collection-only setting: `base_256x32_h128` at `647316` samples/sec. Hidden size 256 again costs about half the end-to-end throughput, so 128 remains the practical default for sweep breadth.
