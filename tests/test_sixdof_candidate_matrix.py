@@ -34,10 +34,23 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
     suite.write_text(json.dumps({"records": [suite_record("candidate", checkpoint)]}))
     parity = tmp_path / "parity.json"
     parity.write_text(json.dumps({"model": "candidate.ts", "observation": {"mode": "base"}, "parity": {"max_abs_error": 0.0}}))
+    latency = tmp_path / "latency.json"
+    latency.write_text(json.dumps({"eager": {"per_sample_us": 3.0, "samples_per_second": 333333.0}}))
     output = tmp_path / "matrix.json"
 
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_sixdof_candidate_matrix.py"), "--suite", str(suite), "--parity", f"candidate={parity}", "--output", str(output)],
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "build_sixdof_candidate_matrix.py"),
+            "--suite",
+            str(suite),
+            "--parity",
+            f"candidate={parity}",
+            "--latency",
+            f"candidate={latency}",
+            "--output",
+            str(output),
+        ],
         cwd=ROOT,
         check=True,
         capture_output=True,
@@ -46,6 +59,7 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
 
     report = json.loads(output.read_text())
     assert report["records"][0]["edge_parity"]["passed"] is True
+    assert report["records"][0]["edge_latency"]["per_sample_us"] == 3.0
     assert report["records"][0]["checkpoint_meta"]["observation_mode"] == "base"
     assert report["best_by_task"]["position_yaw"]["label"] == "candidate"
     assert output.with_suffix(".md").exists()

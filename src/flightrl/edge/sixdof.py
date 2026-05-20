@@ -30,7 +30,7 @@ def export_sixdof_torchscript(
     observation_dim = int(checkpoint.get("observation_dim", 28))
     observation_mode = str(checkpoint.get("observation_mode", "base"))
     task_count = len(checkpoint.get("tasks", [])) if checkpoint.get("task_conditioned", False) else 1
-    example = _sample_observations(seed=seed, samples=samples, observation_dim=observation_dim, observation_mode=observation_mode, task_count=task_count)
+    example = sample_sixdof_observations(seed=seed, samples=samples, observation_dim=observation_dim, observation_mode=observation_mode, task_count=task_count)
 
     with torch.no_grad():
         expected = model.net(example)
@@ -79,7 +79,7 @@ def export_sixdof_torchscript(
     return EdgeExportResult(output, report, max_abs_error, mean_abs_error)
 
 
-def _sample_observations(*, seed: int, samples: int, observation_dim: int, observation_mode: str, task_count: int) -> torch.Tensor:
+def sample_sixdof_observations(*, seed: int, samples: int, observation_dim: int, observation_mode: str, task_count: int) -> torch.Tensor:
     base_dim = 28 + (task_count if task_count > 1 else 0)
     if observation_mode == "history1":
         current = _sample_base(seed=seed, samples=samples, observation_dim=base_dim, task_count=task_count)

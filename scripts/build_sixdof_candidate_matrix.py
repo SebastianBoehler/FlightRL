@@ -11,12 +11,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build a ranked matrix from 6-DoF validation suite artifacts")
     parser.add_argument("--suite", action="append", required=True, help="Validation suite JSON artifact. Repeatable.")
     parser.add_argument("--parity", action="append", default=[], help="Optional LABEL=parity.json edge export report. Repeatable.")
+    parser.add_argument("--latency", action="append", default=[], help="Optional LABEL=latency.json edge benchmark report. Repeatable.")
     parser.add_argument("--output", default="artifacts/replay/sixdof_candidate_matrix.json")
     parser.add_argument("--max-parity-error", type=float, default=1e-5)
     args = parser.parse_args()
 
     parity = load_parity(args.parity)
-    records = [record for suite in args.suite for record in checkpoint_records(Path(suite), parity, args.max_parity_error)]
+    latency = load_labeled_reports(args.latency, "--latency")
+    records = [record for suite in args.suite for record in checkpoint_records(Path(suite), parity, latency, args.max_parity_error)]
     report = {"records": records, "best_by_task": best_by_task(records), "safety": "Simulation ranking only; not approved for live hardware."}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -26,17 +28,21 @@ def main() -> None:
     print(f"markdown={output.with_suffix('.md')}")
 
 
-def load_parity(items: list[str]) -> dict[str, dict]:
+def load_labeled_reports(items: list[str], flag: str) -> dict[str, dict]:
     reports = {}
     for item in items:
         if "=" not in item:
-            raise SystemExit("--parity must be LABEL=path")
+            raise SystemExit(f"{flag} must be LABEL=path")
         label, path = item.split("=", 1)
         reports[label] = json.loads(Path(path).read_text())
     return reports
 
 
-def checkpoint_records(suite_path: Path, parity: dict[str, dict], max_parity_error: float) -> list[dict]:
+def load_parity(items: list[str]) -> dict[str, dict]:
+    return load_labeled_reports(items, "--parity")
+
+
+def checkpoint_records(suite_path: Path, parity: dict[str, dict], latency: dict[str, dict], max_parity_error: float) -> list[dict]:
     suite = json.loads(suite_path.read_text())
     records = []
     for record in suite["records"]:
@@ -63,6 +69,7 @@ def checkpoint_records(suite_path: Path, parity: dict[str, dict], max_parity_err
                 "action_saturation_fraction": metrics.get("action_saturation_fraction"),
                 "checkpoint_meta": checkpoint_meta(checkpoint),
                 "edge_parity": compact_parity(parity_report, max_parity_error),
+                "edge_latency": compact_latency(latency.get(label)),
             }
         )
     return records
@@ -94,6 +101,17 @@ def compact_parity(report: dict | None, max_error: float) -> dict:
     }
 
 
+def compact_latency(report: dict | None) -> dict:
+    if not report:
+        return {"present": False}
+    result = report.get("torchscript_result") or report["eager"]
+    return {
+        "present": True,
+        "per_sample_us": result["per_sample_us"],
+        "samples_per_second": result["samples_per_second"],
+    }
+
+
 def best_by_task(records: list[dict]) -> dict[str, dict]:
     best: dict[str, dict] = {}
     for record in records:
@@ -117,16 +135,20 @@ def score(record: dict) -> tuple:
 
 
 def compact_record(record: dict) -> dict:
-    return {key: record[key] for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")}
+    compact = {key: record[key] for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")}
+    compact["edge_latency"] = record.get("edge_latency", {"present": False})
+    return compact
 
 
 def render_markdown(report: dict) -> str:
-    lines = ["# 6-DoF Candidate Matrix", "", "| label | tasks | passed | edge | completed | survival | pos err m | clearance p01 m | obs mode |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    lines = ["# 6-DoF Candidate Matrix", "", "| label | tasks | passed | edge | latency us | completed | survival | pos err m | clearance p01 m | obs mode |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     for record in sorted(report["records"], key=score):
         edge = "yes" if record["edge_parity"]["present"] else "no"
+        latency = record["edge_latency"].get("per_sample_us")
+        latency_text = f"{latency:.3f}" if latency is not None else "n/a"
         meta = record["checkpoint_meta"]
         lines.append(
-            f"| {record['label']} | {', '.join(record['tasks'])} | {record['passed']} | {edge} | "
+            f"| {record['label']} | {', '.join(record['tasks'])} | {record['passed']} | {edge} | {latency_text} | "
             f"{record['mean_completed_fraction']:.4f} | {record['mean_survival_fraction']:.4f} | "
             f"{record['mean_position_error_m']:.4f} | {record['clearance_p01_m']:.4f} | {meta.get('observation_mode', 'unknown')} |"
         )

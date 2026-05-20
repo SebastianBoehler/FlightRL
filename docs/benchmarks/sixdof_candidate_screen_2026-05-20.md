@@ -57,14 +57,16 @@ python scripts/build_sixdof_candidate_matrix.py \
   --suite artifacts/replay/sixdof_history1_medium_suite.json \
   --parity obstacle_focus=artifacts/edge/sixdof_obstacle_focus_refine.parity.json \
   --parity history1_h128=artifacts/edge/sixdof_history1_h128.parity.json \
+  --latency obstacle_focus=artifacts/edge/sixdof_obstacle_focus_refine.latency.json \
+  --latency history1_h128=artifacts/edge/sixdof_history1_h128.latency.json \
   --output artifacts/replay/sixdof_candidate_matrix_current.json
 ```
 
 Current matrix result:
 
-| task | selected label | passed | edge parity | completed | pos err m | clearance p01 m |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| obstacle_avoidance | obstacle_focus | true | true | 1.0000 | 0.1402 | 0.4839 |
-| position_yaw | history1_h128 | false | true | 0.6602 | 3.8810 | 0.0889 |
+| task | selected label | passed | edge parity | latency us | completed | pos err m | clearance p01 m |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| obstacle_avoidance | obstacle_focus | true | true | 9.967 | 1.0000 | 0.1402 | 0.4839 |
+| position_yaw | history1_h128 | false | true | 9.323 | 0.6602 | 3.8810 | 0.0889 |
 
 The matrix makes the current boundary explicit: obstacle avoidance has a learned checkpoint with gate pass and edge parity, while position/yaw still has no passing learned checkpoint even when the best medium candidate has edge parity.
