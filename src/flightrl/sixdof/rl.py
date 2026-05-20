@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .env import ACTION_DIM
+from .observation import augment_observation
 from .policies import SixDofPolicy, teacher_actions
 
 
@@ -71,11 +72,27 @@ def load_actor_checkpoint(model: SixDofActorCritic, checkpoint: dict | None) -> 
         model.actor.load_state_dict(checkpoint["state_dict"])
 
 
-def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: float, reward_mode: str = "env") -> dict[str, np.ndarray]:
+def collect_rollout(
+    env,
+    model: SixDofActorCritic,
+    *,
+    horizon: int,
+    action_std: float,
+    reward_mode: str = "env",
+    observation_mode: str = "base",
+) -> dict[str, np.ndarray]:
     observations, actions, log_probs, rewards, dones, values, teacher = [], [], [], [], [], [], []
     obs = env.observations.copy()
+    previous_obs = None
+    previous_action = np.zeros((env.num_envs, ACTION_DIM), dtype=np.float32)
+    fresh = np.ones(env.num_envs, dtype=bool)
     for _ in range(horizon):
-        obs_tensor = torch.from_numpy(obs).float()
+        model_obs = obs.copy()
+        if previous_obs is None:
+            previous_obs = model_obs.copy()
+        previous_obs[fresh] = model_obs[fresh]
+        policy_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
+        obs_tensor = torch.from_numpy(policy_obs).float()
         with torch.no_grad():
             action, log_prob, _entropy, value = model.act(obs_tensor, action_std)
         teacher_action = teacher_actions(env, task=env.task).copy()
@@ -83,16 +100,24 @@ def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: 
         action_np = action.cpu().numpy()
         next_obs, reward, terminal, truncation, _info = env.step(action_np)
         done = terminal | truncation
-        observations.append(obs.copy())
+        observations.append(policy_obs.copy())
         actions.append(action_np.astype(np.float32))
         teacher.append(teacher_action)
         log_probs.append(log_prob.cpu().numpy().astype(np.float32))
         rewards.append(rollout_reward(env, reward, done, previous_error, action_np, reward_mode))
         dones.append(done.astype(np.float32))
         values.append(value.cpu().numpy().astype(np.float32))
+        previous_obs = model_obs.copy()
+        previous_action = action_np.astype(np.float32)
+        fresh[:] = False
         obs = env.reset_done(done).copy() if np.any(done) else next_obs.copy()
+        if np.any(done):
+            previous_action[done.astype(bool)] = 0.0
+            fresh = done.astype(bool)
     with torch.no_grad():
-        next_value = model.critic(torch.from_numpy(obs).float()).squeeze(1).cpu().numpy().astype(np.float32)
+        previous_obs[fresh] = obs[fresh]
+        next_obs = augment_observation(obs, previous_obs, previous_action, observation_mode)
+        next_value = model.critic(torch.from_numpy(next_obs).float()).squeeze(1).cpu().numpy().astype(np.float32)
     return {
         "observations": np.asarray(observations, dtype=np.float32),
         "actions": np.asarray(actions, dtype=np.float32),

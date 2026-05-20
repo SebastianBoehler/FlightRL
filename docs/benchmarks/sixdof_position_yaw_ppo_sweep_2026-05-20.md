@@ -117,3 +117,27 @@ python scripts/train_sixdof_ppo.py \
 ```
 
 The saved selection was update `32`, with broad completion `0.0156`, survival `0.3016`, position error `93.9378m`, and clearance p01 `0.0360m`. The first evaluation during that run briefly reached completion `0.105`, then degraded, so longer broad PPO from the unstable broad imitation checkpoint is not a useful default yet.
+
+History-observation PPO pass: closed-loop PPO now supports `--observation-mode history1` and infers that mode from `--init-checkpoint` when the checkpoint was trained with history observations. This lets PPO continue from the strongest history imitation candidates instead of being limited to raw 28D observations.
+
+Smoke command:
+
+```bash
+python scripts/train_sixdof_ppo.py \
+  --init-checkpoint artifacts/curriculum/position_yaw/easy_medium_history1_h128/checkpoint.pt \
+  --checkpoint artifacts/ppo/position_yaw_history1/ppo_history1_ref_smoke.pt \
+  --task position_yaw --reset-profile position_yaw_medium --eval-reset-profile position_yaw_medium \
+  --updates 4 --num-envs 512 --horizon 64 --hidden-size 128 --minibatch-size 8192 \
+  --update-epochs 2 --learning-rate 3e-4 --action-std 0.12 \
+  --imitation-coef 0.1 --reference-coef 0.5 --reward-mode progress_clearance \
+  --eval-steps 300 --eval-num-envs 128 --native-step
+```
+
+| update | eval completed | eval survival | eval pos err m | eval clearance p01 m |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.6484 | 0.9335 | 2.1285 | 0.1041 |
+| 2 | 0.5547 | 0.8992 | 2.5620 | 0.0917 |
+| 3 | 0.2188 | 0.7473 | 4.2688 | 0.0725 |
+| 4 | 0.0938 | 0.6867 | 4.4998 | 0.0610 |
+
+Full medium/broad gate evaluation of the saved checkpoint still failed: medium completion `0.2188`, medium survival `0.5770`, medium position error `32.1645m`, and broad completion `0.0195`. The interface is now correct for closed-loop history PPO, but this smoke setting drifts too far from the initialized policy; future runs should use lower learning rate/action std or stronger reference/imitation regularization.

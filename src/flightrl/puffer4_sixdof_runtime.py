@@ -6,7 +6,7 @@ import sys
 from typing import Sequence
 
 from .puffer4_config import Puffer4ExportSettings
-from .puffer4_runtime import BUILD_MODE_FLAGS, normalize_puffer_args, puffer_subprocess_env, resolve_pufferlib_root
+from .puffer4_runtime import BUILD_MODE_FLAGS, ensure_puffer_build_matches, normalize_puffer_args, puffer_subprocess_env, resolve_pufferlib_root
 from .puffer4_sixdof_export import SixDofPufferExportResult, export_sixdof_puffer4_assets
 
 
@@ -44,6 +44,7 @@ def run_sixdof_train(
         build_mode=build_mode,
         no_build=no_build,
     )
+    ensure_puffer_build_matches(root, settings.env_name, no_build=no_build, python_executable=python_executable, build_mode=build_mode)
     forwarded = normalize_puffer_args(puffer_args, build_mode)
     command = [
         python_executable or sys.executable,

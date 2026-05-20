@@ -113,3 +113,20 @@ python scripts/run_sixdof_puffer_sweep.py \
 | large_h32_rr1_h128 | 8192 | 8 | 8 | 32 | 16384 | 1 | 0.0003 | 0.001 | 128 | 377700 |
 
 Result: the current fastest Puffer setting is still replay ratio `1`, hidden size `128`. In this refresh, `8192` agents reached `377.7K` train SPS and the `4096`-agent fast run reached `372.4K`.
+
+Follow-up: the Puffer runtime now preflights `--no-build` runs by querying the compiled native extension's `env_name`. If the checkout is built for a different env, it fails before launching training with a direct message to rebuild or use the compiled `--env-name`.
+
+Guard check:
+
+```bash
+python scripts/run_sixdof_puffer_sweep.py \
+  --run \
+  --no-build \
+  --max-variants 1 \
+  --env-name flightrl_sixdof_sweep_512 \
+  --pufferlib-root ../PufferLib-4-flightrl \
+  --total-timesteps 65536 \
+  --output artifacts/replay/sixdof_puffer_sweep_mismatch_guard.json
+```
+
+Result: the sweep record failed fast with `PufferLib native extension is built for 'flightrl_sixdof_sweep', not 'flightrl_sixdof_sweep_512'; rerun without --no-build or use the compiled --env-name.`

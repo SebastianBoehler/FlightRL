@@ -59,6 +59,15 @@ def test_collect_rollout_supports_progress_reward() -> None:
     assert not np.allclose(clearance["rewards"], shaped["rewards"])
 
 
+def test_collect_rollout_supports_history_observation_mode() -> None:
+    env = SixDofCrazyflieEnv(num_envs=4, seed=11, reset_profile="position_yaw_easy")
+    model = SixDofActorCritic(input_dim=60, hidden_size=16)
+    rollout = collect_rollout(env, model, horizon=3, action_std=0.2, observation_mode="history1")
+
+    assert rollout["observations"].shape == (3, 4, 60)
+    assert rollout["teacher_actions"].shape == rollout["actions"].shape
+
+
 def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
     checkpoint = tmp_path / "ppo.pt"
     subprocess.run(
@@ -89,6 +98,8 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
             "0.2",
             "--reward-mode",
             "progress_clearance",
+            "--observation-mode",
+            "history1",
         ],
         cwd=ROOT,
         check=True,
@@ -100,4 +111,6 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
     assert saved["imitation_coef"] == 0.1
     assert saved["reference_coef"] == 0.2
     assert saved["reward_mode"] == "progress_clearance"
+    assert saved["observation_mode"] == "history1"
+    assert saved["observation_dim"] == 60
     assert checkpoint.with_suffix(".report.json").exists()

@@ -52,6 +52,43 @@ def puffer_subprocess_env(build_mode: str, puffer_args: Sequence[str]) -> dict[s
     return env
 
 
+def compiled_puffer_env(root: Path, *, python_executable: str | None = None, build_mode: str = "cpu") -> str | None:
+    completed = subprocess.run(
+        [
+            python_executable or sys.executable,
+            "-c",
+            "from pufferlib import _C; print(getattr(_C, 'env_name', '') or '')",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=puffer_subprocess_env(build_mode, ()),
+    )
+    if completed.returncode != 0:
+        return None
+    compiled = completed.stdout.strip()
+    return compiled or None
+
+
+def ensure_puffer_build_matches(
+    root: Path,
+    expected_env_name: str,
+    *,
+    no_build: bool,
+    python_executable: str | None = None,
+    build_mode: str = "cpu",
+) -> None:
+    if not no_build:
+        return
+    compiled = compiled_puffer_env(root, python_executable=python_executable, build_mode=build_mode)
+    if compiled is not None and compiled != expected_env_name:
+        raise RuntimeError(
+            f"PufferLib native extension is built for {compiled!r}, not {expected_env_name!r}; "
+            "rerun without --no-build or use the compiled --env-name."
+        )
+
+
 def export_and_build(
     config: FlightConfig,
     *,
@@ -89,6 +126,7 @@ def run_train(
         build_mode=build_mode,
         no_build=no_build,
     )
+    ensure_puffer_build_matches(root, settings.env_name, no_build=no_build, python_executable=python_executable, build_mode=build_mode)
     command = [
         python_executable or sys.executable,
         "-m",

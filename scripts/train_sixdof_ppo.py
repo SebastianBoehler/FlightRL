@@ -9,6 +9,7 @@ from time import perf_counter
 import torch
 
 from flightrl.sixdof import SixDofCrazyflieEnv, evaluate_policy, gate_status
+from flightrl.sixdof.observation import OBSERVATION_MODES, observation_dim
 from flightrl.sixdof.rl import REWARD_MODES, PpoConfig, SixDofActorCritic, collect_rollout, load_actor_checkpoint, ppo_update
 
 
@@ -30,11 +31,15 @@ def main() -> None:
     parser.add_argument("--imitation-coef", type=float, default=0.0, help="Teacher-action MSE weight on policy-visited states.")
     parser.add_argument("--reference-coef", type=float, default=0.0, help="MSE weight to keep actor near the initialized policy.")
     parser.add_argument("--reward-mode", default="env", choices=REWARD_MODES)
+    parser.add_argument("--observation-mode", default=None, choices=OBSERVATION_MODES)
     parser.add_argument("--eval-steps", type=int, default=400)
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--seed", type=int, default=919)
     parser.add_argument("--native-step", action="store_true")
     args = parser.parse_args()
+    init_checkpoint = torch.load(args.init_checkpoint, map_location="cpu") if args.init_checkpoint else None
+    args.observation_mode = args.observation_mode or (init_checkpoint or {}).get("observation_mode", "base")
+    input_dim = observation_dim(28, args.observation_mode)
 
     torch.manual_seed(args.seed)
     env = SixDofCrazyflieEnv(
@@ -53,9 +58,10 @@ def main() -> None:
         imitation_coef=args.imitation_coef,
         reference_coef=args.reference_coef,
     )
-    model = SixDofActorCritic(input_dim=28, hidden_size=args.hidden_size)
-    if args.init_checkpoint:
-        load_actor_checkpoint(model, torch.load(args.init_checkpoint, map_location="cpu"))
+    model = SixDofActorCritic(input_dim=input_dim, hidden_size=args.hidden_size)
+    if init_checkpoint:
+        validate_init_checkpoint(init_checkpoint, input_dim)
+        load_actor_checkpoint(model, init_checkpoint)
     reference_actor = frozen_actor(model) if args.reference_coef > 0.0 else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
 
@@ -63,7 +69,14 @@ def main() -> None:
     history = []
     start = perf_counter()
     for update in range(1, args.updates + 1):
-        rollout = collect_rollout(env, model, horizon=args.horizon, action_std=args.action_std, reward_mode=args.reward_mode)
+        rollout = collect_rollout(
+            env,
+            model,
+            horizon=args.horizon,
+            action_std=args.action_std,
+            reward_mode=args.reward_mode,
+            observation_mode=args.observation_mode,
+        )
         losses = ppo_update(model, optimizer, rollout, config, reference_actor)
         if update == 1 or update == args.updates or update % max(1, args.updates // 4) == 0:
             metrics = eval_actor(model, args)
@@ -98,6 +111,7 @@ def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
         num_envs=args.eval_num_envs,
         use_native_step=args.native_step,
         reset_profile=args.eval_reset_profile,
+        observation_mode=args.observation_mode,
     )
 
 
@@ -117,8 +131,9 @@ def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, s
         "tasks": [args.task],
         "task_conditioned": False,
         "hidden_size": args.hidden_size,
-        "observation_dim": 28,
+        "observation_dim": observation_dim(28, args.observation_mode),
         "base_observation_dim": 28,
+        "observation_mode": args.observation_mode,
         "action_dim": 4,
         "selection_update": update,
         "selection_score": score,
@@ -150,6 +165,11 @@ def frozen_actor(model: SixDofActorCritic):
     for parameter in actor.parameters():
         parameter.requires_grad_(False)
     return actor
+
+
+def validate_init_checkpoint(checkpoint: dict, input_dim: int) -> None:
+    if int(checkpoint.get("observation_dim", 28)) != input_dim:
+        raise ValueError("init checkpoint observation_dim does not match --observation-mode")
 
 
 if __name__ == "__main__":
