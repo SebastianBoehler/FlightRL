@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 from time import perf_counter
@@ -27,6 +28,7 @@ def main() -> None:
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--action-std", type=float, default=0.25)
     parser.add_argument("--imitation-coef", type=float, default=0.0, help="Teacher-action MSE weight on policy-visited states.")
+    parser.add_argument("--reference-coef", type=float, default=0.0, help="MSE weight to keep actor near the initialized policy.")
     parser.add_argument("--eval-steps", type=int, default=400)
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--seed", type=int, default=919)
@@ -48,10 +50,12 @@ def main() -> None:
         update_epochs=args.update_epochs,
         action_std=args.action_std,
         imitation_coef=args.imitation_coef,
+        reference_coef=args.reference_coef,
     )
     model = SixDofActorCritic(input_dim=28, hidden_size=args.hidden_size)
     if args.init_checkpoint:
         load_actor_checkpoint(model, torch.load(args.init_checkpoint, map_location="cpu"))
+    reference_actor = frozen_actor(model) if args.reference_coef > 0.0 else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
 
     best = None
@@ -59,7 +63,7 @@ def main() -> None:
     start = perf_counter()
     for update in range(1, args.updates + 1):
         rollout = collect_rollout(env, model, horizon=args.horizon, action_std=args.action_std)
-        losses = ppo_update(model, optimizer, rollout, config)
+        losses = ppo_update(model, optimizer, rollout, config, reference_actor)
         if update == 1 or update == args.updates or update % max(1, args.updates // 4) == 0:
             metrics = eval_actor(model, args)
             score = score_metrics(metrics)
@@ -122,6 +126,7 @@ def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, s
         "reset_profile": args.reset_profile,
         "eval_reset_profile": args.eval_reset_profile,
         "imitation_coef": args.imitation_coef,
+        "reference_coef": args.reference_coef,
         "use_native_step": args.native_step,
         "note": "Closed-loop PPO simulation checkpoint; not approved for live hardware.",
     }
@@ -135,6 +140,14 @@ def report(checkpoint: dict, args: argparse.Namespace) -> dict:
         max_position_error_m=1.00,
     )
     return {"checkpoint": args.checkpoint, "gate": gate, "metrics": checkpoint["metrics"], "history": checkpoint["history"]}
+
+
+def frozen_actor(model: SixDofActorCritic):
+    actor = copy.deepcopy(model.actor)
+    actor.eval()
+    for parameter in actor.parameters():
+        parameter.requires_grad_(False)
+    return actor
 
 
 if __name__ == "__main__":

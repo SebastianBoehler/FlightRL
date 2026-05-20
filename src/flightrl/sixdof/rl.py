@@ -25,6 +25,7 @@ class PpoConfig:
     minibatch_size: int = 4096
     action_std: float = 0.35
     imitation_coef: float = 0.0
+    reference_coef: float = 0.0
 
 
 class SixDofActorCritic(nn.Module):
@@ -115,7 +116,7 @@ def compute_advantages(rollout: dict[str, np.ndarray], gamma: float, gae_lambda:
     return advantages.reshape(-1), returns.reshape(-1)
 
 
-def ppo_update(model: SixDofActorCritic, optimizer, rollout: dict[str, np.ndarray], config: PpoConfig) -> dict[str, float]:
+def ppo_update(model: SixDofActorCritic, optimizer, rollout: dict[str, np.ndarray], config: PpoConfig, reference_actor: SixDofPolicy | None = None) -> dict[str, float]:
     observations = torch.from_numpy(rollout["observations"].reshape(-1, rollout["observations"].shape[-1])).float()
     actions = torch.from_numpy(rollout["actions"].reshape(-1, ACTION_DIM)).float()
     teacher = torch.from_numpy(rollout["teacher_actions"].reshape(-1, ACTION_DIM)).float()
@@ -133,16 +134,41 @@ def ppo_update(model: SixDofActorCritic, optimizer, rollout: dict[str, np.ndarra
             ratio = (log_prob - old_log_probs[idx]).exp()
             policy_loss = -torch.min(ratio * advantages[idx], ratio.clamp(1.0 - config.clip_coef, 1.0 + config.clip_coef) * advantages[idx]).mean()
             value_loss = F.mse_loss(value, returns[idx])
-            imitation_loss = F.mse_loss(model.actor(observations[idx]), teacher[idx])
-            loss = policy_loss + config.value_coef * value_loss + config.imitation_coef * imitation_loss - config.entropy_coef * entropy.mean()
+            actor_output = model.actor(observations[idx])
+            imitation_loss = F.mse_loss(actor_output, teacher[idx])
+            reference_loss = reference_mse(reference_actor, actor_output, observations[idx])
+            loss = (
+                policy_loss
+                + config.value_coef * value_loss
+                + config.imitation_coef * imitation_loss
+                + config.reference_coef * reference_loss
+                - config.entropy_coef * entropy.mean()
+            )
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             optimizer.step()
-            losses.append((float(policy_loss.detach()), float(value_loss.detach()), float(entropy.mean().detach()), float(imitation_loss.detach())))
+            losses.append(
+                (
+                    float(policy_loss.detach()),
+                    float(value_loss.detach()),
+                    float(entropy.mean().detach()),
+                    float(imitation_loss.detach()),
+                    float(reference_loss.detach()),
+                )
+            )
     return {
         "policy_loss": float(np.mean([item[0] for item in losses])),
         "value_loss": float(np.mean([item[1] for item in losses])),
         "entropy": float(np.mean([item[2] for item in losses])),
         "imitation_loss": float(np.mean([item[3] for item in losses])),
+        "reference_loss": float(np.mean([item[4] for item in losses])),
     }
+
+
+def reference_mse(reference_actor: SixDofPolicy | None, actor_output: torch.Tensor, observations: torch.Tensor) -> torch.Tensor:
+    if reference_actor is None:
+        return actor_output.new_tensor(0.0)
+    with torch.no_grad():
+        target = reference_actor(observations)
+    return F.mse_loss(actor_output, target)

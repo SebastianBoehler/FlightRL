@@ -33,8 +33,9 @@ def test_ppo_update_runs_on_short_rollout() -> None:
     rollout = collect_rollout(env, model, horizon=3, action_std=0.2)
     assert rollout["teacher_actions"].shape == rollout["actions"].shape
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    stats = ppo_update(model, optimizer, rollout, PpoConfig(hidden_size=16, minibatch_size=4, update_epochs=1, action_std=0.2, imitation_coef=0.1))
-    assert set(stats) == {"policy_loss", "value_loss", "entropy", "imitation_loss"}
+    reference = SixDofActorCritic(input_dim=28, hidden_size=16).actor
+    stats = ppo_update(model, optimizer, rollout, PpoConfig(hidden_size=16, minibatch_size=4, update_epochs=1, action_std=0.2, imitation_coef=0.1, reference_coef=0.2), reference)
+    assert set(stats) == {"policy_loss", "value_loss", "entropy", "imitation_loss", "reference_loss"}
 
 
 def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
@@ -63,6 +64,8 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
             "4",
             "--imitation-coef",
             "0.1",
+            "--reference-coef",
+            "0.2",
         ],
         cwd=ROOT,
         check=True,
@@ -72,4 +75,5 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
     saved = torch.load(checkpoint, map_location="cpu")
     assert saved["trainer"] == "ppo"
     assert saved["imitation_coef"] == 0.1
+    assert saved["reference_coef"] == 0.2
     assert checkpoint.with_suffix(".report.json").exists()
