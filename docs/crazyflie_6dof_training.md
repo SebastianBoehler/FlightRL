@@ -130,10 +130,19 @@ python scripts/evaluate_sixdof_checkpoint.py \
   --task obstacle_avoidance \
   --native-step \
   --output artifacts/replay/sixdof_obstacle_focus_refine_gate.json
+
+python scripts/evaluate_sixdof_suite.py \
+  --teacher teacher_safe position_yaw,obstacle_avoidance,circle \
+  --candidate obstacle_focus artifacts/dagger/sixdof_obstacle_focus_refine/iter_02.pt obstacle_avoidance \
+  --candidate multitask artifacts/checkpoints/sixdof_multitask_h256.pt checkpoint \
+  --steps 300 \
+  --num-envs 128 \
+  --native-step \
+  --output artifacts/replay/sixdof_validation_suite_latest.json
 ```
 
 The gate checks low-percentile simulated wall clearance, terminal-free completion fraction, and mean position error. It also reports control diagnostics: action magnitude, saturation fraction, and learned-policy disagreement with the analytic teacher on the states visited by the policy. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
-
+Use `evaluate_sixdof_suite.py` for checkpoint comparisons and ablations. It writes one JSON plus Markdown table across teachers and checkpoints using the same thresholds, which makes regressions and promising candidates easier to spot.
 Use the teacher gate first. If the analytic teacher fails a task, a learned checkpoint for that same task is not meaningful yet. Current evidence shows position/yaw, obstacle avoidance, and circle are feasible as a reference set, while the experimental attitude task needs a better physical objective before it belongs in multi-task training.
 
 Use the offline action-gap report before closed-loop gates. If a policy cannot match teacher actions on teacher-visited states, closed-loop rollout failures are expected and more DAgger/RL training is premature.
