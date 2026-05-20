@@ -66,6 +66,35 @@ def test_crazyflie_room_scan_dry_run_runs_without_cflib() -> None:
     assert "dry_run scan command" in result.stdout
 
 
+def test_room_visualizer_filters_and_writes_plot(tmp_path: Path) -> None:
+    log = tmp_path / "room.csv"
+    log.write_text(
+        "host_time_s,stateEstimate.x,stateEstimate.y,stateEstimate.z,stabilizer.roll,stabilizer.pitch,stabilizer.yaw,"
+        "range.front,range.back,range.left,range.right,range.up,range.zrange\n"
+        "10,1,2,0.01,0,0,0,1000,32766,32766,32766,32766,10\n"
+        "11,1.2,2.1,0.40,0,0,0,1000,32766,32766,32766,32766,400\n"
+    )
+    output = tmp_path / "room.png"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/visualize_crazyflie_room.py",
+            "--input",
+            str(log),
+            "--output",
+            str(output),
+            "--min-drone-z-m",
+            "0.2",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert output.exists()
+    assert "trajectory samples" in result.stdout
+
+
 def test_imitation_hover_training_writes_checkpoint(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.pt"
     result = subprocess.run(

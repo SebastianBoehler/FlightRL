@@ -14,12 +14,18 @@ def main() -> None:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", default=None)
     parser.add_argument("--max-range-m", type=float, default=4.0)
+    parser.add_argument("--min-drone-z-m", type=float, default=0.0)
+    parser.add_argument("--raw-origin", action="store_true", help="keep estimator x/y instead of starting the plot at 0,0")
     args = parser.parse_args()
 
     input_path = Path(args.input)
     output = Path(args.output or input_path.with_suffix(".room.png"))
     with input_path.open() as handle:
-        rows = list(csv.DictReader(handle))
+        rows = prepare_rows(
+            list(csv.DictReader(handle)),
+            min_drone_z_m=args.min_drone_z_m,
+            normalize_xy=not args.raw_origin,
+        )
     points = points_from_rows(rows, max_range_m=args.max_range_m)
     trajectory = trajectory_from_rows(rows)
     if not points:
@@ -27,6 +33,27 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     render(points, trajectory, output)
     print(f"wrote {output} with {len(points)} ranger points and {len(trajectory)} trajectory samples")
+
+
+def prepare_rows(rows: list[dict[str, str]], *, min_drone_z_m: float, normalize_xy: bool) -> list[dict[str, str]]:
+    filtered = [row.copy() for row in rows if parse_float(row.get("stateEstimate.z", "0")) >= min_drone_z_m]
+    if not filtered:
+        return []
+    t0 = parse_float(filtered[0].get("host_time_s", "0"))
+    x0 = parse_float(filtered[0].get("stateEstimate.x", "0")) if normalize_xy else 0.0
+    y0 = parse_float(filtered[0].get("stateEstimate.y", "0")) if normalize_xy else 0.0
+    for row in filtered:
+        row["host_time_s"] = str(parse_float(row.get("host_time_s", "0")) - t0)
+        row["stateEstimate.x"] = str(parse_float(row.get("stateEstimate.x", "0")) - x0)
+        row["stateEstimate.y"] = str(parse_float(row.get("stateEstimate.y", "0")) - y0)
+    return filtered
+
+
+def parse_float(value: str | None) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def render(points, trajectory, output: Path) -> None:
