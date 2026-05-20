@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from flightrl.sixdof.offline import compute_action_weights, dataset_loss
+from flightrl.sixdof.offline import compute_action_weights, compute_sample_weights, dataset_loss
 from flightrl.sixdof.policies import SixDofPolicy
 
 
@@ -35,3 +35,14 @@ def test_weighted_dataset_loss_accepts_action_weights() -> None:
     loss = dataset_loss(model, observations, actions, batch_size=2, action_weights=np.ones(4, dtype=np.float32))
 
     assert loss == 0.0
+
+
+def test_task_sample_weights_prioritize_named_tasks() -> None:
+    weights = compute_sample_weights(
+        np.asarray([0, 1, 1, 2], dtype=np.int64),
+        ("position_yaw", "obstacle_avoidance", "circle"),
+        {"position_yaw": 2.0, "circle": 3.0},
+    )
+
+    assert weights[2] < weights[0] < weights[3]
+    assert abs(float(np.mean(weights)) - 1.0) < 1e-6

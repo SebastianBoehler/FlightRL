@@ -121,6 +121,8 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
             "--eval-num-envs",
             "4",
             "--select-by-eval",
+            "--task-weight",
+            "position_yaw=2.0",
         ],
         cwd=ROOT,
         check=True,
@@ -135,6 +137,7 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
     assert saved["val_loss"] >= 0.0
     assert saved["selection_mode"] == "eval"
     assert saved["selection_metrics"] is not None
+    assert saved["task_weights"] == {"position_yaw": 2.0}
 
 
 def test_eval_selected_checkpoint_score_prioritizes_survival_and_clearance() -> None:

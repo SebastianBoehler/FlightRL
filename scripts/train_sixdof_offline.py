@@ -25,9 +25,11 @@ def main() -> None:
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--eval-reset-profile", default=None, help="Named reset profile used for eval-based selection.")
     parser.add_argument("--action-weighting", default="none", choices=("none", "inverse_std"))
+    parser.add_argument("--task-weight", action="append", default=[], metavar="TASK=WEIGHT", help="Per-task sample weight. Repeatable.")
     args = parser.parse_args()
 
     data = load_dataset(args.dataset)
+    task_weights = parse_task_weights(args.task_weight)
     config = OfflineTrainConfig(
         dataset=args.dataset,
         hidden_size=args.hidden_size,
@@ -42,6 +44,7 @@ def main() -> None:
         use_native_step=args.native_step,
         eval_reset_profile=args.eval_reset_profile,
         action_weighting=args.action_weighting,
+        task_weights=task_weights,
     )
     best = train_offline_policy(data, config)
     for entry in best["history"]:
@@ -54,6 +57,16 @@ def main() -> None:
     print(f"checkpoint={output}")
     print(f"val_loss={best['val_loss']:.6f}")
     print(f"selection_mode={best['selection_mode']}")
+
+
+def parse_task_weights(items: list[str]) -> dict[str, float]:
+    weights = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit("--task-weight must be TASK=WEIGHT")
+        task, value = item.split("=", 1)
+        weights[task] = float(value)
+    return weights
 
 
 if __name__ == "__main__":

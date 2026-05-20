@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
+    parser.add_argument("--task-weight", action="append", default=[], metavar="TASK=WEIGHT", help="Per-task sample weight for offline retraining. Repeatable.")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -47,6 +48,7 @@ def main() -> None:
     current_checkpoint = Path(args.initial_checkpoint)
     dataset_paths = [Path(args.seed_dataset)]
     reports = []
+    task_weights = parse_task_weights(args.task_weight)
     for iteration in range(1, args.iterations + 1):
         dagger_dataset = collect_policy_dataset(
             checkpoint_path=current_checkpoint,
@@ -75,6 +77,7 @@ def main() -> None:
             use_native_step=args.native_step,
             eval_reset_profile=args.eval_reset_profile,
             action_weighting=args.action_weighting,
+            task_weights=task_weights,
         )
         checkpoint = train_offline_policy(load_dataset(dataset_path), train_config)
         torch.save(checkpoint, checkpoint_path)
@@ -161,6 +164,16 @@ def print_status(report: dict) -> None:
         ),
         flush=True,
     )
+
+
+def parse_task_weights(items: list[str]) -> dict[str, float]:
+    weights = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit("--task-weight must be TASK=WEIGHT")
+        task, value = item.split("=", 1)
+        weights[task] = float(value)
+    return weights
 
 
 if __name__ == "__main__":

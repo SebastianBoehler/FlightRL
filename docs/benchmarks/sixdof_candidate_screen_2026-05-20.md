@@ -160,3 +160,23 @@ Per-task gate refresh:
 | checkpoint | position_yaw | obstacle_avoidance | circle |
 | --- | --- | --- | --- |
 | safe_horizon800 | min_clearance, completion, position_error | completion, position_error | min_clearance, completion, position_error |
+
+Task-weighted offline smoke: offline and DAgger retraining now accept repeatable `--task-weight TASK=WEIGHT` flags so follow-up multi-task runs can emphasize tasks identified by the per-task gate report.
+
+```bash
+python scripts/train_sixdof_offline.py \
+  --dataset artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.npz \
+  --checkpoint artifacts/checkpoints/sixdof_safe_horizon800_task_weight_smoke.pt \
+  --epochs 1 \
+  --batch-size 8192 \
+  --hidden-size 128 \
+  --learning-rate 8e-4 \
+  --eval-steps 30 \
+  --eval-num-envs 32 \
+  --select-by-eval \
+  --native-step \
+  --task-weight position_yaw=1.5 \
+  --task-weight circle=1.5
+```
+
+The checkpoint stores `task_weights={"position_yaw": 1.5, "circle": 1.5}`. A 300-step native validation smoke did not pass (`completed=0.1953`, `pos_err=5.4099m`, `clearance_p01=0.0340m`), so this is a verified training knob, not a better candidate yet.
