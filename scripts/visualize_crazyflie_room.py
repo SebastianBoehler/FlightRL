@@ -6,7 +6,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from flightrl.hardware.ranger_map import points_from_rows, trajectory_from_rows
+from flightrl.hardware.ranger_map import points_from_rows, prepare_rows, trajectory_from_rows
 
 
 def main() -> None:
@@ -33,27 +33,6 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     render(points, trajectory, output)
     print(f"wrote {output} with {len(points)} ranger points and {len(trajectory)} trajectory samples")
-
-
-def prepare_rows(rows: list[dict[str, str]], *, min_drone_z_m: float, normalize_xy: bool) -> list[dict[str, str]]:
-    filtered = [row.copy() for row in rows if parse_float(row.get("stateEstimate.z", "0")) >= min_drone_z_m]
-    if not filtered:
-        return []
-    t0 = parse_float(filtered[0].get("host_time_s", "0"))
-    x0 = parse_float(filtered[0].get("stateEstimate.x", "0")) if normalize_xy else 0.0
-    y0 = parse_float(filtered[0].get("stateEstimate.y", "0")) if normalize_xy else 0.0
-    for row in filtered:
-        row["host_time_s"] = str(parse_float(row.get("host_time_s", "0")) - t0)
-        row["stateEstimate.x"] = str(parse_float(row.get("stateEstimate.x", "0")) - x0)
-        row["stateEstimate.y"] = str(parse_float(row.get("stateEstimate.y", "0")) - y0)
-    return filtered
-
-
-def parse_float(value: str | None) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def render(points, trajectory, output: Path) -> None:

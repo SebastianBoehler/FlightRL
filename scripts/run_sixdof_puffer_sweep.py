@@ -129,6 +129,8 @@ def run_command(command: list[str]) -> dict:
         "max_sps": max(samples) if samples else None,
         "train_sps_samples": train_samples,
         "max_train_sps": max(train_samples) if train_samples else None,
+        "stdout_tail": tail_lines(completed.stdout),
+        "stderr_tail": tail_lines(completed.stderr),
     }
 
 
@@ -153,6 +155,10 @@ def suffix_scale(suffix: str) -> float:
     return {"": 1.0, "K": 1_000.0, "M": 1_000_000.0, "G": 1_000_000_000.0}[suffix]
 
 
+def tail_lines(text: str, limit: int = 20) -> list[str]:
+    return text.splitlines()[-limit:]
+
+
 def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Puffer Sweep",
@@ -163,17 +169,23 @@ def render_markdown(report: dict) -> str:
     for record in report["records"]:
         variant = record["variant"]
         max_sps = record.get("max_train_sps")
+        sps_text = f"{max_sps:.0f}" if max_sps else status_text(record)
         lines.append(
             f"| {variant['name']} | {variant['total_agents']} | {variant['num_buffers']} | {variant['num_threads']} | "
             f"{variant['horizon']} | {variant['minibatch_size']} | {variant['replay_ratio']} | "
             f"{variant['learning_rate']:.6g} | {variant['ent_coef']:.6g} | {variant['policy_hidden_size']} | "
-            f"{max_sps:.0f} |" if max_sps else
-            f"| {variant['name']} | {variant['total_agents']} | {variant['num_buffers']} | {variant['num_threads']} | "
-            f"{variant['horizon']} | {variant['minibatch_size']} | {variant['replay_ratio']} | "
-            f"{variant['learning_rate']:.6g} | {variant['ent_coef']:.6g} | {variant['policy_hidden_size']} | pending |"
+            f"{sps_text} |"
         )
     lines.extend(["", "Commands are stored in the JSON report. Use `--run` to execute them."])
     return "\n".join(lines)
+
+
+def status_text(record: dict) -> str:
+    if "returncode" not in record:
+        return "pending"
+    if record["returncode"] == 0:
+        return "no train SPS parsed"
+    return f"failed rc={record['returncode']}"
 
 
 if __name__ == "__main__":

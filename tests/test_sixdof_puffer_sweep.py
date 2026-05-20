@@ -37,6 +37,20 @@ def test_default_sweep_covers_size_and_policy_knobs() -> None:
     assert {variant.replay_ratio for variant in variants} >= {1, 2}
 
 
+def test_render_markdown_marks_failed_run_instead_of_pending() -> None:
+    variant = SWEEP.default_variants()[0]
+    report = {"records": [{"variant": SWEEP.asdict(variant), "returncode": 2, "max_train_sps": None}]}
+
+    markdown = SWEEP.render_markdown(report)
+
+    assert "failed rc=2" in markdown
+    assert "pending" not in markdown
+
+
+def test_tail_lines_keeps_only_recent_lines() -> None:
+    assert SWEEP.tail_lines("a\nb\nc", limit=2) == ["b", "c"]
+
+
 def test_puffer_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     output = tmp_path / "sweep.json"
     subprocess.run(
