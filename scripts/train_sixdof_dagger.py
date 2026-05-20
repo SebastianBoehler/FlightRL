@@ -34,6 +34,8 @@ def main() -> None:
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--select-by-eval", action="store_true")
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--reset-profile", default=None, help="Named reset curriculum for DAgger rollout collection.")
+    parser.add_argument("--eval-reset-profile", default=None, help="Named reset profile used for eval-based selection and iteration reports.")
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
@@ -53,6 +55,7 @@ def main() -> None:
             seed=args.seed + iteration,
             use_native_step=args.native_step,
             beta=args.beta,
+            reset_profile=args.reset_profile,
         )
         merged = merge_datasets(dataset_paths, dagger_dataset)
         dataset_path = write_dataset(output_dir / f"iter_{iteration:02d}.npz", merged)
@@ -69,6 +72,7 @@ def main() -> None:
             eval_num_envs=args.eval_num_envs,
             select_by_eval=args.select_by_eval,
             use_native_step=args.native_step,
+            eval_reset_profile=args.eval_reset_profile,
         )
         checkpoint = train_offline_policy(load_dataset(dataset_path), train_config)
         torch.save(checkpoint, checkpoint_path)
@@ -105,6 +109,7 @@ def evaluate_checkpoint(checkpoint: dict, checkpoint_path: Path, args, *, seed: 
         num_envs=args.eval_num_envs,
         use_native_step=args.native_step,
         eval_tasks=tasks,
+        reset_profile=args.eval_reset_profile,
     )
     gate = gate_status(
         metrics,
@@ -118,6 +123,7 @@ def evaluate_checkpoint(checkpoint: dict, checkpoint_path: Path, args, *, seed: 
         "steps": args.eval_steps,
         "num_envs": args.eval_num_envs,
         "native_step": args.native_step,
+        "eval_reset_profile": args.eval_reset_profile or "broad",
         "gate": gate,
         "metrics": metrics,
         "safety": "Simulation gate only; a pass does not approve live hardware deployment.",

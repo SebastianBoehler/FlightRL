@@ -34,6 +34,21 @@ def test_collect_teacher_dataset_roundtrip(tmp_path: Path) -> None:
     assert np.array_equal(loaded["task_indices"], dataset["task_indices"])
 
 
+def test_collect_teacher_dataset_uses_reset_profile() -> None:
+    dataset = collect_teacher_dataset(
+        task_spec="position_yaw",
+        num_envs=8,
+        steps=2,
+        seed=6,
+        use_native_step=False,
+        reset_profile="position_yaw_easy",
+    )
+    obs = dataset["observations"]
+    assert dataset["metadata"]["reset_profile"] == "position_yaw_easy"
+    assert np.max(np.abs(obs[:, 0] * 2.0)) <= 0.19
+    assert np.max(np.abs(obs[:, 2] * 1.5)) <= 0.07
+
+
 def test_action_gap_cli_reports_per_task(tmp_path: Path) -> None:
     dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=2, seed=7, use_native_step=False)
     dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)

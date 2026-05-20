@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--select-by-eval", action="store_true")
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--eval-reset-profile", default=None, help="Named reset profile used for eval-based selection.")
     args = parser.parse_args()
 
     data = load_dataset(args.dataset)
@@ -38,6 +39,7 @@ def main() -> None:
         eval_num_envs=args.eval_num_envs,
         select_by_eval=args.select_by_eval,
         use_native_step=args.native_step,
+        eval_reset_profile=args.eval_reset_profile,
     )
     best = train_offline_policy(data, config)
     for entry in best["history"]:

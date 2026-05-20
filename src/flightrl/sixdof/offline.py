@@ -23,6 +23,7 @@ class OfflineTrainConfig:
     eval_num_envs: int = 128
     select_by_eval: bool = False
     use_native_step: bool = False
+    eval_reset_profile: str | None = None
 
 
 def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
@@ -54,6 +55,7 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
         steps=config.eval_steps,
         num_envs=config.eval_num_envs,
         use_native_step=config.use_native_step,
+        reset_profile=config.eval_reset_profile,
     )
     return best
 
@@ -66,6 +68,7 @@ def evaluation_metrics(model, tasks: tuple[str, ...], config: OfflineTrainConfig
         steps=config.eval_steps,
         num_envs=config.eval_num_envs,
         use_native_step=config.use_native_step,
+        reset_profile=config.eval_reset_profile,
     )
 
 
@@ -137,6 +140,7 @@ def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str,
         "dataset": config.dataset,
         "selection_epoch": epoch,
         "selection_mode": "eval" if config.select_by_eval else "val_loss",
+        "eval_reset_profile": config.eval_reset_profile or "broad",
         "selection_metrics": selection_metrics,
         "val_loss": val_loss,
         "note": "Offline teacher-imitation checkpoint; simulation-only and not approved for live hardware.",

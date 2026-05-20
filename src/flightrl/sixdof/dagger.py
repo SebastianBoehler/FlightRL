@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .dataset import load_dataset, sample_task_indices, teacher_labels
+from .dataset import merge_datasets, sample_task_indices, teacher_labels
 from .env import SixDofCrazyflieEnv
 from .evaluation import checkpoint_tasks, load_policy_from_checkpoint
 from .tasks import append_task_encoding, parse_task_spec
@@ -20,6 +20,7 @@ def collect_policy_dataset(
     seed: int,
     use_native_step: bool,
     beta: float = 0.0,
+    reset_profile: str | None = None,
 ) -> dict[str, np.ndarray | dict]:
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu")
     model = load_policy_from_checkpoint(checkpoint)
@@ -27,7 +28,7 @@ def collect_policy_dataset(
     selected_tasks = parse_task_spec(task_spec) if task_spec else policy_tasks
     validate_selected_tasks(selected_tasks, policy_tasks)
     rng = np.random.default_rng(seed)
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step)
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
     observations, actions, task_indices_all, terminals = [], [], [], []
     beta = float(np.clip(beta, 0.0, 1.0))
@@ -62,31 +63,9 @@ def collect_policy_dataset(
             "steps": steps,
             "seed": seed,
             "native_step": use_native_step,
+            "reset_profile": env.reset_profile.name,
         },
     )
-
-
-def merge_datasets(paths: list[str | Path], extra: dict[str, np.ndarray | dict]) -> dict[str, np.ndarray | dict]:
-    datasets = [load_dataset(path) for path in paths] + [extra]
-    reference = datasets[0]
-    observations, actions, task_indices, terminals = [], [], [], []
-    for dataset in datasets:
-        validate_compatible(reference, dataset)
-        observations.append(dataset["observations"])
-        actions.append(dataset["actions"])
-        task_indices.append(dataset["task_indices"])
-        terminals.append(dataset["terminals"])
-    metadata = dict(extra["metadata"])
-    metadata["source_datasets"] = [str(path) for path in paths]
-    metadata["samples"] = int(sum(len(chunk) for chunk in observations))
-    metadata["terminal_fraction"] = float(np.mean(np.concatenate(terminals)))
-    return {
-        "observations": np.concatenate(observations).astype(np.float32),
-        "actions": np.concatenate(actions).astype(np.float32),
-        "task_indices": np.concatenate(task_indices).astype(np.int64),
-        "terminals": np.concatenate(terminals).astype(np.uint8),
-        "metadata": metadata,
-    }
 
 
 def predict_actions(model, observations: np.ndarray) -> np.ndarray:
@@ -125,13 +104,3 @@ def validate_selected_tasks(selected_tasks: tuple[str, ...], policy_tasks: tuple
     if missing:
         raise ValueError(f"selected task(s) not present in checkpoint: {', '.join(missing)}")
 
-
-def validate_compatible(reference: dict[str, np.ndarray | dict], candidate: dict[str, np.ndarray | dict]) -> None:
-    reference_meta = reference["metadata"]
-    candidate_meta = candidate["metadata"]
-    if reference["observations"].shape[1] != candidate["observations"].shape[1]:
-        raise ValueError("cannot merge datasets with different observation dimensions")
-    if reference["actions"].shape[1] != candidate["actions"].shape[1]:
-        raise ValueError("cannot merge datasets with different action dimensions")
-    if tuple(reference_meta["tasks"]) != tuple(candidate_meta["tasks"]):
-        raise ValueError("cannot merge datasets with different task order")

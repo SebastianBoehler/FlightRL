@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--num-envs", type=int, default=256)
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--reset-profile", default=None)
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
@@ -36,7 +37,7 @@ def main() -> None:
     records = []
     for idx, (label, task_spec) in enumerate(args.teacher):
         tasks = parse_task_spec(task_spec)
-        metrics = evaluate_teacher(tasks, seed=args.seed + idx, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step)
+        metrics = evaluate_teacher(tasks, seed=args.seed + idx, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile)
         records.append(build_record(label, "teacher", None, tasks, metrics, thresholds))
     offset = len(records)
     for idx, (label, checkpoint_path, task_spec) in enumerate(args.candidate):
@@ -46,6 +47,7 @@ def main() -> None:
         "steps": args.steps,
         "num_envs": args.num_envs,
         "native_step": args.native_step,
+        "reset_profile": args.reset_profile or "broad",
         "thresholds": thresholds,
         "records": records,
         "summary": {
@@ -79,6 +81,7 @@ def evaluate_candidate(label: str, checkpoint_path: Path, task_spec: str, args: 
         num_envs=args.num_envs,
         use_native_step=args.native_step,
         eval_tasks=tasks,
+        reset_profile=args.reset_profile,
     )
     return build_record(label, "checkpoint", checkpoint_path, tasks, metrics, thresholds)
 

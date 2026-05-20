@@ -34,11 +34,12 @@ def evaluate_policy(
     num_envs: int = 128,
     use_native_step: bool = False,
     eval_tasks: tuple[str, ...] | None = None,
+    reset_profile: str | None = None,
 ) -> dict:
     selected_tasks = eval_tasks or tasks
     validate_task_subset(selected_tasks, tasks)
     per_task = {
-        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step)
+        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile)
         for idx, task in enumerate(selected_tasks)
     }
     return aggregate_task_metrics(per_task)
@@ -51,9 +52,10 @@ def evaluate_teacher(
     steps: int = 300,
     num_envs: int = 128,
     use_native_step: bool = False,
+    reset_profile: str | None = None,
 ) -> dict:
     per_task = {
-        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step) for idx, task in enumerate(tasks)
+        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile) for idx, task in enumerate(tasks)
     }
     return aggregate_task_metrics(per_task)
 
@@ -86,8 +88,9 @@ def evaluate_one(
     steps: int,
     num_envs: int,
     use_native_step: bool,
+    reset_profile: str | None,
 ) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step)
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
     task_indices = np.full(env.num_envs, tasks.index(task), dtype=np.int64)
     rewards = []

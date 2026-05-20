@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .curriculum import ResetProfile, resolve_reset_profile, sample_reset
 from .geometry import BoxRoom, body_rays_world, normalize_quat, quat_to_matrix
 
 
@@ -31,11 +32,13 @@ class SixDofCrazyflieEnv:
         dt: float = 0.01,
         task: str = "position_yaw",
         use_native_step: bool = False,
+        reset_profile: str | ResetProfile | None = None,
     ) -> None:
         self.num_envs = int(num_envs)
         self.dt = float(dt)
         self.task = task
         self.use_native_step = bool(use_native_step)
+        self.reset_profile = resolve_reset_profile(reset_profile)
         self.room = room or BoxRoom()
         self.rng = np.random.default_rng(seed)
         self.mass = 0.036
@@ -143,20 +146,13 @@ class SixDofCrazyflieEnv:
         count = int(np.sum(mask))
         if count == 0:
             return
-        self.position[mask, 0] = self.rng.uniform(-0.8, 0.8, count)
-        self.position[mask, 1] = self.rng.uniform(-0.8, 0.8, count)
-        self.position[mask, 2] = self.rng.uniform(0.35, 0.9, count)
+        position, roll, pitch, yaw, target, target_yaw = sample_reset(self.reset_profile, self.rng, count, self.room)
+        self.position[mask] = position
         self.velocity[mask] = 0.0
         self.body_rates[mask] = 0.0
-        self.quaternion[mask] = euler_to_quat(
-            self.rng.normal(0.0, 0.08, count),
-            self.rng.normal(0.0, 0.08, count),
-            self.rng.uniform(-np.pi, np.pi, count),
-        )
-        self.target_position[mask, 0] = self.rng.uniform(-1.0, 1.0, count)
-        self.target_position[mask, 1] = self.rng.uniform(-1.0, 1.0, count)
-        self.target_position[mask, 2] = self.rng.uniform(0.45, 0.9, count)
-        self.target_yaw[mask] = self.rng.uniform(-np.pi, np.pi, count)
+        self.quaternion[mask] = euler_to_quat(roll, pitch, yaw)
+        self.target_position[mask] = target
+        self.target_yaw[mask] = target_yaw
         self.previous_action[mask] = 0.0
         self.step_count[mask] = 0
         self.rewards[mask] = 0.0

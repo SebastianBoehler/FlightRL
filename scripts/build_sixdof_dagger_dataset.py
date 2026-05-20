@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=311)
     parser.add_argument("--beta", type=float, default=0.0, help="Teacher action mixing during rollout, 0=policy only.")
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--reset-profile", default=None, help="Named reset curriculum for policy-state collection.")
     args = parser.parse_args()
 
     dataset = collect_policy_dataset(
@@ -28,6 +29,7 @@ def main() -> None:
         seed=args.seed,
         use_native_step=args.native_step,
         beta=args.beta,
+        reset_profile=args.reset_profile,
     )
     if args.append_dataset:
         dataset = merge_datasets(args.append_dataset, dataset)

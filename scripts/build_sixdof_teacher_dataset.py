@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from flightrl.sixdof.dataset import collect_teacher_dataset, write_dataset
+from flightrl.sixdof.dataset import collect_teacher_dataset, merge_datasets, write_dataset
 
 
 def main() -> None:
@@ -13,6 +13,8 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=512)
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--reset-profile", default=None, help="Named reset curriculum, for example position_yaw_easy or position_yaw_medium.")
+    parser.add_argument("--append-dataset", action="append", default=[], help="Existing compatible dataset to prepend.")
     parser.add_argument("--output", default="artifacts/datasets/sixdof_teacher_safe_tasks.npz")
     args = parser.parse_args()
 
@@ -22,7 +24,10 @@ def main() -> None:
         steps=args.steps,
         seed=args.seed,
         use_native_step=args.native_step,
+        reset_profile=args.reset_profile,
     )
+    if args.append_dataset:
+        dataset = merge_datasets(args.append_dataset, dataset)
     output = write_dataset(args.output, dataset)
     print(f"dataset={output}")
     print(json.dumps(dataset["metadata"], sort_keys=True))

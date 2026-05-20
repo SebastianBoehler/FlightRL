@@ -17,10 +17,11 @@ def collect_teacher_dataset(
     steps: int,
     seed: int,
     use_native_step: bool,
+    reset_profile: str | None = None,
 ) -> dict[str, np.ndarray | dict]:
     tasks = parse_task_spec(task_spec)
     rng = np.random.default_rng(seed)
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step)
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
     observations = []
     actions = []
@@ -48,6 +49,7 @@ def collect_teacher_dataset(
         "steps": steps,
         "seed": seed,
         "native_step": use_native_step,
+        "reset_profile": env.reset_profile.name,
         "observation_dim": int(stacked_obs.shape[1]),
         "base_observation_dim": 28,
         "action_dim": int(stacked_actions.shape[1]),
@@ -87,6 +89,29 @@ def load_dataset(path: str | Path) -> dict[str, np.ndarray | dict]:
     }
 
 
+def merge_datasets(paths: list[str | Path], extra: dict[str, np.ndarray | dict]) -> dict[str, np.ndarray | dict]:
+    datasets = [load_dataset(path) for path in paths] + [extra]
+    reference = datasets[0]
+    observations, actions, task_indices, terminals = [], [], [], []
+    for dataset in datasets:
+        validate_compatible(reference, dataset)
+        observations.append(dataset["observations"])
+        actions.append(dataset["actions"])
+        task_indices.append(dataset["task_indices"])
+        terminals.append(dataset["terminals"])
+    metadata = dict(extra["metadata"])
+    metadata["source_datasets"] = [str(path) for path in paths]
+    metadata["samples"] = int(sum(len(chunk) for chunk in observations))
+    metadata["terminal_fraction"] = float(np.mean(np.concatenate(terminals)))
+    return {
+        "observations": np.concatenate(observations).astype(np.float32),
+        "actions": np.concatenate(actions).astype(np.float32),
+        "task_indices": np.concatenate(task_indices).astype(np.int64),
+        "terminals": np.concatenate(terminals).astype(np.uint8),
+        "metadata": metadata,
+    }
+
+
 def sample_task_indices(rng: np.random.Generator, num_envs: int, tasks: tuple[str, ...]) -> np.ndarray:
     if len(tasks) == 1:
         return np.zeros(num_envs, dtype=np.int64)
@@ -101,3 +126,14 @@ def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices
 
 def expected_observation_dim(task_spec: str) -> int:
     return 28 + task_observation_dim(parse_task_spec(task_spec))
+
+
+def validate_compatible(reference: dict[str, np.ndarray | dict], candidate: dict[str, np.ndarray | dict]) -> None:
+    reference_meta = reference["metadata"]
+    candidate_meta = candidate["metadata"]
+    if reference["observations"].shape[1] != candidate["observations"].shape[1]:
+        raise ValueError("cannot merge datasets with different observation dimensions")
+    if reference["actions"].shape[1] != candidate["actions"].shape[1]:
+        raise ValueError("cannot merge datasets with different action dimensions")
+    if tuple(reference_meta["tasks"]) != tuple(candidate_meta["tasks"]):
+        raise ValueError("cannot merge datasets with different task order")
