@@ -10,10 +10,15 @@ def main() -> None:
     parser.add_argument("--matrix", required=True)
     parser.add_argument("--room-report", default=None)
     parser.add_argument("--native-parity", default=None)
+    parser.add_argument("--replay-comparison", default=None, help="Optional compare_crazyflie_replay.py JSON report with aligned real/sim signals.")
+    parser.add_argument("--require-replay-comparison", action="store_true")
     parser.add_argument("--output", default="artifacts/replay/sixdof_readiness_report.json")
     parser.add_argument("--max-latency-us", type=float, default=50.0)
     parser.add_argument("--max-native-state-rmse", type=float, default=1e-5)
     parser.add_argument("--max-native-range-rmse", type=float, default=1.0)
+    parser.add_argument("--max-replay-state-rmse", type=float, default=0.5)
+    parser.add_argument("--max-replay-range-rmse-mm", type=float, default=300.0)
+    parser.add_argument("--min-replay-overlap-s", type=float, default=1.0)
     args = parser.parse_args()
 
     report = build_report(args)
@@ -29,19 +34,25 @@ def build_report(args: argparse.Namespace) -> dict:
     matrix = read_json(args.matrix)
     room = read_json(args.room_report) if args.room_report else None
     native = read_json(args.native_parity) if args.native_parity else None
+    replay = read_json(args.replay_comparison) if args.replay_comparison else None
     global_evidence = {
         "room": compact_room(room),
         "native_parity": compact_native_parity(native, args.max_native_state_rmse, args.max_native_range_rmse),
+        "replay_comparison": compact_replay_comparison(replay, args),
     }
     records = [evaluate_record(record, global_evidence, args.max_latency_us) for record in readiness_candidates(matrix)]
     return {
         "matrix": args.matrix,
         "room_report": args.room_report,
         "native_parity": args.native_parity,
+        "replay_comparison": args.replay_comparison,
         "thresholds": {
             "max_latency_us": args.max_latency_us,
             "max_native_state_rmse": args.max_native_state_rmse,
             "max_native_range_rmse": args.max_native_range_rmse,
+            "max_replay_state_rmse": args.max_replay_state_rmse,
+            "max_replay_range_rmse_mm": args.max_replay_range_rmse_mm,
+            "min_replay_overlap_s": args.min_replay_overlap_s,
         },
         "global_evidence": global_evidence,
         "records": records,
@@ -68,6 +79,11 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
         failures.append("room_map")
     if not global_evidence["native_parity"]["passed"]:
         failures.append("native_parity")
+    replay = global_evidence["replay_comparison"]
+    if replay.get("required") and not replay.get("present"):
+        failures.append("replay_comparison_missing")
+    elif replay.get("present") and not replay.get("passed"):
+        failures.append("replay_comparison")
     return {
         "task": task,
         "label": record["label"],
@@ -141,6 +157,32 @@ def compact_native_parity(report: dict | None, max_state_rmse: float, max_range_
     }
 
 
+def compact_replay_comparison(report: dict | None, args: argparse.Namespace) -> dict:
+    if not report:
+        return {"present": False, "required": args.require_replay_comparison, "passed": not args.require_replay_comparison}
+    aligned = report.get("aligned", {})
+    signals = aligned.get("signals", {})
+    worst_state = worst_rmse(signals, "stateEstimate.")
+    worst_range = worst_rmse(signals, "range.")
+    failures = []
+    if aligned.get("overlap_duration_s", 0.0) < args.min_replay_overlap_s:
+        failures.append("overlap")
+    if worst_state is None or worst_state > args.max_replay_state_rmse:
+        failures.append("state_rmse")
+    if worst_range is None or worst_range > args.max_replay_range_rmse_mm:
+        failures.append("range_rmse")
+    return {
+        "present": True,
+        "required": args.require_replay_comparison,
+        "passed": not failures,
+        "failures": failures,
+        "samples": aligned.get("samples", 0),
+        "overlap_duration_s": aligned.get("overlap_duration_s", 0.0),
+        "worst_state_rmse": worst_state,
+        "worst_range_rmse_mm": worst_range,
+    }
+
+
 def worst_rmse(signals: dict, prefix: str) -> float | None:
     values = [metrics["rmse"] for key, metrics in signals.items() if key.startswith(prefix) and "rmse" in metrics]
     return max(values) if values else None
@@ -180,6 +222,7 @@ def render_markdown(report: dict) -> str:
         )
     room = report["global_evidence"]["room"]
     native = report["global_evidence"]["native_parity"]
+    replay = report["global_evidence"]["replay_comparison"]
     if any(record["sim"].get("per_task_gate") for record in report["records"]):
         lines.extend(["", "## Per-Task Gates", ""])
         for record in report["records"]:
@@ -191,6 +234,7 @@ def render_markdown(report: dict) -> str:
             "",
             f"Room ready: `{room['mapping_ready']}`; points=`{room.get('point_count')}`; warnings=`{', '.join(room.get('warnings', [])) or 'none'}`.",
             f"Native parity: `{native['passed']}`; worst_state_rmse=`{native.get('worst_state_rmse')}`; worst_range_rmse=`{native.get('worst_range_rmse')}`.",
+            f"Replay comparison: `{replay['passed']}`; present=`{replay.get('present')}`; worst_state_rmse=`{replay.get('worst_state_rmse')}`; worst_range_rmse_mm=`{replay.get('worst_range_rmse_mm')}`.",
             "",
             report["safety"],
         ]

@@ -19,6 +19,7 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     matrix = tmp_path / "matrix.json"
     room = tmp_path / "room.json"
     native = tmp_path / "native.json"
+    replay = tmp_path / "replay.json"
     output = tmp_path / "readiness.json"
     matrix.write_text(
         json.dumps(
@@ -30,6 +31,7 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     )
     room.write_text(json.dumps(room_report(mapping_ready=True)))
     native.write_text(json.dumps(native_report(state_rmse=1e-8, range_rmse=0.1)))
+    replay.write_text(json.dumps(replay_report(state_rmse=0.05, range_rmse=120.0)))
 
     subprocess.run(
         [
@@ -41,6 +43,8 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
             str(room),
             "--native-parity",
             str(native),
+            "--replay-comparison",
+            str(replay),
             "--output",
             str(output),
         ],
@@ -52,6 +56,7 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
 
     report = json.loads(output.read_text())
     assert report["records"][0]["ready"] is True
+    assert report["global_evidence"]["replay_comparison"]["passed"] is True
     assert report["records"][0]["sim"]["mean_yaw_error_rad"] == 0.05
     assert report["records"][0]["sim"]["yaw_error_p95_rad"] == 0.07
     assert report["records"][0]["sim"]["per_task_gate"]["obstacle_avoidance"]["passed"] is True
@@ -66,11 +71,20 @@ def test_readiness_report_surfaces_missing_evidence() -> None:
     evidence = {
         "room": {"present": False, "mapping_ready": False},
         "native_parity": {"present": False, "passed": False},
+        "replay_comparison": {"present": False, "required": True, "passed": False},
     }
     record = READINESS.evaluate_record(("position_yaw", candidate_record(passed=False, parity=False, latency=None)), evidence, 50.0)
 
     assert record["ready"] is False
-    assert {"sim_gate", "edge_parity", "edge_latency_missing", "room_map", "native_parity"}.issubset(record["failures"])
+    assert {"sim_gate", "edge_parity", "edge_latency_missing", "room_map", "native_parity", "replay_comparison_missing"}.issubset(record["failures"])
+
+
+def test_readiness_report_rejects_bad_replay_comparison() -> None:
+    args = argparse_like(require_replay_comparison=False, max_replay_state_rmse=0.5, max_replay_range_rmse_mm=300.0, min_replay_overlap_s=1.0)
+    replay = READINESS.compact_replay_comparison(replay_report(state_rmse=0.1, range_rmse=600.0), args)
+
+    assert replay["passed"] is False
+    assert "range_rmse" in replay["failures"]
 
 
 def test_readiness_report_rejects_native_termination_mismatch() -> None:
@@ -126,3 +140,20 @@ def native_report(*, state_rmse: float, range_rmse: float, mismatches: int = 0) 
         },
         "profiles": [{"terminal_mismatches": mismatches, "truncation_mismatches": 0}],
     }
+
+
+def replay_report(*, state_rmse: float, range_rmse: float, overlap: float = 2.0) -> dict:
+    return {
+        "aligned": {
+            "samples": 20,
+            "overlap_duration_s": overlap,
+            "signals": {
+                "stateEstimate.x": {"rmse": state_rmse},
+                "range.front": {"rmse": range_rmse},
+            },
+        }
+    }
+
+
+def argparse_like(**kwargs):
+    return type("Args", (), kwargs)()

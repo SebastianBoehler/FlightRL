@@ -30,3 +30,27 @@ Interpretation:
 - This is a signal-shape comparison, not an exact replay. The real policy and sim rollout do not share initial state, command source, or room geometry.
 - The large horizontal range biases are expected under that mismatch and are useful as a calibration target.
 - A stronger replay gate needs real logs that include `stateEstimate.x/y/z`, command setpoints, room-start reset, and a matching simulated command sequence.
+
+## Readiness Gate Wiring
+
+`scripts/build_sixdof_readiness_report.py` now accepts `--replay-comparison` plus `--require-replay-comparison`. When a `compare_crazyflie_replay.py --align-time` JSON report is supplied, readiness checks overlap duration, worst `stateEstimate.*` RMSE, and worst `range.*` RMSE before promoting a candidate.
+
+Smoke command using a self-comparison to validate the gate path without live hardware:
+
+```bash
+python scripts/compare_crazyflie_replay.py \
+  --real artifacts/trajectories/sixdof_teacher_room_estimate_native_smoke.csv \
+  --sim artifacts/trajectories/sixdof_teacher_room_estimate_native_smoke.csv \
+  --align-time \
+  --output artifacts/replay/sixdof_self_replay_compare_smoke.json
+
+python scripts/build_sixdof_readiness_report.py \
+  --matrix artifacts/replay/sixdof_candidate_matrix_current.json \
+  --room-report artifacts/replay/room_scan_autonomous_35s.room.json \
+  --native-parity artifacts/replay/sixdof_native_parity_current.json \
+  --replay-comparison artifacts/replay/sixdof_self_replay_compare_smoke.json \
+  --require-replay-comparison \
+  --output artifacts/replay/sixdof_readiness_with_replay_smoke.json
+```
+
+Smoke result: replay comparison passed with `120` aligned samples, `1.19s` overlap, worst state RMSE `0.0`, and worst range RMSE `0.0mm`. This proves the readiness gate can consume replay evidence; it is not real-flight replay evidence because both sides are the same simulated CSV.
