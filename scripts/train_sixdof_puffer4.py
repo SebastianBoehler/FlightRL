@@ -14,6 +14,8 @@ def main() -> None:
     parser.add_argument("--total-agents", type=int, default=4096)
     parser.add_argument("--num-buffers", type=int, default=8)
     parser.add_argument("--num-threads", type=int, default=None)
+    parser.add_argument("--policy-hidden-size", type=int, default=None)
+    parser.add_argument("--policy-num-layers", type=int, default=2)
     parser.add_argument("--build-mode", choices=tuple(BUILD_MODE_FLAGS), default="cpu")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--train-seed", type=int, default=42)
@@ -27,6 +29,8 @@ def main() -> None:
             total_agents=args.total_agents,
             num_buffers=args.num_buffers,
             num_threads=args.num_threads,
+            policy_hidden_size=args.policy_hidden_size,
+            policy_num_layers=args.policy_num_layers,
             train_seed=args.train_seed,
         ),
         build_mode=args.build_mode,

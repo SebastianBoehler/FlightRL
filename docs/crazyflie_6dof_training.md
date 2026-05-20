@@ -148,9 +148,27 @@ Training uses the same 800-step horizon for checkpoint selection by default. For
 
 ```bash
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
+python scripts/benchmark_sixdof_sweep.py \
+  --env-counts 1024 4096 8192 16384 \
+  --steps 500 \
+  --output artifacts/replay/sixdof_native_benchmark_sweep.json
 ```
 
 This compares the Python vectorized spec, the raw native C dynamics/raycast kernel, and the native-backed environment hot loop. The benchmark is an implementation-health signal, not a policy-quality metric.
+
+On the current Apple Silicon development machine, the sweep peaked at `16,030,292` native env steps/sec with `4096` envs. The raw native kernel stayed around `15.0M-16.5M` steps/sec in the 1024-16384 env range, while the Python vectorized spec was around `0.7M-1.1M` steps/sec. The practical starting point for native/Puffer sizing is therefore `4096` total agents.
+
+To summarize a checkpoint candidate after gate, action-gap, and edge export:
+
+```bash
+python scripts/summarize_sixdof_artifact.py \
+  --name sixdof_obstacle_focus_refine \
+  --checkpoint artifacts/dagger/sixdof_obstacle_focus_refine/iter_02.pt \
+  --gate artifacts/replay/sixdof_obstacle_focus_refine_gate.json \
+  --action-gap artifacts/replay/sixdof_obstacle_focus_refine_action_gap.json \
+  --edge-parity artifacts/edge/sixdof_obstacle_focus_refine.parity.json \
+  --output artifacts/replay/sixdof_obstacle_focus_refine_summary.json
+```
 
 ## PufferLib Export
 
@@ -180,6 +198,47 @@ python scripts/train_sixdof_puffer4.py \
 ```
 
 On macOS, the CPU backend is run with `OMP_NUM_THREADS=1` and `KMP_DUPLICATE_LIB_OK=TRUE` by default. Without that guard, importing the Puffer Python training stack can collide with already-loaded OpenMP runtimes from Torch/Numpy and crash during `cpu_step`.
+
+Current CPU Puffer smoke results are much lower than the raw env benchmark because Torch forward/backward dominates the short PPO runs. The best measured mixed train throughput from the quick sweep was about `430K-445K` SPS with `4096` agents, `8` buffers, `8` threads, horizon `32`, minibatch `16384`, and replay ratio `1`. Replay ratio `2` with the same agent count measured about `245K-253K` SPS. Eval-only dashboard samples after training reported about `1.2M-1.4M` SPS, so the next optimization target is policy/training overhead, not native dynamics.
+
+To generate or execute the reproducible Puffer sweep matrix:
+
+```bash
+python scripts/run_sixdof_puffer_sweep.py \
+  --output artifacts/replay/sixdof_puffer_sweep_manifest.json
+
+python scripts/run_sixdof_puffer_sweep.py \
+  --run \
+  --no-build \
+  --env-name flightrl_sixdof_sweep_512 \
+  --pufferlib-root ../PufferLib-4-flightrl \
+  --total-timesteps 524288 \
+  --output artifacts/replay/sixdof_puffer_sweep_smoke.json
+```
+
+The sweep varies total agents, buffer/thread count, horizon, minibatch size, replay ratio, learning rate, entropy, and policy hidden size. It reports train-only SPS separately from eval-only dashboard samples.
+
+Recommended next Puffer tuning baseline:
+
+```bash
+python scripts/train_sixdof_puffer4.py \
+  --pufferlib-root ../PufferLib-4-flightrl \
+  --env-name flightrl_sixdof_sweep_512 \
+  --total-agents 4096 \
+  --num-buffers 8 \
+  --num-threads 8 \
+  --build-mode cpu \
+  --no-build \
+  -- \
+  --train.total-timesteps 2097152 \
+  --train.horizon 32 \
+  --train.minibatch-size 16384 \
+  --train.replay-ratio 1 \
+  --train.learning-rate 0.0007 \
+  --train.ent-coef 0.003
+```
+
+Treat Puffer `.bin` checkpoints as native trainer artifacts until an explicit import/evaluation bridge is added. The hardware-facing checkpoint candidate remains the gated Torch checkpoint summary above, not a short Puffer smoke checkpoint.
 
 ## Edge Export Contract
 
