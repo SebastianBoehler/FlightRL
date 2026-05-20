@@ -20,6 +20,8 @@ class OfflineTrainConfig:
     val_ratio: float = 0.1
     seed: int = 17
     eval_steps: int = 800
+    eval_num_envs: int = 128
+    select_by_eval: bool = False
     use_native_step: bool = False
 
 
@@ -37,9 +39,11 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
     for epoch in range(1, config.epochs + 1):
         train_loss = train_epoch(model, optimizer, observations[train_idx], actions[train_idx], config.batch_size)
         val_loss = dataset_loss(model, observations[val_idx], actions[val_idx], config.batch_size)
-        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
-        if best is None or val_loss < best["val_loss"]:
-            best = payload(model, config, metadata, tasks, val_loss, epoch)
+        eval_metrics = evaluation_metrics(model, tasks, config) if config.select_by_eval else None
+        history.append(history_entry(epoch, train_loss, val_loss, eval_metrics))
+        candidate = payload(model, config, metadata, tasks, val_loss, epoch, eval_metrics)
+        if best is None or checkpoint_score(candidate, config) < checkpoint_score(best, config):
+            best = candidate
     assert best is not None
     model.load_state_dict(best["state_dict"])
     best["history"] = history
@@ -48,9 +52,42 @@ def train_offline_policy(data: dict, config: OfflineTrainConfig) -> dict:
         tasks,
         seed=config.seed + 1000,
         steps=config.eval_steps,
+        num_envs=config.eval_num_envs,
         use_native_step=config.use_native_step,
     )
     return best
+
+
+def evaluation_metrics(model, tasks: tuple[str, ...], config: OfflineTrainConfig) -> dict:
+    return evaluate_policy(
+        model,
+        tasks,
+        seed=config.seed + 1000,
+        steps=config.eval_steps,
+        num_envs=config.eval_num_envs,
+        use_native_step=config.use_native_step,
+    )
+
+
+def history_entry(epoch: int, train_loss: float, val_loss: float, eval_metrics: dict | None) -> dict:
+    entry = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss}
+    if eval_metrics is not None:
+        entry["eval_position_error_m"] = eval_metrics["mean_position_error_m"]
+        entry["eval_completed_fraction"] = eval_metrics["mean_completed_fraction"]
+        entry["eval_clearance_p01_m"] = eval_metrics.get("clearance_p01_m", eval_metrics["min_clearance_m"])
+    return entry
+
+
+def checkpoint_score(checkpoint: dict, config: OfflineTrainConfig) -> tuple:
+    if not config.select_by_eval:
+        return (checkpoint["val_loss"],)
+    metrics = checkpoint["selection_metrics"]
+    return (
+        -metrics["mean_completed_fraction"],
+        -metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
+        metrics["mean_position_error_m"],
+        checkpoint["val_loss"],
+    )
 
 
 def split_indices(count: int, val_ratio: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
@@ -86,7 +123,7 @@ def dataset_loss(model, observations: np.ndarray, actions: np.ndarray, batch_siz
     return float(np.mean(losses))
 
 
-def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str, ...], val_loss: float, epoch: int) -> dict:
+def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str, ...], val_loss: float, epoch: int, selection_metrics: dict | None) -> dict:
     return {
         "state_dict": {key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
         "task": ",".join(tasks),
@@ -98,6 +135,8 @@ def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str,
         "action_dim": 4,
         "dataset": config.dataset,
         "selection_epoch": epoch,
+        "selection_mode": "eval" if config.select_by_eval else "val_loss",
+        "selection_metrics": selection_metrics,
         "val_loss": val_loss,
         "note": "Offline teacher-imitation checkpoint; simulation-only and not approved for live hardware.",
     }

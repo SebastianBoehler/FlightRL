@@ -20,6 +20,8 @@ def main() -> None:
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--eval-steps", type=int, default=800)
+    parser.add_argument("--eval-num-envs", type=int, default=128)
+    parser.add_argument("--select-by-eval", action="store_true")
     parser.add_argument("--native-step", action="store_true")
     args = parser.parse_args()
 
@@ -33,6 +35,8 @@ def main() -> None:
         val_ratio=args.val_ratio,
         seed=args.seed,
         eval_steps=args.eval_steps,
+        eval_num_envs=args.eval_num_envs,
+        select_by_eval=args.select_by_eval,
         use_native_step=args.native_step,
     )
     best = train_offline_policy(data, config)
@@ -45,6 +49,7 @@ def main() -> None:
     torch.save(best, output)
     print(f"checkpoint={output}")
     print(f"val_loss={best['val_loss']:.6f}")
+    print(f"selection_mode={best['selection_mode']}")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import torch
 from flightrl.sixdof import SixDofPolicy
 from flightrl.sixdof.dagger import collect_policy_dataset
 from flightrl.sixdof.dataset import collect_teacher_dataset, load_dataset, write_dataset
+from flightrl.sixdof.offline import OfflineTrainConfig, checkpoint_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,6 +90,9 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
             "16",
             "--eval-steps",
             "4",
+            "--eval-num-envs",
+            "4",
+            "--select-by-eval",
         ],
         cwd=ROOT,
         check=True,
@@ -99,6 +103,15 @@ def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
     assert "checkpoint=" in run.stdout
     assert saved["dataset"] == str(dataset_path)
     assert saved["val_loss"] >= 0.0
+    assert saved["selection_mode"] == "eval"
+    assert saved["selection_metrics"] is not None
+
+
+def test_eval_selected_checkpoint_score_prioritizes_survival_and_clearance() -> None:
+    config = OfflineTrainConfig(dataset="dummy", select_by_eval=True)
+    safer = checkpoint_payload(completed=0.9, clearance=0.2, position_error=2.0)
+    precise_crash = checkpoint_payload(completed=0.2, clearance=0.01, position_error=0.2)
+    assert checkpoint_score(safer, config) < checkpoint_score(precise_crash, config)
 
 
 def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
@@ -128,6 +141,18 @@ def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
     assert loaded["actions"].shape == (12, 4)
     assert loaded["metadata"]["rollout_policy"] == "checkpoint"
     assert loaded["metadata"]["source_checkpoint"] == str(checkpoint)
+
+
+def checkpoint_payload(*, completed: float, clearance: float, position_error: float) -> dict:
+    return {
+        "val_loss": 0.1,
+        "selection_metrics": {
+            "mean_completed_fraction": completed,
+            "clearance_p01_m": clearance,
+            "min_clearance_m": clearance,
+            "mean_position_error_m": position_error,
+        },
+    }
 
 
 def test_dagger_dataset_cli_appends_compatible_dataset(tmp_path: Path) -> None:
