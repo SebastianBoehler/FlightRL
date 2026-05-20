@@ -8,7 +8,7 @@ import torch
 
 from flightrl.sixdof import evaluate_policy, gate_status, load_policy_from_checkpoint
 from flightrl.sixdof.dagger import collect_policy_dataset, merge_datasets
-from flightrl.sixdof.dataset import load_dataset, write_dataset
+from flightrl.sixdof.dataset import load_dataset, parse_task_probabilities, write_dataset
 from flightrl.sixdof.evaluation import checkpoint_tasks
 from flightrl.sixdof.offline import OfflineTrainConfig, train_offline_policy
 from flightrl.sixdof.tasks import parse_task_spec
@@ -41,6 +41,7 @@ def main() -> None:
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
     parser.add_argument("--task-weight", action="append", default=[], metavar="TASK=WEIGHT", help="Per-task sample weight for offline retraining. Repeatable.")
+    parser.add_argument("--task-probability", action="append", default=[], metavar="TASK=WEIGHT", help="Relative DAgger rollout sampling weight. Unspecified tasks keep weight 1.0.")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -49,6 +50,7 @@ def main() -> None:
     dataset_paths = [Path(args.seed_dataset)]
     reports = []
     task_weights = parse_task_weights(args.task_weight)
+    task_probabilities = parse_task_probabilities(args.task_probability)
     for iteration in range(1, args.iterations + 1):
         dagger_dataset = collect_policy_dataset(
             checkpoint_path=current_checkpoint,
@@ -59,6 +61,7 @@ def main() -> None:
             use_native_step=args.native_step,
             beta=args.beta,
             reset_profile=args.reset_profile,
+            task_probabilities=task_probabilities,
         )
         merged = merge_datasets(dataset_paths, dagger_dataset)
         dataset_path = write_dataset(output_dir / f"iter_{iteration:02d}.npz", merged)

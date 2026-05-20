@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from flightrl.sixdof.dataset import collect_teacher_dataset, merge_datasets, write_dataset
+from flightrl.sixdof.dataset import collect_teacher_dataset, merge_datasets, parse_task_probabilities, write_dataset
 from flightrl.sixdof.observation import OBSERVATION_MODES
 
 
@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--reset-profile", default=None, help="Named reset curriculum, for example position_yaw_easy or position_yaw_medium.")
     parser.add_argument("--observation-mode", default="base", choices=OBSERVATION_MODES)
     parser.add_argument("--execution-noise-std", type=float, default=0.0, help="Stddev of clipped action noise used only for executing teacher rollouts.")
+    parser.add_argument("--task-probability", action="append", default=[], metavar="TASK=WEIGHT", help="Relative rollout sampling weight. Unspecified tasks keep weight 1.0.")
     parser.add_argument("--append-dataset", action="append", default=[], help="Existing compatible dataset to prepend.")
     parser.add_argument("--output", default="artifacts/datasets/sixdof_teacher_safe_tasks.npz")
     args = parser.parse_args()
@@ -30,6 +31,7 @@ def main() -> None:
         reset_profile=args.reset_profile,
         observation_mode=args.observation_mode,
         execution_noise_std=args.execution_noise_std,
+        task_probabilities=parse_task_probabilities(args.task_probability),
     )
     if args.append_dataset:
         dataset = merge_datasets(args.append_dataset, dataset)

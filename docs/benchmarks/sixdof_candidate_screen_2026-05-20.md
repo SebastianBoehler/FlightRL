@@ -130,6 +130,44 @@ python scripts/build_sixdof_edge_evidence.py \
 
 Result: `safe_horizon800` exported with TorchScript parity max error `0.0` and latency `9.996 us/sample`.
 
+Task-weight sweep result: static imitation loss weights did not beat the baseline multi-task DAgger checkpoint. A 300-step screen kept `safe_horizon800` as the best candidate (`completed=0.5651`, `pos_err=2.8909m`, `clearance_p01=0.0535m`), while all loss-weight variants dropped completion to roughly `0.20-0.26`. This points to rollout state coverage rather than pure loss weighting as the next lever.
+
+Task-probability rollout sampling is now available for teacher and DAgger collection:
+
+```bash
+python scripts/build_sixdof_teacher_dataset.py \
+  --task position_yaw,obstacle_avoidance,circle \
+  --num-envs 12 \
+  --steps 4 \
+  --seed 901 \
+  --task-probability position_yaw=2 \
+  --task-probability circle=2 \
+  --output artifacts/datasets/sixdof_task_probability_smoke.npz
+```
+
+Smoke result: metadata recorded sampling probabilities `position_yaw=0.4`, `obstacle_avoidance=0.2`, `circle=0.4`, with sampled counts `position_yaw=15`, `obstacle_avoidance=12`, `circle=21` across 48 samples. The same `--task-probability TASK=WEIGHT` flag is wired into DAgger collection and `train_sixdof_dagger.py`, so the next candidate sweep can oversample weak position/circle states during rollout rather than only weighting their loss afterward.
+
+DAgger CLI smoke:
+
+```bash
+python scripts/train_sixdof_dagger.py \
+  --seed-dataset artifacts/datasets/sixdof_task_probability_smoke.npz \
+  --initial-checkpoint artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt \
+  --output-dir artifacts/dagger/task_probability_smoke \
+  --iterations 1 \
+  --num-envs 8 \
+  --steps 2 \
+  --epochs 1 \
+  --batch-size 8 \
+  --hidden-size 16 \
+  --eval-steps 4 \
+  --eval-num-envs 4 \
+  --task-probability position_yaw=2 \
+  --task-probability circle=2
+```
+
+This wrote `artifacts/dagger/task_probability_smoke/summary.json` with DAgger metadata preserving the same sampling probabilities.
+
 ```bash
 python scripts/build_sixdof_candidate_matrix.py \
   --suite artifacts/replay/sixdof_candidate_suite_safe_tasks.json \

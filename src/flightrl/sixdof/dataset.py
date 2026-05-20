@@ -21,12 +21,14 @@ def collect_teacher_dataset(
     reset_profile: str | None = None,
     observation_mode: str = "base",
     execution_noise_std: float = 0.0,
+    task_probabilities: dict[str, float] | None = None,
 ) -> dict[str, np.ndarray | dict]:
     if observation_mode not in OBSERVATION_MODES:
         raise ValueError(f"unknown observation mode {observation_mode!r}")
     if execution_noise_std < 0:
         raise ValueError("execution_noise_std must be non-negative")
     tasks = parse_task_spec(task_spec)
+    sampling_probabilities = task_probability_vector(tasks, task_probabilities)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
@@ -38,7 +40,7 @@ def collect_teacher_dataset(
     previous_action = np.zeros((num_envs, 4), dtype=np.float32)
     fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
-        task_indices = sample_task_indices(rng, num_envs, tasks)
+        task_indices = sample_task_indices(rng, num_envs, tasks, sampling_probabilities)
         labels = teacher_labels(env, tasks, task_indices)
         model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
         if previous_obs is None:
@@ -77,6 +79,8 @@ def collect_teacher_dataset(
         "terminal_fraction": float(np.mean(stacked_terminals)),
         "execution_policy": "noisy_teacher" if execution_noise_std > 0 else "teacher",
         "execution_noise_std": execution_noise_std,
+        "task_probability_weights": task_probabilities or {},
+        "task_sampling_probabilities": {task: float(probability) for task, probability in zip(tasks, sampling_probabilities, strict=True)},
     }
     return {
         "observations": stacked_obs,
@@ -135,9 +139,48 @@ def merge_datasets(paths: list[str | Path], extra: dict[str, np.ndarray | dict])
     }
 
 
-def sample_task_indices(rng: np.random.Generator, num_envs: int, tasks: tuple[str, ...]) -> np.ndarray:
+def parse_task_probabilities(items: list[str] | tuple[str, ...]) -> dict[str, float]:
+    probabilities = {}
+    for item in items:
+        if "=" not in item:
+            raise ValueError("task probabilities must be TASK=WEIGHT")
+        task, value = item.split("=", 1)
+        task = task.strip()
+        if not task:
+            raise ValueError("task probability task name must not be empty")
+        weight = float(value)
+        if weight <= 0:
+            raise ValueError("task probability weights must be positive")
+        probabilities[task] = weight
+    return probabilities
+
+
+def task_probability_vector(tasks: tuple[str, ...], task_probabilities: dict[str, float] | None = None) -> np.ndarray:
+    weights = np.ones(len(tasks), dtype=np.float64)
+    if task_probabilities:
+        unknown = sorted(set(task_probabilities) - set(tasks))
+        if unknown:
+            raise ValueError(f"unknown task probability weight(s): {', '.join(unknown)}")
+        for task, weight in task_probabilities.items():
+            if weight <= 0:
+                raise ValueError("task probability weights must be positive")
+            weights[tasks.index(task)] = float(weight)
+    total = float(np.sum(weights))
+    if total <= 0:
+        raise ValueError("task probability weights must have positive sum")
+    return (weights / total).astype(np.float64)
+
+
+def sample_task_indices(
+    rng: np.random.Generator,
+    num_envs: int,
+    tasks: tuple[str, ...],
+    probabilities: np.ndarray | None = None,
+) -> np.ndarray:
     if len(tasks) == 1:
         return np.zeros(num_envs, dtype=np.int64)
+    if probabilities is not None:
+        return rng.choice(len(tasks), size=num_envs, p=probabilities).astype(np.int64)
     return rng.integers(0, len(tasks), size=num_envs, dtype=np.int64)
 
 

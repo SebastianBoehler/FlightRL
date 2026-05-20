@@ -4,7 +4,7 @@ import argparse
 import json
 
 from flightrl.sixdof.dagger import collect_policy_dataset, merge_datasets
-from flightrl.sixdof.dataset import write_dataset
+from flightrl.sixdof.dataset import parse_task_probabilities, write_dataset
 
 
 def main() -> None:
@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--beta", type=float, default=0.0, help="Teacher action mixing during rollout, 0=policy only.")
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--reset-profile", default=None, help="Named reset curriculum for policy-state collection.")
+    parser.add_argument("--task-probability", action="append", default=[], metavar="TASK=WEIGHT", help="Relative rollout sampling weight. Unspecified tasks keep weight 1.0.")
     args = parser.parse_args()
 
     dataset = collect_policy_dataset(
@@ -30,6 +31,7 @@ def main() -> None:
         use_native_step=args.native_step,
         beta=args.beta,
         reset_profile=args.reset_profile,
+        task_probabilities=parse_task_probabilities(args.task_probability),
     )
     if args.append_dataset:
         dataset = merge_datasets(args.append_dataset, dataset)

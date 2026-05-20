@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .dataset import merge_datasets, sample_task_indices, teacher_labels
+from .dataset import merge_datasets, sample_task_indices, task_probability_vector, teacher_labels
 from .env import SixDofCrazyflieEnv
 from .evaluation import checkpoint_tasks, load_policy_from_checkpoint
 from .observation import augment_observation
@@ -22,12 +22,14 @@ def collect_policy_dataset(
     use_native_step: bool,
     beta: float = 0.0,
     reset_profile: str | None = None,
+    task_probabilities: dict[str, float] | None = None,
 ) -> dict[str, np.ndarray | dict]:
     checkpoint = torch.load(Path(checkpoint_path), map_location="cpu")
     model = load_policy_from_checkpoint(checkpoint)
     policy_tasks = checkpoint_tasks(checkpoint)
     selected_tasks = parse_task_spec(task_spec) if task_spec else policy_tasks
     validate_selected_tasks(selected_tasks, policy_tasks)
+    sampling_probabilities = task_probability_vector(selected_tasks, task_probabilities)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     obs, _ = env.reset(seed=seed)
@@ -38,7 +40,7 @@ def collect_policy_dataset(
     previous_action = np.zeros((num_envs, 4), dtype=np.float32)
     fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
-        local_indices = sample_task_indices(rng, num_envs, selected_tasks)
+        local_indices = sample_task_indices(rng, num_envs, selected_tasks, sampling_probabilities)
         policy_indices = policy_task_indices(selected_tasks, policy_tasks, local_indices)
         labels = teacher_labels(env, selected_tasks, local_indices)
         model_obs = append_task_encoding(obs.copy(), policy_indices, len(policy_tasks))
@@ -79,6 +81,10 @@ def collect_policy_dataset(
             "native_step": use_native_step,
             "reset_profile": env.reset_profile.name,
             "observation_mode": observation_mode,
+            "task_probability_weights": task_probabilities or {},
+            "task_sampling_probabilities": {
+                task: float(probability) for task, probability in zip(selected_tasks, sampling_probabilities, strict=True)
+            },
         },
     )
 
