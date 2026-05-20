@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof.policies import teacher_actions
 from flightrl.sixdof.rl import PpoConfig, SixDofActorCritic, collect_rollout, compute_advantages, ppo_update
 
 
@@ -36,6 +37,13 @@ def test_ppo_update_runs_on_short_rollout() -> None:
     reference = SixDofActorCritic(input_dim=28, hidden_size=16).actor
     stats = ppo_update(model, optimizer, rollout, PpoConfig(hidden_size=16, minibatch_size=4, update_epochs=1, action_std=0.2, imitation_coef=0.1, reference_coef=0.2), reference)
     assert set(stats) == {"policy_loss", "value_loss", "entropy", "imitation_loss", "reference_loss"}
+
+
+def test_collect_rollout_labels_teacher_on_recorded_state() -> None:
+    env = SixDofCrazyflieEnv(num_envs=4, seed=5, reset_profile="position_yaw_easy")
+    expected = teacher_actions(env, task=env.task)
+    rollout = collect_rollout(env, SixDofActorCritic(input_dim=28, hidden_size=16), horizon=1, action_std=0.2)
+    np.testing.assert_allclose(rollout["teacher_actions"][0], expected, rtol=1e-6, atol=1e-6)
 
 
 def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:

@@ -75,11 +75,12 @@ def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: 
         obs_tensor = torch.from_numpy(obs).float()
         with torch.no_grad():
             action, log_prob, _entropy, value = model.act(obs_tensor, action_std)
+        teacher_action = teacher_actions(env, task=env.task).copy()
         next_obs, reward, terminal, truncation, _info = env.step(action.cpu().numpy())
         done = terminal | truncation
         observations.append(obs.copy())
         actions.append(action.cpu().numpy().astype(np.float32))
-        teacher.append(teacher_actions(env, task=env.task).copy())
+        teacher.append(teacher_action)
         log_probs.append(log_prob.cpu().numpy().astype(np.float32))
         rewards.append(reward.copy())
         dones.append(done.astype(np.float32))
