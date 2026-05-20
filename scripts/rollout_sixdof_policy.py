@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from flightrl.sixdof import SixDofCrazyflieEnv, checkpoint_tasks, load_policy_from_checkpoint, teacher_actions
+from flightrl.sixdof.observation import augment_observation
 from flightrl.sixdof.tasks import append_task_encoding, parse_task_spec, task_indices_for_name
 
 
@@ -32,6 +33,9 @@ def main() -> None:
     model = load_policy_from_checkpoint(checkpoint) if checkpoint and not args.teacher else None
     obs, _ = env.reset(seed=args.seed)
     task_indices = task_indices_for_name(task, tasks, env.num_envs)
+    observation_mode = checkpoint.get("observation_mode", "base") if checkpoint else "base"
+    previous_obs = None
+    previous_action = np.zeros((env.num_envs, 4), dtype=np.float32)
     rows = []
     for step in range(args.steps):
         if args.teacher:
@@ -40,8 +44,13 @@ def main() -> None:
             if model is None:
                 raise SystemExit("--checkpoint is required unless --teacher is set")
             model_obs = append_task_encoding(obs, task_indices, len(tasks))
+            if previous_obs is None:
+                previous_obs = model_obs.copy()
+            policy_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
             with torch.no_grad():
-                actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
+                actions = model(torch.from_numpy(policy_obs).float()).cpu().numpy()
+            previous_obs = model_obs.copy()
+            previous_action = actions.copy()
         obs, rewards, terminals, truncations, _info = env.step(actions)
         rows.append(row_from_env(env, actions[0], float(rewards[0]), step))
         if terminals[0] or truncations[0]:

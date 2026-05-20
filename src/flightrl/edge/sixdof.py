@@ -28,7 +28,9 @@ def export_sixdof_torchscript(
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     model = load_policy_from_checkpoint(checkpoint)
     observation_dim = int(checkpoint.get("observation_dim", 28))
-    example = _sample_observations(seed=seed, samples=samples, observation_dim=observation_dim)
+    observation_mode = str(checkpoint.get("observation_mode", "base"))
+    task_count = len(checkpoint.get("tasks", [])) if checkpoint.get("task_conditioned", False) else 1
+    example = _sample_observations(seed=seed, samples=samples, observation_dim=observation_dim, observation_mode=observation_mode, task_count=task_count)
 
     with torch.no_grad():
         expected = model.net(example)
@@ -54,6 +56,7 @@ def export_sixdof_torchscript(
                     "shape": [observation_dim],
                     "dtype": "float32",
                     "source": "6-DoF sim/state/ranger observation contract",
+                    "mode": observation_mode,
                     "task_conditioned": bool(checkpoint.get("task_conditioned", False)),
                 },
                 "action": {
@@ -76,13 +79,23 @@ def export_sixdof_torchscript(
     return EdgeExportResult(output, report, max_abs_error, mean_abs_error)
 
 
-def _sample_observations(*, seed: int, samples: int, observation_dim: int) -> torch.Tensor:
+def _sample_observations(*, seed: int, samples: int, observation_dim: int, observation_mode: str, task_count: int) -> torch.Tensor:
+    base_dim = 28 + (task_count if task_count > 1 else 0)
+    if observation_mode == "history1":
+        current = _sample_base(seed=seed, samples=samples, observation_dim=base_dim, task_count=task_count)
+        delta = torch.zeros_like(current)
+        previous_action = torch.zeros((samples, 4), dtype=torch.float32)
+        return torch.cat([current, delta, previous_action], dim=1)
+    return _sample_base(seed=seed, samples=samples, observation_dim=observation_dim, task_count=task_count)
+
+
+def _sample_base(*, seed: int, samples: int, observation_dim: int, task_count: int) -> torch.Tensor:
     generator = torch.Generator().manual_seed(seed)
     observations = torch.empty((samples, observation_dim), dtype=torch.float32).uniform_(-1.0, 1.0, generator=generator)
     observations[:, 6:10] = torch.nn.functional.normalize(observations[:, 6:10], dim=1)
     observations[:, 18:24] = torch.rand((samples, 6), generator=generator)
-    if observation_dim > 28:
-        task_dim = observation_dim - 28
+    if task_count > 1:
+        task_dim = task_count
         observations[:, 28:] = 0.0
         observations[torch.arange(samples), 28 + torch.arange(samples) % task_dim] = 1.0
     return observations

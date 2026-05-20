@@ -259,13 +259,7 @@ python scripts/export_sixdof_edge_policy.py \
   --output artifacts/edge/sixdof_position_yaw_h256_long.ts
 ```
 
-The export writes a `.parity.json` report with:
-
-- observation shape and dtype: `[28]`, `float32`
-- action shape and dtype: `[4]`, `float32`
-- action bounds: `[-1, 1]`
-- action meaning: thrust, roll-rate, pitch-rate, yaw-rate
-- max/mean absolute parity error between the Python policy and exported artifact
+The export writes a `.parity.json` report with observation shape, dtype, observation mode (`base` or `history1`), action shape, bounds, action meaning, and max/mean absolute parity error between the Python policy and exported artifact.
 
 This is still a local inference smoke path, not an onboard deployment path. Hardware use remains gated by replay comparison, latency checks, and a flight safety envelope.
 

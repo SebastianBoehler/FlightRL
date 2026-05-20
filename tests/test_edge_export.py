@@ -53,3 +53,26 @@ def test_export_sixdof_torchscript_supports_task_conditioned_policy(tmp_path: Pa
     assert report["observation"]["task_conditioned"] is True
     model = torch.jit.load(str(result.model_path))
     assert model(torch.zeros((2, 30), dtype=torch.float32)).shape == (2, 4)
+
+
+def test_export_sixdof_torchscript_supports_history_observation_mode(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "sixdof_history.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=32, input_dim=60).state_dict(),
+            "hidden_size": 32,
+            "observation_dim": 60,
+            "observation_mode": "history1",
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        checkpoint,
+    )
+
+    result = export_sixdof_torchscript(checkpoint, tmp_path / "sixdof_history.ts", samples=8)
+
+    report = json.loads(result.report_path.read_text())
+    assert report["observation"]["shape"] == [60]
+    assert report["observation"]["mode"] == "history1"
+    model = torch.jit.load(str(result.model_path))
+    assert model(torch.zeros((2, 60), dtype=torch.float32)).shape == (2, 4)

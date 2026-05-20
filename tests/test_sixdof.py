@@ -7,9 +7,10 @@ import subprocess
 import sys
 
 import numpy as np
+import torch
 
 from flightrl.hardware.ranger_map import points_from_rows
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, native_step, teacher_actions
+from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, SixDofPolicy, native_step, teacher_actions
 from flightrl.sixdof.geometry import body_rays_world
 
 
@@ -230,6 +231,33 @@ def test_sixdof_multitask_training_and_rollout_smoke(tmp_path: Path) -> None:
     assert teacher_evaluation["controller"] == "teacher"
     assert "teacher_action_l2_mean" not in teacher_evaluation["metrics"]
     assert "action_saturation_fraction" in teacher_evaluation["metrics"]
+
+
+def test_history_observation_checkpoint_rollout_smoke(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "sixdof_history.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16, input_dim=60).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 60,
+            "observation_mode": "history1",
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        checkpoint,
+    )
+    rollout = tmp_path / "history_rollout.csv"
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "rollout_sixdof_policy.py"), "--checkpoint", str(checkpoint), "--steps", "3", "--output", str(rollout)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    with rollout.open() as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 3
+    assert "action_thrust" in rows[0]
 
 
 def test_native_sixdof_step_matches_python_step() -> None:
