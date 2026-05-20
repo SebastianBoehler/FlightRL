@@ -36,6 +36,8 @@ def test_task_weight_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
             str(output),
             "--output-dir",
             str(tmp_path / "tw"),
+            "--baseline-checkpoint",
+            "baseline.pt",
         ],
         cwd=ROOT,
         check=True,
@@ -44,9 +46,10 @@ def test_task_weight_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     )
     report = json.loads(output.read_text())
     assert report["run"] is False
-    assert len(report["records"]) == 2
-    assert "--task-weight" in report["records"][1]["commands"][0]
-    assert "evaluate_sixdof_suite.py" in report["records"][0]["commands"][1][1]
+    assert len(report["records"]) == 3
+    assert report["records"][0]["variant"]["name"] == "baseline"
+    assert "--task-weight" in report["records"][2]["commands"][0]
+    assert "evaluate_sixdof_suite.py" in report["records"][0]["commands"][0][1]
     assert output.with_suffix(".md").exists()
 
 

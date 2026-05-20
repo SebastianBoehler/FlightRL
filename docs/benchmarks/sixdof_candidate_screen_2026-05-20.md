@@ -188,6 +188,7 @@ Dry-run manifest:
 ```bash
 python scripts/run_sixdof_task_weight_sweep.py \
   --max-variants 2 \
+  --baseline-checkpoint artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt \
   --report artifacts/replay/sixdof_task_weight_sweep_manifest.json \
   --output-dir artifacts/task_weight_sweep/manifest
 ```
@@ -207,3 +208,29 @@ python scripts/run_sixdof_task_weight_sweep.py \
 ```
 
 Result: `balanced_control` completed the short suite with `completed=1.0000`, `pos_err=0.9555m`, and `clearance_p01=1.1176m`. This confirms the sweep automation path; it is not a replacement for the current 300-step validation gate.
+
+300-step task-weight sweep with baseline:
+
+```bash
+python scripts/run_sixdof_task_weight_sweep.py \
+  --baseline-checkpoint artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt \
+  --run \
+  --eval-steps 80 \
+  --eval-num-envs 64 \
+  --suite-steps 300 \
+  --suite-num-envs 128 \
+  --report artifacts/replay/sixdof_task_weight_sweep_300.json \
+  --output-dir artifacts/task_weight_sweep/suite300
+```
+
+| variant | completed | pos err m | clearance p01 m |
+| --- | ---: | ---: | ---: |
+| baseline | 0.5651 | 2.8909 | 0.0535 |
+| balanced_control | 0.2526 | 4.9693 | 0.0390 |
+| focus_position_circle_15 | 0.2552 | 5.1258 | 0.0388 |
+| focus_position_circle_2 | 0.2370 | 5.2127 | 0.0365 |
+| focus_circle_2 | 0.2005 | 5.2286 | 0.0413 |
+| focus_position_2 | 0.2500 | 5.0548 | 0.0416 |
+| focus_position_circle_h256 | 0.2552 | 4.8840 | 0.0429 |
+
+Conclusion: short static-imitation retraining with task weights underperforms the existing `safe_horizon800` baseline. The next multi-task attempt should change rollout collection or closed-loop optimization, not only static sample weights.

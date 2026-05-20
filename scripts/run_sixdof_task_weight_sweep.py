@@ -34,12 +34,13 @@ def main() -> None:
     parser.add_argument("--eval-num-envs", type=int, default=64)
     parser.add_argument("--suite-steps", type=int, default=300)
     parser.add_argument("--suite-num-envs", type=int, default=128)
+    parser.add_argument("--baseline-checkpoint", default=None, help="Optional existing checkpoint to evaluate before trained variants.")
     args = parser.parse_args()
 
     variants = default_variants()
     if args.max_variants is not None:
         variants = variants[: args.max_variants]
-    records = [variant_record(args, variant) for variant in variants]
+    records = baseline_records(args) + [variant_record(args, variant) for variant in variants]
     if args.run:
         for record in records:
             record["results"] = run_commands(record["commands"])
@@ -70,6 +71,15 @@ def variant_record(args: argparse.Namespace, variant: WeightVariant) -> dict:
     suite = base / "suite.json"
     commands = [train_command(args, variant, checkpoint), suite_command(args, variant, checkpoint, suite)]
     return {"variant": asdict(variant), "checkpoint": str(checkpoint), "suite": str(suite), "commands": commands}
+
+
+def baseline_records(args: argparse.Namespace) -> list[dict]:
+    if not args.baseline_checkpoint:
+        return []
+    base = Path(args.output_dir) / "baseline"
+    suite = base / "suite.json"
+    variant = {"name": "baseline", "task_weights": (), "hidden_size": None, "epochs": 0, "learning_rate": None}
+    return [{"variant": variant, "checkpoint": args.baseline_checkpoint, "suite": str(suite), "commands": [suite_command(args, WeightVariant("baseline", ()), Path(args.baseline_checkpoint), suite)]}]
 
 
 def train_command(args: argparse.Namespace, variant: WeightVariant, checkpoint: Path) -> list[str]:
