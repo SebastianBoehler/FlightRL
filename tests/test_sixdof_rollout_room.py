@@ -20,6 +20,19 @@ def test_sixdof_reset_starts_inside_custom_room() -> None:
     assert room.contains(env.position, margin=0.03).all()
 
 
+def test_native_step_env_matches_python_with_custom_room() -> None:
+    room = BoxRoom(x_min=-0.7, x_max=0.9, y_min=-0.8, y_max=0.6, z_min=0.0, z_max=1.4, max_range_m=2.0)
+    python_env = SixDofCrazyflieEnv(num_envs=8, seed=9, room=room, use_native_step=False)
+    native_env = SixDofCrazyflieEnv(num_envs=8, seed=9, room=room, use_native_step=True)
+    actions = [[0.02, 0.01, -0.02, 0.03]] * 8
+
+    python_env.step(actions)
+    native_env.step(actions)
+
+    assert abs(float(python_env.ranges_m[0, 0] - native_env.ranges_m[0, 0])) < 1e-5
+    assert (python_env.terminals == native_env.terminals).all()
+
+
 def test_sixdof_rollout_can_use_room_estimate_report(tmp_path: Path) -> None:
     room_report = tmp_path / "room.json"
     room_report.write_text(json.dumps({"room_estimate": room_estimate()}) + "\n")
@@ -49,11 +62,12 @@ def test_sixdof_rollout_can_use_room_estimate_report(tmp_path: Path) -> None:
     assert max(float(row["range.front"]) for row in rows) <= 6000.0
 
 
-def test_sixdof_rollout_rejects_room_report_with_native_step(tmp_path: Path) -> None:
+def test_sixdof_rollout_can_use_room_report_with_native_step(tmp_path: Path) -> None:
     room_report = tmp_path / "room.json"
     room_report.write_text(json.dumps({"room_estimate": room_estimate()}) + "\n")
+    rollout = tmp_path / "rollout.csv"
 
-    result = subprocess.run(
+    subprocess.run(
         [
             sys.executable,
             str(ROOT / "scripts" / "rollout_sixdof_policy.py"),
@@ -61,16 +75,17 @@ def test_sixdof_rollout_rejects_room_report_with_native_step(tmp_path: Path) -> 
             "--room-report",
             str(room_report),
             "--native-step",
-            "--steps",
-            "1",
+            "--steps", "3",
+            "--output", str(rollout),
         ],
         cwd=ROOT,
+        check=True,
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode != 0
-    assert "native room bounds" in result.stderr
+    with rollout.open() as handle:
+        assert len(list(csv.DictReader(handle))) == 3
 
 
 def room_estimate() -> dict[str, float]:

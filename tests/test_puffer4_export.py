@@ -87,6 +87,8 @@ def test_export_sixdof_puffer4_assets_writes_native_ocean_env(tmp_path: Path) ->
     assert "total_agents = 2048" in ini_text
     assert "num_buffers = 4" in ini_text
     assert "dt = 0.01" in ini_text
+    assert "room_x_min = -2" in ini_text
+    assert 'dict_get(kwargs, "room_x_min")' in binding_text
     for filename in SIXDOF_NATIVE_FILES:
         assert (result.env_dir / filename).exists()
 

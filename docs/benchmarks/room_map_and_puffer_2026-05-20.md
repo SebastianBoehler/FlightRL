@@ -61,7 +61,22 @@ python scripts/rollout_sixdof_policy.py \
   --output artifacts/trajectories/sixdof_teacher_room_estimate_smoke.csv
 ```
 
-Result: 120 simulated rows. Time-aligned replay comparison against the real room scan currently overlaps only 1.19 seconds because this is not a command-matched replay, but it proves the measured-room bounds can drive the Python 6-DoF sim path. Custom room reports are intentionally rejected with `--native-step` until the native C kernel accepts configurable room bounds.
+Result: 120 simulated rows. Time-aligned replay comparison against the real room scan currently overlaps only 1.19 seconds because this is not a command-matched replay, but it proves the measured-room bounds can drive the 6-DoF sim path.
+
+Native-step parity command:
+
+```bash
+python scripts/rollout_sixdof_policy.py \
+  --teacher \
+  --native-step \
+  --task obstacle_avoidance \
+  --room-report artifacts/replay/room_scan_autonomous_35s.room.json \
+  --steps 120 \
+  --seed 51 \
+  --output artifacts/trajectories/sixdof_teacher_room_estimate_native_smoke.csv
+```
+
+Python-vs-native replay parity over the measured room produced 120 aligned samples. State RMSE was below `4e-8` m and ranger RMSE was below `6e-4` mm-equivalent CSV units, so configurable room bounds now match across Python and native stepping for this smoke trajectory.
 
 ## Native 6-DoF Throughput
 
@@ -74,7 +89,7 @@ python scripts/benchmark_sixdof_sweep.py \
   --output artifacts/replay/sixdof_native_benchmark_latest.json
 ```
 
-Best native env throughput: 16,950,295 steps/sec at 4096 envs. This confirms the C/native stepping path is not the immediate bottleneck for short CPU training runs.
+Best native env throughput after configurable room bounds: 15,984,486 steps/sec at 4096 envs. This confirms the C/native stepping path is still not the immediate bottleneck for short CPU training runs.
 
 ## PufferLib Sweep
 

@@ -31,8 +31,6 @@ def main() -> None:
     task = args.task or tasks[0]
     if "," in task or task == "multitask":
         raise SystemExit("--task must select one concrete task for rollout")
-    if args.room_report and args.native_step:
-        raise SystemExit("--room-report is only supported without --native-step until native room bounds are configurable")
     room = load_room_report(args.room_report) if args.room_report else None
     env = SixDofCrazyflieEnv(num_envs=1, seed=args.seed, task=task, room=room, use_native_step=args.native_step)
     model = load_policy_from_checkpoint(checkpoint) if checkpoint and not args.teacher else None

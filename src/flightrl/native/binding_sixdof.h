@@ -28,8 +28,9 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
     PyObject *rates_obj;
     PyObject *ranges_obj;
     PyObject *actions_obj;
+    PyObject *room_obj;
     float dt;
-    if (!PyArg_ParseTuple(args, "OOOOOOf", &pos_obj, &vel_obj, &quat_obj, &rates_obj, &ranges_obj, &actions_obj, &dt)) {
+    if (!PyArg_ParseTuple(args, "OOOOOOOf", &pos_obj, &vel_obj, &quat_obj, &rates_obj, &ranges_obj, &actions_obj, &room_obj, &dt)) {
         return NULL;
     }
 
@@ -39,7 +40,8 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
     PyArrayObject *rates = sixdof_array(rates_obj);
     PyArrayObject *ranges = sixdof_array(ranges_obj);
     PyArrayObject *actions = (PyArrayObject *)PyArray_FROM_OTF(actions_obj, NPY_FLOAT32, NPY_ARRAY_IN_ARRAY);
-    if (!pos || !vel || !quat || !rates || !ranges || !actions) {
+    PyArrayObject *room = sixdof_read_float_array(room_obj);
+    if (!pos || !vel || !quat || !rates || !ranges || !actions || !room) {
         goto fail;
     }
     int num_envs = (int)PyArray_DIM(pos, 0);
@@ -48,7 +50,8 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
         PyArray_NDIM(quat) == 2 && PyArray_DIM(quat, 0) == num_envs && PyArray_DIM(quat, 1) == 4 &&
         PyArray_NDIM(rates) == 2 && PyArray_DIM(rates, 0) == num_envs && PyArray_DIM(rates, 1) == 3 &&
         PyArray_NDIM(ranges) == 2 && PyArray_DIM(ranges, 0) == num_envs && PyArray_DIM(ranges, 1) == 6 &&
-        PyArray_NDIM(actions) == 2 && PyArray_DIM(actions, 0) == num_envs && PyArray_DIM(actions, 1) == 4;
+        PyArray_NDIM(actions) == 2 && PyArray_DIM(actions, 0) == num_envs && PyArray_DIM(actions, 1) == 4 &&
+        PyArray_NDIM(room) == 1 && PyArray_DIM(room, 0) == 7;
     if (!ok) {
         PyErr_SetString(PyExc_ValueError, "sixdof_step expects shapes position(N,3), velocity(N,3), quaternion(N,4), body_rates(N,3), ranges(N,6), actions(N,4)");
         goto fail;
@@ -61,6 +64,7 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
         PyArray_DATA(rates),
         PyArray_DATA(ranges),
         PyArray_DATA(actions),
+        PyArray_DATA(room),
         num_envs,
         dt
     );
@@ -75,6 +79,7 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
     Py_DECREF(rates);
     Py_DECREF(ranges);
     Py_DECREF(actions);
+    Py_DECREF(room);
     Py_RETURN_NONE;
 
 fail:
@@ -84,17 +89,18 @@ fail:
     Py_XDECREF(rates);
     Py_XDECREF(ranges);
     Py_XDECREF(actions);
+    Py_XDECREF(room);
     return NULL;
 }
 
 static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
     (void)self;
     PyObject *pos_obj, *vel_obj, *quat_obj, *rates_obj, *ranges_obj, *target_obj, *target_yaw_obj;
-    PyObject *prev_obj, *step_count_obj, *actions_obj, *obs_obj, *rewards_obj, *terminals_obj, *truncations_obj;
+    PyObject *prev_obj, *step_count_obj, *actions_obj, *obs_obj, *rewards_obj, *terminals_obj, *truncations_obj, *room_obj;
     float dt;
     if (!PyArg_ParseTuple(
             args,
-            "OOOOOOOOOOOOOOf",
+            "OOOOOOOOOOOOOOOf",
             &pos_obj,
             &vel_obj,
             &quat_obj,
@@ -109,6 +115,7 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
             &rewards_obj,
             &terminals_obj,
             &truncations_obj,
+            &room_obj,
             &dt
         )) {
         return NULL;
@@ -128,7 +135,8 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
     PyArrayObject *rewards = sixdof_array(rewards_obj);
     PyArrayObject *terminals = sixdof_uint8_array(terminals_obj);
     PyArrayObject *truncations = sixdof_uint8_array(truncations_obj);
-    if (!pos || !vel || !quat || !rates || !ranges || !target || !target_yaw || !prev || !step_count || !actions || !obs || !rewards || !terminals || !truncations) {
+    PyArrayObject *room = sixdof_read_float_array(room_obj);
+    if (!pos || !vel || !quat || !rates || !ranges || !target || !target_yaw || !prev || !step_count || !actions || !obs || !rewards || !terminals || !truncations || !room) {
         goto fail;
     }
     int n = (int)PyArray_DIM(pos, 0);
@@ -145,7 +153,8 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
         PyArray_NDIM(obs) == 2 && PyArray_DIM(obs, 0) == n && PyArray_DIM(obs, 1) == 28 &&
         PyArray_NDIM(rewards) == 1 && PyArray_DIM(rewards, 0) == n &&
         PyArray_NDIM(terminals) == 1 && PyArray_DIM(terminals, 0) == n &&
-        PyArray_NDIM(truncations) == 1 && PyArray_DIM(truncations, 0) == n;
+        PyArray_NDIM(truncations) == 1 && PyArray_DIM(truncations, 0) == n &&
+        PyArray_NDIM(room) == 1 && PyArray_DIM(room, 0) == 7;
     if (!ok) {
         PyErr_SetString(PyExc_ValueError, "sixdof_step_env received incompatible array shapes");
         goto fail;
@@ -153,7 +162,7 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
     flightrl_sixdof_step_env_batch(
         PyArray_DATA(pos), PyArray_DATA(vel), PyArray_DATA(quat), PyArray_DATA(rates), PyArray_DATA(ranges),
         PyArray_DATA(target), PyArray_DATA(target_yaw), PyArray_DATA(prev), PyArray_DATA(step_count),
-        PyArray_DATA(actions), PyArray_DATA(obs), PyArray_DATA(rewards), PyArray_DATA(terminals), PyArray_DATA(truncations), n, dt
+        PyArray_DATA(actions), PyArray_DATA(obs), PyArray_DATA(rewards), PyArray_DATA(terminals), PyArray_DATA(truncations), PyArray_DATA(room), n, dt
     );
     PyArray_ResolveWritebackIfCopy(pos);
     PyArray_ResolveWritebackIfCopy(vel);
@@ -170,11 +179,13 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
     PyArray_ResolveWritebackIfCopy(truncations);
     Py_DECREF(pos); Py_DECREF(vel); Py_DECREF(quat); Py_DECREF(rates); Py_DECREF(ranges); Py_DECREF(target); Py_DECREF(target_yaw);
     Py_DECREF(prev); Py_DECREF(step_count); Py_DECREF(actions); Py_DECREF(obs); Py_DECREF(rewards); Py_DECREF(terminals); Py_DECREF(truncations);
+    Py_DECREF(room);
     Py_RETURN_NONE;
 
 fail:
     Py_XDECREF(pos); Py_XDECREF(vel); Py_XDECREF(quat); Py_XDECREF(rates); Py_XDECREF(ranges); Py_XDECREF(target); Py_XDECREF(target_yaw);
     Py_XDECREF(prev); Py_XDECREF(step_count); Py_XDECREF(actions); Py_XDECREF(obs); Py_XDECREF(rewards); Py_XDECREF(terminals); Py_XDECREF(truncations);
+    Py_XDECREF(room);
     return NULL;
 }
 

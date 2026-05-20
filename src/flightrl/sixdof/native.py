@@ -13,6 +13,7 @@ def native_step(
     ranges_m: np.ndarray,
     actions: np.ndarray,
     dt: float,
+    room_bounds: np.ndarray | None = None,
 ) -> None:
     _binding.sixdof_step(
         _float32(position),
@@ -21,6 +22,7 @@ def native_step(
         _float32(body_rates),
         _float32(ranges_m),
         _float32(actions),
+        _float32(room_bounds if room_bounds is not None else DEFAULT_ROOM_BOUNDS),
         float(dt),
     )
 
@@ -41,6 +43,7 @@ def native_step_env(env, actions: np.ndarray) -> None:
         _float32(env.rewards),
         _uint8(env.terminals),
         _uint8(env.truncations),
+        _float32(env.room_bounds),
         float(env.dt),
     )
 
@@ -61,3 +64,6 @@ def _uint8(values: np.ndarray) -> np.ndarray:
     if values.dtype == np.uint8 and values.flags.c_contiguous:
         return values
     raise ValueError("native 6-DoF flag arrays must be C-contiguous uint8")
+
+
+DEFAULT_ROOM_BOUNDS = np.asarray([-2.0, 2.0, -2.0, 2.0, 0.0, 2.5, 4.0], dtype=np.float32)

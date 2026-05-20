@@ -40,6 +40,7 @@ class SixDofCrazyflieEnv:
         self.use_native_step = bool(use_native_step)
         self.reset_profile = resolve_reset_profile(reset_profile)
         self.room = room or BoxRoom()
+        self.room_bounds = room_bounds_array(self.room)
         self.rng = np.random.default_rng(seed)
         self.mass = 0.036
         self.gravity = 9.81
@@ -212,3 +213,10 @@ def quat_to_yaw(quaternions: np.ndarray) -> np.ndarray:
 
 def wrap_angle(angle: np.ndarray) -> np.ndarray:
     return ((angle + np.pi) % (2.0 * np.pi) - np.pi).astype(np.float32)
+
+
+def room_bounds_array(room: BoxRoom) -> np.ndarray:
+    return np.asarray(
+        [room.x_min, room.x_max, room.y_min, room.y_max, room.z_min, room.z_max, room.max_range_m],
+        dtype=np.float32,
+    )

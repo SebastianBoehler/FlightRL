@@ -8,6 +8,7 @@ void flightrl_sixdof_step_batch(
     float *body_rates,
     float *ranges,
     const float *actions,
+    const float *room,
     int num_envs,
     float dt
 );
@@ -27,6 +28,7 @@ void flightrl_sixdof_step_env_batch(
     float *rewards,
     unsigned char *terminals,
     unsigned char *truncations,
+    const float *room,
     int num_envs,
     float dt
 );

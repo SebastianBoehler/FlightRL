@@ -51,6 +51,7 @@ typedef struct {
     float quaternion[4];
     float body_rates[3];
     float ranges[6];
+    float room[7];
     float target_position[3];
     float target_yaw;
     float previous_action[4];
@@ -77,6 +78,13 @@ void my_init(Env* env, Dict* kwargs) {
     env->num_agents = 1;
     env->dt = (float)dict_get(kwargs, "dt")->value;
     env->rng = (uint32_t)dict_get(kwargs, "seed")->value + 0x9e3779b9u;
+    env->room[0] = (float)dict_get(kwargs, "room_x_min")->value;
+    env->room[1] = (float)dict_get(kwargs, "room_x_max")->value;
+    env->room[2] = (float)dict_get(kwargs, "room_y_min")->value;
+    env->room[3] = (float)dict_get(kwargs, "room_y_max")->value;
+    env->room[4] = (float)dict_get(kwargs, "room_z_min")->value;
+    env->room[5] = (float)dict_get(kwargs, "room_z_max")->value;
+    env->room[6] = (float)dict_get(kwargs, "max_range_m")->value;
 }
 
 void my_log(Log* log, Dict* out) {
@@ -91,7 +99,7 @@ static void fill_initial_observation(Env* env) {
     int zero_step = -1;
     flightrl_sixdof_step_env_batch(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
         env->target_position, &env->target_yaw, env->previous_action, &zero_step, zero_action,
-        env->observations, &reward, &env->terminal, &env->truncation, 1, 0.0f);
+        env->observations, &reward, &env->terminal, &env->truncation, env->room, 1, 0.0f);
     env->step_count = 0;
 }
 
@@ -119,7 +127,7 @@ static void c_reset(Env* env) {
 static void c_step(Env* env) {
     flightrl_sixdof_step_env_batch(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
         env->target_position, &env->target_yaw, env->previous_action, &env->step_count, env->actions,
-        env->observations, env->rewards, &env->terminal, &env->truncation, 1, env->dt);
+        env->observations, env->rewards, &env->terminal, &env->truncation, env->room, 1, env->dt);
     env->terminals[0] = (env->terminal || env->truncation) ? 1.0f : 0.0f;
     env->log.episode_return += env->rewards[0];
     env->log.episode_length += 1.0f;
@@ -161,7 +169,17 @@ def build_sixdof_sections(settings: Puffer4ExportSettings) -> dict[str, dict[str
     return {
         "base": {"env_name": settings.env_name, "checkpoint_interval": 10, "seed": settings.train_seed},
         "vec": {"total_agents": total_agents, "num_buffers": num_buffers, "num_threads": settings.num_threads or num_buffers},
-        "env": {"seed": settings.train_seed, "dt": 0.01},
+        "env": {
+            "seed": settings.train_seed,
+            "dt": 0.01,
+            "room_x_min": -2.0,
+            "room_x_max": 2.0,
+            "room_y_min": -2.0,
+            "room_y_max": 2.0,
+            "room_z_min": 0.0,
+            "room_z_max": 2.5,
+            "max_range_m": 4.0,
+        },
         "policy": {"hidden_size": hidden_size, "num_layers": settings.policy_num_layers, "expansion_factor": 1},
         "torch": {"network": "MLP", "encoder": "DefaultEncoder", "decoder": "DefaultDecoder"},
         "train": {
