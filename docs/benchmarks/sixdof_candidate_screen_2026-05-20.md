@@ -180,6 +180,35 @@ python scripts/run_sixdof_task_probability_sweep.py \
 
 The sweep variants compare uniform DAgger collection against position/circle-oversampled collection and a small teacher-mixing variant. A tiny smoke run wrote `artifacts/replay/sixdof_task_probability_sweep_run_smoke.md`; the short horizon is only a script check, not model evidence.
 
+Full one-iteration 300-step sampling sweep:
+
+```bash
+python scripts/run_sixdof_task_probability_sweep.py \
+  --run \
+  --baseline-checkpoint artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt \
+  --report artifacts/replay/sixdof_task_probability_sweep_300_full.json \
+  --output-dir artifacts/task_probability_sweep/suite300_full \
+  --iterations 1 \
+  --num-envs 128 \
+  --steps 128 \
+  --eval-steps 80 \
+  --eval-num-envs 64 \
+  --suite-steps 300 \
+  --suite-num-envs 128
+```
+
+| variant | completed | pos err m | clearance p01 m |
+| --- | ---: | ---: | ---: |
+| baseline | 0.5651 | 2.8909 | 0.0535 |
+| uniform_dagger | 0.2370 | 5.0093 | 0.0406 |
+| sample_position_circle_2 | 0.2318 | 4.9852 | 0.0409 |
+| sample_position_circle_3 | 0.2344 | 4.9854 | 0.0432 |
+| sample_circle_3 | 0.2500 | 5.0535 | 0.0451 |
+| sample_position_3 | 0.2370 | 4.9925 | 0.0411 |
+| sample_position_circle_beta25 | 0.2500 | 5.1059 | 0.0394 |
+
+Conclusion: a single short DAgger iteration with altered task sampling still degrades the multi-task baseline. The next serious attempt should change rollout length/curriculum or move to closed-loop PPO-style fine-tuning, not just task sampling or loss weighting.
+
 ```bash
 python scripts/build_sixdof_candidate_matrix.py \
   --suite artifacts/replay/sixdof_candidate_suite_safe_tasks.json \
