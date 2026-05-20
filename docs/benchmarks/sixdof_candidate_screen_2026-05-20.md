@@ -70,3 +70,20 @@ Current matrix result:
 | position_yaw | history1_h128 | false | true | 9.323 | 0.6602 | 3.8810 | 0.0889 |
 
 The matrix makes the current boundary explicit: obstacle avoidance has a learned checkpoint with gate pass and edge parity, while position/yaw still has no passing learned checkpoint even when the best medium candidate has edge parity.
+
+Readiness promotion command:
+
+```bash
+python scripts/build_sixdof_readiness_report.py \
+  --matrix artifacts/replay/sixdof_candidate_matrix_current.json \
+  --room-report artifacts/replay/room_scan_autonomous_35s.room.json \
+  --native-parity artifacts/replay/room_estimate_native_parity.json \
+  --output artifacts/replay/sixdof_readiness_current.json
+```
+
+| task | selected label | ready | failures | latency us | completed | pos err m | clearance p01 m |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| obstacle_avoidance | obstacle_focus | true | none | 9.967 | 1.0000 | 0.1402 | 0.4839 |
+| position_yaw | history1_h128 | false | sim_gate | 9.323 | 0.6602 | 3.8810 | 0.0889 |
+
+Global evidence used by the readiness report: room map ready with 7416 points, and measured-room Python/native parity passed with worst state RMSE `3.26e-8` and worst ranger RMSE `5.39e-4`. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
