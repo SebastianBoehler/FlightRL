@@ -130,3 +130,28 @@ python scripts/run_sixdof_puffer_sweep.py \
 ```
 
 Result: the sweep record failed fast with `PufferLib native extension is built for 'flightrl_sixdof_sweep', not 'flightrl_sixdof_sweep_512'; rerun without --no-build or use the compiled --env-name.`
+
+## Thread Scaling Refresh
+
+The sweep runner now supports named variant subsets with `--variants`, records a `summary.best_train_sps`, and includes explicit 4/8/12-thread variants plus a horizon-64 variant for bounded tuning passes.
+
+Command:
+
+```bash
+python scripts/run_sixdof_puffer_sweep.py \
+  --run \
+  --no-build \
+  --variants fast_h32_t4_rr1_h128 fast_h32_rr1_h128 fast_h32_t12_rr1_h128 \
+  --env-name flightrl_sixdof_sweep \
+  --pufferlib-root ../PufferLib-4-flightrl \
+  --total-timesteps 262144 \
+  --output artifacts/replay/sixdof_puffer_thread_sweep_latest.json
+```
+
+| variant | agents | threads | horizon | replay | hidden | train SPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| fast_h32_t4_rr1_h128 | 4096 | 4 | 32 | 1 | 128 | 394800 |
+| fast_h32_rr1_h128 | 4096 | 8 | 32 | 1 | 128 | 451200 |
+| fast_h32_t12_rr1_h128 | 4096 | 12 | 32 | 1 | 128 | 459600 |
+
+Current short-run result: `fast_h32_t12_rr1_h128` is the fastest of this thread-scaling subset at `459.6K` train SPS, only slightly ahead of 8 threads. The next longer run should compare 8 vs 12 threads at a larger timestep budget before treating 12 threads as the default.

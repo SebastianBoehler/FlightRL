@@ -33,8 +33,30 @@ def test_parse_train_sps_samples_skips_eval_only_dashboard() -> None:
 def test_default_sweep_covers_size_and_policy_knobs() -> None:
     variants = SWEEP.default_variants()
     assert {variant.total_agents for variant in variants} >= {1024, 4096, 8192}
+    assert {variant.num_threads for variant in variants} >= {1, 4, 8, 12}
+    assert {variant.horizon for variant in variants} >= {16, 32, 64}
     assert {variant.policy_hidden_size for variant in variants} >= {64, 128, 256}
     assert {variant.replay_ratio for variant in variants} >= {1, 2}
+
+
+def test_select_variants_keeps_requested_order() -> None:
+    variants = SWEEP.select_variants(SWEEP.default_variants(), ["large_h32_t12_rr1_h128", "fast_h32_t4_rr1_h128"])
+
+    assert [variant.name for variant in variants] == ["large_h32_t12_rr1_h128", "fast_h32_t4_rr1_h128"]
+
+
+def test_summarize_finds_fastest_completed_train_sps() -> None:
+    variants = [SWEEP.asdict(variant) for variant in SWEEP.default_variants()[:2]]
+    summary = SWEEP.summarize(
+        [
+            {"variant": variants[0], "returncode": 0, "max_train_sps": 100.0, "elapsed_s": 1.0},
+            {"variant": variants[1], "returncode": 0, "max_train_sps": 250.0, "elapsed_s": 2.0},
+        ]
+    )
+
+    assert summary["completed"] == 2
+    assert summary["best_train_sps"]["name"] == variants[1]["name"]
+    assert summary["best_train_sps"]["max_train_sps"] == 250.0
 
 
 def test_render_markdown_marks_failed_run_instead_of_pending() -> None:
@@ -59,6 +81,9 @@ def test_puffer_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
             str(ROOT / "scripts" / "run_sixdof_puffer_sweep.py"),
             "--max-variants",
             "2",
+            "--variants",
+            "fast_h32_t4_rr1_h128",
+            "large_h32_t12_rr1_h128",
             "--output",
             str(output),
         ],
@@ -70,5 +95,7 @@ def test_puffer_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     report = json.loads(output.read_text())
     assert report["run"] is False
     assert len(report["records"]) == 2
+    assert report["summary"]["total"] == 2
+    assert [record["variant"]["name"] for record in report["records"]] == ["fast_h32_t4_rr1_h128", "large_h32_t12_rr1_h128"]
     assert "--policy-hidden-size" in report["records"][0]["command"]
     assert output.with_suffix(".md").exists()

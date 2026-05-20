@@ -40,9 +40,10 @@ def main() -> None:
     parser.add_argument("--run", action="store_true", help="Execute commands instead of only writing the manifest")
     parser.add_argument("--no-build", action="store_true", help="Skip Puffer build for every executed variant")
     parser.add_argument("--max-variants", type=int, default=None)
+    parser.add_argument("--variants", nargs="+", default=None, help="Optional variant names to include, in the requested order")
     args = parser.parse_args()
 
-    variants = default_variants()
+    variants = select_variants(default_variants(), args.variants)
     if args.max_variants is not None:
         variants = variants[: args.max_variants]
     records = []
@@ -53,7 +54,7 @@ def main() -> None:
             record.update(run_command(command))
         records.append(record)
 
-    report = {"total_timesteps": args.total_timesteps, "run": args.run, "records": records}
+    report = {"total_timesteps": args.total_timesteps, "run": args.run, "records": records, "summary": summarize(records)}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -67,9 +68,23 @@ def default_variants() -> list[SweepVariant]:
         SweepVariant("small_h16_rr2_h64", 1024, 1, 1, 16, 2048, 2, 3e-4, 1e-3, 64),
         SweepVariant("base_h32_rr2_h128", 4096, 8, 8, 32, 8192, 2, 3e-4, 1e-3, 128),
         SweepVariant("fast_h32_rr1_h128", 4096, 8, 8, 32, 16384, 1, 7e-4, 3e-3, 128),
+        SweepVariant("fast_h32_t4_rr1_h128", 4096, 8, 4, 32, 16384, 1, 7e-4, 3e-3, 128),
+        SweepVariant("fast_h32_t12_rr1_h128", 4096, 8, 12, 32, 16384, 1, 7e-4, 3e-3, 128),
         SweepVariant("wide_h32_rr1_h256", 4096, 8, 8, 32, 16384, 1, 5e-4, 2e-3, 256),
         SweepVariant("large_h32_rr1_h128", 8192, 8, 8, 32, 16384, 1, 3e-4, 1e-3, 128),
+        SweepVariant("large_h32_t12_rr1_h128", 8192, 8, 12, 32, 16384, 1, 3e-4, 1e-3, 128),
+        SweepVariant("long_h64_rr1_h128", 4096, 8, 8, 64, 32768, 1, 5e-4, 2e-3, 128),
     ]
+
+
+def select_variants(variants: list[SweepVariant], names: list[str] | None) -> list[SweepVariant]:
+    if not names:
+        return variants
+    by_name = {variant.name: variant for variant in variants}
+    missing = [name for name in names if name not in by_name]
+    if missing:
+        raise SystemExit(f"Unknown variant(s): {', '.join(missing)}")
+    return [by_name[name] for name in names]
 
 
 def build_command(args: argparse.Namespace, variant: SweepVariant, *, skip_build: bool) -> list[str]:
@@ -159,6 +174,33 @@ def tail_lines(text: str, limit: int = 20) -> list[str]:
     return text.splitlines()[-limit:]
 
 
+def summarize(records: list[dict]) -> dict:
+    completed = [record for record in records if record.get("returncode") == 0]
+    best = max((record for record in completed if record.get("max_train_sps")), key=lambda record: record["max_train_sps"], default=None)
+    return {
+        "total": len(records),
+        "completed": len(completed),
+        "failed": sum(1 for record in records if record.get("returncode", 0) != 0 and "returncode" in record),
+        "best_train_sps": compact_record(best) if best else None,
+    }
+
+
+def compact_record(record: dict | None) -> dict | None:
+    if record is None:
+        return None
+    variant = record["variant"]
+    return {
+        "name": variant["name"],
+        "total_agents": variant["total_agents"],
+        "num_threads": variant["num_threads"],
+        "horizon": variant["horizon"],
+        "replay_ratio": variant["replay_ratio"],
+        "policy_hidden_size": variant["policy_hidden_size"],
+        "max_train_sps": record.get("max_train_sps"),
+        "elapsed_s": record.get("elapsed_s"),
+    }
+
+
 def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Puffer Sweep",
@@ -175,6 +217,19 @@ def render_markdown(report: dict) -> str:
             f"{variant['horizon']} | {variant['minibatch_size']} | {variant['replay_ratio']} | "
             f"{variant['learning_rate']:.6g} | {variant['ent_coef']:.6g} | {variant['policy_hidden_size']} | "
             f"{sps_text} |"
+        )
+    best = (report.get("summary") or {}).get("best_train_sps")
+    if best:
+        lines.extend(
+            [
+                "",
+                "## Fastest Completed Run",
+                "",
+                f"`{best['name']}` reached `{best['max_train_sps']:.0f}` train SPS "
+                f"with `{best['total_agents']}` agents, `{best['num_threads']}` threads, "
+                f"horizon `{best['horizon']}`, replay ratio `{best['replay_ratio']}`, "
+                f"and hidden size `{best['policy_hidden_size']}`.",
+            ]
         )
     lines.extend(["", "Commands are stored in the JSON report. Use `--run` to execute them."])
     return "\n".join(lines)
