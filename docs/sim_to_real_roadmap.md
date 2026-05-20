@@ -87,5 +87,5 @@ Example:
 - Add motor/prop actuator model and parameter schema.
 - Add Crazyflie hardware bridge research and bring-up checklist.
 - Add command-level action mode for velocity, yaw, altitude, and local waypoint tracking.
-- Add real-log replay and parameter-fitting pipeline.
+- Extend real-log replay from time-aligned signal metrics toward parameter fitting.
 - Add perception/VLA interface that emits structured goals.

@@ -73,10 +73,10 @@ The visualizer also works on real hardware logs that contain `stateEstimate.*`, 
 python scripts/compare_crazyflie_replay.py \
   --real artifacts/crazyflie_logs/ranger_hold_current_target_35s.csv \
   --sim artifacts/trajectories/sixdof_obstacle_avoidance.csv \
+  --align-time \
   --output artifacts/replay/hold_vs_sixdof_obstacle.json
 ```
-
-This currently compares replay summaries, not exact trajectory matching. Exact replay alignment needs matching initial state, command interface, and timebase.
+This compares replay summaries and, with `--align-time`, time-aligned RMSE/MAE/bias for common state, range, and command signals. Exact physical replay still needs matching initial state and command interface.
 
 ## Checkpoint Gates
 
