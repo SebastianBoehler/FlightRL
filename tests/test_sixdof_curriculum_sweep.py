@@ -18,7 +18,7 @@ SPEC.loader.exec_module(SWEEP)
 def test_default_curriculum_sweep_covers_staged_profiles() -> None:
     variants = SWEEP.default_variants()
     profiles = {profile for variant in variants for profile in variant.profiles}
-    assert {"position_yaw_easy", "position_yaw_medium", "broad"} <= profiles
+    assert {"position_yaw_easy", "position_yaw_medium", "position_yaw_wide", "broad"} <= profiles
     assert {variant.hidden_size for variant in variants} >= {128, 256}
 
 

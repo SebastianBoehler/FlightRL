@@ -48,12 +48,15 @@ def test_collect_rollout_labels_teacher_on_recorded_state() -> None:
 
 def test_collect_rollout_supports_progress_reward() -> None:
     env_progress = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
+    env_clearance = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
     env_base = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
     model = SixDofActorCritic(input_dim=28, hidden_size=16)
     shaped = collect_rollout(env_progress, model, horizon=2, action_std=0.2, reward_mode="progress")
+    clearance = collect_rollout(env_clearance, model, horizon=2, action_std=0.2, reward_mode="progress_clearance")
     raw = collect_rollout(env_base, model, horizon=2, action_std=0.2, reward_mode="env")
     assert shaped["rewards"].shape == raw["rewards"].shape
     assert not np.allclose(shaped["rewards"], raw["rewards"])
+    assert not np.allclose(clearance["rewards"], shaped["rewards"])
 
 
 def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
@@ -85,7 +88,7 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
             "--reference-coef",
             "0.2",
             "--reward-mode",
-            "progress",
+            "progress_clearance",
         ],
         cwd=ROOT,
         check=True,
@@ -96,5 +99,5 @@ def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
     assert saved["trainer"] == "ppo"
     assert saved["imitation_coef"] == 0.1
     assert saved["reference_coef"] == 0.2
-    assert saved["reward_mode"] == "progress"
+    assert saved["reward_mode"] == "progress_clearance"
     assert checkpoint.with_suffix(".report.json").exists()

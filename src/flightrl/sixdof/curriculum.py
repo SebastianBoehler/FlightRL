@@ -24,6 +24,8 @@ RESET_PROFILES = {
     "broad": ResetProfile("broad", 0.8, 1.0, (0.35, 0.9), (0.45, 0.9), 0.08),
     "position_yaw_easy": ResetProfile("position_yaw_easy", 0.35, 0.35, (0.45, 0.75), (0.45, 0.75), 0.04, 0.18, 0.06, 0.35),
     "position_yaw_medium": ResetProfile("position_yaw_medium", 0.65, 0.75, (0.4, 0.85), (0.4, 0.9), 0.06, 0.40, 0.12, 0.90),
+    "position_yaw_wide": ResetProfile("position_yaw_wide", 0.75, 0.9, (0.38, 0.9), (0.4, 0.95), 0.07, 0.70, 0.18, 1.60),
+    "position_yaw_hard": ResetProfile("position_yaw_hard", 0.8, 1.0, (0.35, 0.9), (0.4, 0.95), 0.08, 1.00, 0.25, float(np.pi)),
 }
 
 

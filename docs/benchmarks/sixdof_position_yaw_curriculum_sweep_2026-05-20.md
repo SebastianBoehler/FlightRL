@@ -51,3 +51,24 @@ Best ranked candidates:
 - Broad reset profile: `easy_medium_broad_h256`, still failed with `completion`, `min_clearance`, and `position_error`.
 
 Conclusion: the sweep runner is working, but the tested imitation-only curriculum variants do not produce a passing position/orientation checkpoint. Adding broad teacher data slightly improves broad completion, but broad position error remains catastrophic. The next position/yaw path should add a closed-loop RL objective or rollout-loss term instead of widening the imitation dataset again.
+
+Staged wide-profile bridge: added `position_yaw_wide` and `position_yaw_hard` reset profiles. These keep targets relative to the initial pose like the easy/medium curricula, but increase target distance, altitude offset, yaw offset, and attitude spread before jumping to fully random broad targets.
+
+Manual command sequence:
+
+```bash
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 701 --reset-profile position_yaw_easy --output artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_01_position_yaw_easy.npz --native-step
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 702 --reset-profile position_yaw_medium --output artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_02_position_yaw_medium.npz --append-dataset artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_01_position_yaw_easy.npz --native-step
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 703 --reset-profile position_yaw_wide --output artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_03_position_yaw_wide.npz --append-dataset artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_02_position_yaw_medium.npz --native-step
+python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_yaw/easy_medium_wide_h128/dataset_03_position_yaw_wide.npz --checkpoint artifacts/curriculum/position_yaw/easy_medium_wide_h128/checkpoint.pt --epochs 14 --hidden-size 128 --learning-rate 8e-4 --eval-steps 500 --select-by-eval --eval-reset-profile position_yaw_wide --native-step
+```
+
+Staged wide result:
+
+| profile | completed | survival | pos err m | clearance p01 m | passed |
+| --- | ---: | ---: | ---: | ---: | --- |
+| medium | 0.5781 | 0.8581 | 3.9816 | 0.0743 | no |
+| wide | 0.3711 | 0.6900 | 16.4039 | 0.0488 | no |
+| broad | 0.0352 | 0.3267 | 116.1111 | 0.0437 | no |
+
+Conclusion: staged target-distance imitation is now represented in the code and artifacts, but the first wide checkpoint is worse than `easy_medium_h128` on medium and does not bridge to broad. This strengthens the case for a closed-loop rollout objective or recurrent/stateful policy rather than more static imitation data.

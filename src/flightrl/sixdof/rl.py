@@ -11,6 +11,9 @@ from .env import ACTION_DIM
 from .policies import SixDofPolicy, teacher_actions
 
 
+REWARD_MODES = ("env", "progress", "progress_clearance")
+
+
 @dataclass(frozen=True, slots=True)
 class PpoConfig:
     hidden_size: int = 128
@@ -109,15 +112,29 @@ def position_error(env) -> np.ndarray:
 def rollout_reward(env, base_reward: np.ndarray, done: np.ndarray, previous_error: np.ndarray, actions: np.ndarray, mode: str) -> np.ndarray:
     if mode == "env":
         return base_reward.copy()
-    if mode != "progress":
-        raise ValueError(f"unknown PPO reward mode {mode!r}")
+    if mode == "progress":
+        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.25, clearance_weight=1.0)
+    if mode == "progress_clearance":
+        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5)
+    raise ValueError(f"unknown PPO reward mode {mode!r}")
+
+
+def shaped_progress_reward(
+    env,
+    done: np.ndarray,
+    previous_error: np.ndarray,
+    actions: np.ndarray,
+    *,
+    clearance_threshold: float,
+    clearance_weight: float,
+) -> np.ndarray:
     current_error = position_error(env)
     progress = previous_error - current_error
     speed = np.linalg.norm(env.velocity, axis=1)
     yaw_error = np.abs(env.observations[:, 16])
-    clearance_penalty = np.maximum(0.0, 0.25 - np.min(env.ranges_m[:, :4], axis=1))
+    clearance_penalty = np.maximum(0.0, clearance_threshold - np.min(env.ranges_m[:, :4], axis=1))
     control = np.linalg.norm(actions, axis=1)
-    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - 0.1 * yaw_error - clearance_penalty - 0.01 * control
+    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - 0.1 * yaw_error - clearance_weight * clearance_penalty - 0.01 * control
     reward -= done.astype(np.float32)
     return reward.astype(np.float32)
 

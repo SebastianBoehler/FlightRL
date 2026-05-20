@@ -20,6 +20,8 @@ class PpoVariant:
     imitation_coef: float
     reference_coef: float
     reward_mode: str = "env"
+    reset_profile: str = "position_yaw_medium"
+    eval_reset_profile: str = "position_yaw_medium"
     updates: int = 16
     update_epochs: int = 2
 
@@ -53,10 +55,30 @@ def main() -> None:
 
 def default_variants() -> list[PpoVariant]:
     return [
-        PpoVariant("ref1_std006_lr5e5", 5e-5, 0.06, 0.05, 1.0),
-        PpoVariant("ref2_std006_lr5e5", 5e-5, 0.06, 0.05, 2.0),
-        PpoVariant("progress_ref1_std006", 5e-5, 0.06, 0.05, 1.0, "progress"),
-        PpoVariant("progress_ref2_std004", 3e-5, 0.04, 0.05, 2.0, "progress"),
+        PpoVariant(name="ref1_std006_lr5e5", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=1.0),
+        PpoVariant(name="ref2_std006_lr5e5", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=2.0),
+        PpoVariant(name="progress_ref1_std006", learning_rate=5e-5, action_std=0.06, imitation_coef=0.05, reference_coef=1.0, reward_mode="progress"),
+        PpoVariant(name="progress_ref2_std004", learning_rate=3e-5, action_std=0.04, imitation_coef=0.05, reference_coef=2.0, reward_mode="progress"),
+        PpoVariant(
+            name="broad_clearance_ref2_std006",
+            learning_rate=3e-5,
+            action_std=0.06,
+            imitation_coef=0.05,
+            reference_coef=2.0,
+            reward_mode="progress_clearance",
+            reset_profile="broad",
+            eval_reset_profile="broad",
+        ),
+        PpoVariant(
+            name="broad_clearance_ref1_std004",
+            learning_rate=2e-5,
+            action_std=0.04,
+            imitation_coef=0.10,
+            reference_coef=1.0,
+            reward_mode="progress_clearance",
+            reset_profile="broad",
+            eval_reset_profile="broad",
+        ),
     ]
 
 
@@ -110,9 +132,9 @@ def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, n
         "--reward-mode",
         variant.reward_mode,
         "--reset-profile",
-        "position_yaw_medium",
+        variant.reset_profile,
         "--eval-reset-profile",
-        "position_yaw_medium",
+        variant.eval_reset_profile,
         "--eval-steps",
         "400",
     ]

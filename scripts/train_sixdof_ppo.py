@@ -9,7 +9,7 @@ from time import perf_counter
 import torch
 
 from flightrl.sixdof import SixDofCrazyflieEnv, evaluate_policy, gate_status
-from flightrl.sixdof.rl import PpoConfig, SixDofActorCritic, collect_rollout, load_actor_checkpoint, ppo_update
+from flightrl.sixdof.rl import REWARD_MODES, PpoConfig, SixDofActorCritic, collect_rollout, load_actor_checkpoint, ppo_update
 
 
 def main() -> None:
@@ -29,7 +29,7 @@ def main() -> None:
     parser.add_argument("--action-std", type=float, default=0.25)
     parser.add_argument("--imitation-coef", type=float, default=0.0, help="Teacher-action MSE weight on policy-visited states.")
     parser.add_argument("--reference-coef", type=float, default=0.0, help="MSE weight to keep actor near the initialized policy.")
-    parser.add_argument("--reward-mode", default="env", choices=("env", "progress"))
+    parser.add_argument("--reward-mode", default="env", choices=REWARD_MODES)
     parser.add_argument("--eval-steps", type=int, default=400)
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--seed", type=int, default=919)

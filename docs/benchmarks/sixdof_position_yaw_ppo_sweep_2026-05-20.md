@@ -87,3 +87,33 @@ python scripts/evaluate_sixdof_suite.py \
 | broad | ppo_progress_ref2 | 0.0234 | 0.3582 | 76.1579 | 0.0389 | no |
 
 Conclusion: progress shaping is the best short PPO variant so far. It slightly beats `curriculum_h128` on the medium reset suite, but still fails clearance, completion, and position-error gates. Broad reset behavior remains weak, so the next training change should target curriculum breadth and obstacle clearance rather than just PPO optimizer knobs.
+
+Broad clearance pass: PPO rollout rewards now also support `--reward-mode progress_clearance`, with stronger horizontal clearance pressure for room-scale starts. The PPO sweep includes two broad-reset variants.
+
+```bash
+python scripts/run_sixdof_ppo_sweep.py \
+  --run \
+  --report artifacts/replay/sixdof_position_yaw_ppo_sweep_broad_clearance.json \
+  --output-dir artifacts/ppo/position_yaw_broad_clearance
+```
+
+| variant | train profile | reward mode | medium completed | broad completed | broad survival | broad pos err m | broad clearance p01 m |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| progress_ref2_std004 | position_yaw_medium | progress | 0.6172 | 0.0156 | 0.3211 | 84.9585 | 0.0377 |
+| broad_clearance_ref2_std006 | broad | progress_clearance | 0.5195 | 0.0156 | 0.3438 | 80.2768 | 0.0389 |
+| broad_clearance_ref1_std004 | broad | progress_clearance | 0.5391 | 0.0156 | 0.3226 | 90.2424 | 0.0405 |
+
+One longer broad PPO fine-tune from the broad curriculum checkpoint was also run:
+
+```bash
+python scripts/train_sixdof_ppo.py \
+  --init-checkpoint artifacts/curriculum/position_yaw/easy_medium_broad_h256/checkpoint.pt \
+  --checkpoint artifacts/ppo/position_yaw_broad_clearance/long_broad_from_curriculum_broad/checkpoint.pt \
+  --updates 64 --num-envs 1024 --horizon 64 --hidden-size 256 \
+  --learning-rate 2e-5 --update-epochs 2 --minibatch-size 8192 \
+  --action-std 0.05 --imitation-coef 0.10 --reference-coef 1.0 \
+  --reward-mode progress_clearance --reset-profile broad --eval-reset-profile broad \
+  --eval-steps 800 --eval-num-envs 256 --native-step
+```
+
+The saved selection was update `32`, with broad completion `0.0156`, survival `0.3016`, position error `93.9378m`, and clearance p01 `0.0360m`. The first evaluation during that run briefly reached completion `0.105`, then degraded, so longer broad PPO from the unstable broad imitation checkpoint is not a useful default yet.
