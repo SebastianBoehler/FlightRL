@@ -168,3 +168,56 @@ def test_dagger_dataset_cli_appends_compatible_dataset(tmp_path: Path) -> None:
     merged = load_dataset(output)
     assert merged["observations"].shape == (16, 28)
     assert merged["metadata"]["samples"] == 16
+
+
+def test_dagger_training_cli_writes_iteration_report(tmp_path: Path) -> None:
+    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=3, seed=15, use_native_step=False)
+    dataset_path = write_dataset(tmp_path / "seed.npz", dataset)
+    initial = tmp_path / "initial.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "task": "position_yaw",
+            "tasks": ["position_yaw"],
+        },
+        initial,
+    )
+    output_dir = tmp_path / "dagger"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "train_sixdof_dagger.py"),
+            "--seed-dataset",
+            str(dataset_path),
+            "--initial-checkpoint",
+            str(initial),
+            "--output-dir",
+            str(output_dir),
+            "--iterations",
+            "1",
+            "--num-envs",
+            "4",
+            "--steps",
+            "2",
+            "--epochs",
+            "1",
+            "--batch-size",
+            "8",
+            "--hidden-size",
+            "16",
+            "--eval-steps",
+            "4",
+            "--eval-num-envs",
+            "4",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = json.loads((output_dir / "summary.json").read_text())
+    assert (output_dir / "iter_01.pt").exists()
+    assert summary["iterations"][0]["iteration"] == 1
+    assert "gate" in summary["iterations"][0]

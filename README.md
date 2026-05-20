@@ -186,6 +186,10 @@ python scripts/build_sixdof_dagger_dataset.py \
   --checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt \
   --append-dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
   --output artifacts/datasets/sixdof_safe_tasks_dagger.npz
+python scripts/train_sixdof_dagger.py \
+  --seed-dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
+  --initial-checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt \
+  --output-dir artifacts/dagger/sixdof_safe_tasks
 python scripts/rollout_sixdof_policy.py \
   --checkpoint artifacts/checkpoints/sixdof_obstacle_avoidance.pt \
   --output artifacts/trajectories/sixdof_obstacle_avoidance.csv

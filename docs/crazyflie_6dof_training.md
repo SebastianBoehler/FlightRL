@@ -107,6 +107,13 @@ python scripts/train_sixdof_offline.py \
   --checkpoint artifacts/checkpoints/sixdof_safe_tasks_dagger.pt \
   --native-step
 
+python scripts/train_sixdof_dagger.py \
+  --seed-dataset artifacts/datasets/sixdof_teacher_safe_tasks.npz \
+  --initial-checkpoint artifacts/checkpoints/sixdof_safe_tasks_offline.pt \
+  --output-dir artifacts/dagger/sixdof_safe_tasks \
+  --iterations 3 \
+  --native-step
+
 python scripts/evaluate_sixdof_checkpoint.py \
   --teacher \
   --task position_yaw,obstacle_avoidance,circle \
@@ -125,7 +132,7 @@ Use the teacher gate first. If the analytic teacher fails a task, a learned chec
 
 Use the offline action-gap report before closed-loop gates. If a policy cannot match teacher actions on teacher-visited states, closed-loop rollout failures are expected and more DAgger/RL training is premature.
 
-If teacher-state imitation has a low action gap but fails closed-loop, collect DAgger data with `build_sixdof_dagger_dataset.py`. That script rolls out the checkpoint, records policy-visited states, labels those states with the analytic teacher, and optionally prepends an existing compatible dataset. This directly targets distribution shift between the teacher rollouts and states induced by the learned policy.
+If teacher-state imitation has a low action gap but fails closed-loop, collect DAgger data with `build_sixdof_dagger_dataset.py`. That script rolls out the checkpoint, records policy-visited states, labels those states with the analytic teacher, and optionally prepends an existing compatible dataset. This directly targets distribution shift between the teacher rollouts and states induced by the learned policy. Use `train_sixdof_dagger.py` for repeated collect/train/evaluate iterations; it writes per-iteration datasets, checkpoints, gate reports, and a `summary.json`.
 
 Training uses the same 800-step horizon for checkpoint selection by default. For CI smoke tests or quick experiments, reduce it explicitly with `--eval-steps`.
 
