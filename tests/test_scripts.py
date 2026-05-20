@@ -55,6 +55,17 @@ def test_crazyflie_motor_bench_dry_run_runs_without_cflib() -> None:
     assert "m4" in result.stdout
 
 
+def test_crazyflie_room_scan_dry_run_runs_without_cflib() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/crazyflie_room_scan.py", "--dry-run"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "dry_run scan command" in result.stdout
+
+
 def test_imitation_hover_training_writes_checkpoint(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.pt"
     result = subprocess.run(
