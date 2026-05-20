@@ -92,12 +92,13 @@ python scripts/build_sixdof_readiness_report.py \
   --output artifacts/replay/sixdof_readiness_current_native_parity.json
 ```
 
-| task | selected label | ready | failures | latency us | completed | pos err m | clearance p01 m |
+| scope | selected label | ready | failures | latency us | completed | pos err m | clearance p01 m |
 | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | obstacle_avoidance | obstacle_focus | true | none | 9.967 | 1.0000 | 0.1402 | 0.4839 |
 | position_yaw | history1_h128 | false | sim_gate | 9.323 | 0.6602 | 3.8810 | 0.0889 |
+| multitask | safe_horizon800 | false | sim_gate, edge_parity, edge_latency_missing | n/a | 0.5078 | 3.0538 | 0.0446 |
 
-Global evidence used by the readiness report: room map ready with 7416 points, and Python/native parity passed across easy, medium, and broad resets with worst state RMSE `2.96e-7`, worst ranger RMSE `0.00151` mm, and zero terminal mismatches. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
+Global evidence used by the readiness report: room map ready with 7416 points, and Python/native parity passed across easy, medium, and broad resets with worst state RMSE `2.96e-7`, worst ranger RMSE `0.00151` mm, and zero terminal mismatches. The readiness report now carries the matrix's best multi-task candidate alongside single-task candidates, making its missing edge export and failing sim gate visible. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
 
 Yaw-aware validation pass: checkpoint and suite evaluators now report `mean_yaw_error_rad` and `yaw_error_p95_rad`, and can gate with `--max-yaw-error-rad` plus `--max-yaw-p95-error-rad`.
 

@@ -33,10 +33,7 @@ def build_report(args: argparse.Namespace) -> dict:
         "room": compact_room(room),
         "native_parity": compact_native_parity(native, args.max_native_state_rmse, args.max_native_range_rmse),
     }
-    records = [
-        evaluate_record(record, global_evidence, args.max_latency_us)
-        for record in sorted(matrix.get("best_by_task", {}).items())
-    ]
+    records = [evaluate_record(record, global_evidence, args.max_latency_us) for record in readiness_candidates(matrix)]
     return {
         "matrix": args.matrix,
         "room_report": args.room_report,
@@ -75,6 +72,7 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
         "task": task,
         "label": record["label"],
         "checkpoint": record["checkpoint"],
+        "tasks": record.get("tasks", [task]),
         "ready": not failures,
         "failures": failures,
         "sim": {
@@ -88,6 +86,14 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
         "edge_parity": parity,
         "edge_latency": latency,
     }
+
+
+def readiness_candidates(matrix: dict) -> list[tuple[str, dict]]:
+    candidates = sorted(matrix.get("best_by_task", {}).items())
+    multitask = matrix.get("best_multitask")
+    if multitask:
+        candidates.append(("multitask", multitask))
+    return candidates
 
 
 def compact_room(report: dict | None) -> dict:
@@ -161,13 +167,13 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Readiness Report",
         "",
-        "| task | label | ready | failures | latency us | completed | pos err m | clearance p01 m |",
-        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |",
+        "| scope | tasks | label | ready | failures | latency us | completed | pos err m | clearance p01 m |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |",
     ]
     for record in report["records"]:
         latency = record["edge_latency"].get("per_sample_us")
         lines.append(
-            f"| {record['task']} | {record['label']} | {record['ready']} | {', '.join(record['failures']) or 'none'} | "
+            f"| {record['task']} | {', '.join(record['tasks'])} | {record['label']} | {record['ready']} | {', '.join(record['failures']) or 'none'} | "
             f"{format_optional(latency)} | {record['sim']['mean_completed_fraction']:.4f} | "
             f"{record['sim']['mean_position_error_m']:.4f} | {record['sim']['clearance_p01_m']:.4f} |"
         )

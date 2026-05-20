@@ -20,7 +20,14 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     room = tmp_path / "room.json"
     native = tmp_path / "native.json"
     output = tmp_path / "readiness.json"
-    matrix.write_text(json.dumps({"best_by_task": {"obstacle_avoidance": candidate_record()}}))
+    matrix.write_text(
+        json.dumps(
+            {
+                "best_by_task": {"obstacle_avoidance": candidate_record()},
+                "best_multitask": candidate_record(label="multi", tasks=["position_yaw", "obstacle_avoidance"], latency=None),
+            }
+        )
+    )
     room.write_text(json.dumps(room_report(mapping_ready=True)))
     native.write_text(json.dumps(native_report(state_rmse=1e-8, range_rmse=0.1)))
 
@@ -48,6 +55,9 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     assert report["records"][0]["sim"]["mean_yaw_error_rad"] == 0.05
     assert report["records"][0]["sim"]["yaw_error_p95_rad"] == 0.07
     assert report["summary"]["ready_tasks"] == ["obstacle_avoidance"]
+    assert report["records"][1]["task"] == "multitask"
+    assert report["records"][1]["tasks"] == ["position_yaw", "obstacle_avoidance"]
+    assert "edge_latency_missing" in report["records"][1]["failures"]
     assert output.with_suffix(".md").exists()
 
 
@@ -69,10 +79,20 @@ def test_readiness_report_rejects_native_termination_mismatch() -> None:
     assert "termination_mismatch" in compact["failures"]
 
 
-def candidate_record(*, passed: bool = True, parity: bool = True, latency: float | None = 9.0) -> dict:
+def test_readiness_candidates_include_multitask_after_single_tasks() -> None:
+    matrix = {
+        "best_by_task": {"position_yaw": candidate_record(label="single")},
+        "best_multitask": candidate_record(label="multi", tasks=["position_yaw", "circle"]),
+    }
+
+    assert [key for key, _ in READINESS.readiness_candidates(matrix)] == ["position_yaw", "multitask"]
+
+
+def candidate_record(*, label: str = "candidate", passed: bool = True, parity: bool = True, latency: float | None = 9.0, tasks: list[str] | None = None) -> dict:
     return {
-        "label": "candidate",
+        "label": label,
         "checkpoint": "candidate.pt",
+        "tasks": tasks or ["obstacle_avoidance"],
         "passed": passed,
         "failures": [] if passed else ["position_error"],
         "mean_completed_fraction": 1.0,
