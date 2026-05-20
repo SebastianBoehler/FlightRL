@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_summarize_map_marks_sufficient_scan_ready() -> None:
-    rows = sample_rows(count=8, dt=1.5, x_step=0.06)
+    rows = sample_rows(count=8, dt=1.5, x_step=0.06, yaw_step=12.0)
     points = points_from_rows(rows)
     trajectory = trajectory_from_rows(rows)
 
@@ -23,20 +23,25 @@ def test_summarize_map_marks_sufficient_scan_ready() -> None:
         min_duration_s=8.0,
         min_horizontal_sensors=4,
         min_trajectory_xy_span_m=0.25,
+        min_yaw_span_deg=45.0,
     )
 
     assert summary["mapping_ready"]
     assert summary["failures"] == []
     assert summary["trajectory"]["xy_span_m"] > 0.25
+    assert summary["trajectory_quality"]["yaw_span_deg"] >= 80.0
+    assert summary["trajectory_quality"]["mean_speed_m_s"] > 0.0
+    assert summary["trajectory_quality"]["p95_speed_m_s"] > 0.0
+    assert summary["point_density_per_path_m"] > 0.0
     assert summary["sensor_counts"]["range.front"] == len(rows)
 
 
 def test_summarize_map_reports_static_or_sparse_scan_failures() -> None:
     rows = sample_rows(count=2, dt=0.2, x_step=0.0)
-    summary = summarize_map(points_from_rows(rows), trajectory_from_rows(rows))
+    summary = summarize_map(points_from_rows(rows), trajectory_from_rows(rows), min_yaw_span_deg=10.0)
 
     assert not summary["mapping_ready"]
-    assert {"points", "duration", "trajectory_xy_span"}.issubset(summary["failures"])
+    assert {"points", "duration", "trajectory_xy_span", "yaw_span"}.issubset(summary["failures"])
 
 
 def test_prepare_rows_filters_height_and_normalizes_origin() -> None:
@@ -85,6 +90,8 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
             "2",
             "--min-trajectory-xy-span-m",
             "0.2",
+            "--min-yaw-span-deg",
+            "0",
         ],
         cwd=ROOT,
         check=True,
@@ -95,11 +102,13 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     data = json.loads(output.read_text())
     assert data["summary"]["mapping_ready"]
     assert data["room_estimate"]["method"] == "axis_aligned_quantile_box"
+    assert "trajectory_quality" in data["summary"]
+    assert "point_density_per_path_m" in data["summary"]
     assert output.with_suffix(".md").exists()
     assert "mapping_ready=True" in result.stdout
 
 
-def sample_rows(*, count: int, dt: float, x_step: float) -> list[dict[str, str]]:
+def sample_rows(*, count: int, dt: float, x_step: float, yaw_step: float = 0.0) -> list[dict[str, str]]:
     rows = []
     for index in range(count):
         rows.append(
@@ -110,7 +119,7 @@ def sample_rows(*, count: int, dt: float, x_step: float) -> list[dict[str, str]]
                 "stateEstimate.z": "0.45",
                 "stabilizer.roll": "0",
                 "stabilizer.pitch": "0",
-                "stabilizer.yaw": "0",
+                "stabilizer.yaw": str(index * yaw_step),
                 "range.front": "1200",
                 "range.back": "900",
                 "range.left": "800",

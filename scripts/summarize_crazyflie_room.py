@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--min-duration-s", type=float, default=10.0)
     parser.add_argument("--min-horizontal-sensors", type=int, default=3)
     parser.add_argument("--min-trajectory-xy-span-m", type=float, default=0.25)
+    parser.add_argument("--min-yaw-span-deg", type=float, default=0.0)
     parser.add_argument("--room-padding-m", type=float, default=0.05)
     parser.add_argument("--strict", action="store_true", help="exit non-zero when mapping_ready is false")
     args = parser.parse_args()
@@ -38,6 +39,7 @@ def main() -> None:
         min_duration_s=args.min_duration_s,
         min_horizontal_sensors=args.min_horizontal_sensors,
         min_trajectory_xy_span_m=args.min_trajectory_xy_span_m,
+        min_yaw_span_deg=args.min_yaw_span_deg,
     )
     report = {
         "input": str(input_path),
@@ -52,6 +54,7 @@ def main() -> None:
             "min_duration_s": args.min_duration_s,
             "min_horizontal_sensors": args.min_horizontal_sensors,
             "min_trajectory_xy_span_m": args.min_trajectory_xy_span_m,
+            "min_yaw_span_deg": args.min_yaw_span_deg,
         },
         "summary": summary,
         "room_estimate": estimate_room_bounds(points, trajectory, padding_m=args.room_padding_m, max_range_m=args.max_range_m),
@@ -71,6 +74,7 @@ def load_rows(path: Path, *, min_drone_z_m: float, normalize_xy: bool) -> list[d
 
 def render_markdown(report: dict) -> str:
     summary = report["summary"]
+    quality = summary["trajectory_quality"]
     failures = ", ".join(summary["failures"]) or "none"
     active = ", ".join(summary["active_horizontal_sensors"]) or "none"
     rows = [
@@ -84,6 +88,13 @@ def render_markdown(report: dict) -> str:
         ("active_horizontal_sensors", active),
         ("trajectory_xy_span_m", f"{summary['trajectory']['xy_span_m']:.3f}"),
         ("trajectory_path_length_m", f"{summary['trajectory_path_length_m']:.3f}"),
+        ("point_density_per_path_m", f"{summary['point_density_per_path_m']:.1f}"),
+        ("trajectory_mean_speed_m_s", f"{quality['mean_speed_m_s']:.3f}"),
+        ("trajectory_p95_speed_m_s", f"{quality['p95_speed_m_s']:.3f}"),
+        ("trajectory_max_step_speed_m_s", f"{quality['max_step_speed_m_s']:.3f}"),
+        ("trajectory_z_std_m", f"{quality['z_std_m']:.3f}"),
+        ("trajectory_yaw_span_deg", f"{quality['yaw_span_deg']:.1f}"),
+        ("trajectory_path_efficiency", f"{quality['path_efficiency']:.3f}"),
         ("point_cloud_xy_span_m", f"{summary['point_cloud']['xy_span_m']:.3f}"),
         ("point_cloud_z_span_m", f"{summary['point_cloud']['z_span_m']:.3f}"),
     ]

@@ -6,6 +6,8 @@ from typing import Iterable, Mapping
 
 import numpy as np
 
+from .map_quality import trajectory_quality
+
 
 RANGER_KEYS = ("range.front", "range.back", "range.left", "range.right", "range.up", "range.zrange")
 HORIZONTAL_RANGER_KEYS = ("range.front", "range.back", "range.left", "range.right")
@@ -126,12 +128,14 @@ def summarize_map(
     min_duration_s: float = 10.0,
     min_horizontal_sensors: int = 3,
     min_trajectory_xy_span_m: float = 0.25,
+    min_yaw_span_deg: float = 0.0,
 ) -> dict:
     sensor_counts = {key: sum(1 for point in points if point.sensor == key) for key in RANGER_KEYS}
     active_horizontal = [key for key in HORIZONTAL_RANGER_KEYS if sensor_counts[key] > 0]
     point_xyz = np.asarray([[point.x_m, point.y_m, point.z_m] for point in points], dtype=np.float32)
     pose_xyz = np.asarray([[pose.x_m, pose.y_m, pose.z_m] for pose in trajectory], dtype=np.float32)
     duration = trajectory[-1].time_s - trajectory[0].time_s if len(trajectory) >= 2 else 0.0
+    trajectory_path_length = path_length(pose_xyz)
     summary = {
         "point_count": len(points),
         "pose_count": len(trajectory),
@@ -141,8 +145,10 @@ def summarize_map(
         "active_horizontal_sensors": active_horizontal,
         "point_cloud": bounds_summary(point_xyz),
         "trajectory": bounds_summary(pose_xyz),
-        "trajectory_path_length_m": path_length(pose_xyz),
+        "trajectory_path_length_m": trajectory_path_length,
+        "trajectory_quality": trajectory_quality(trajectory, pose_xyz, duration, trajectory_path_length),
     }
+    summary["point_density_per_path_m"] = float(len(points) / max(summary["trajectory_path_length_m"], 1e-6))
     failures = []
     if summary["point_count"] < min_points:
         failures.append("points")
@@ -152,6 +158,8 @@ def summarize_map(
         failures.append("horizontal_sensor_coverage")
     if summary["trajectory"]["xy_span_m"] < min_trajectory_xy_span_m:
         failures.append("trajectory_xy_span")
+    if summary["trajectory_quality"]["yaw_span_deg"] < min_yaw_span_deg:
+        failures.append("yaw_span")
     summary["mapping_ready"] = not failures
     summary["failures"] = failures
     return summary

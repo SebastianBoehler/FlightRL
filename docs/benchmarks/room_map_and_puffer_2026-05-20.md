@@ -12,10 +12,11 @@ Command:
 python scripts/summarize_crazyflie_room.py \
   --input artifacts/crazyflie_logs/room_scan_autonomous_35s.csv \
   --output artifacts/replay/room_scan_autonomous_35s.room.json \
-  --markdown artifacts/replay/room_scan_autonomous_35s.room.md
+  --markdown artifacts/replay/room_scan_autonomous_35s.room.md \
+  --min-yaw-span-deg 45
 ```
 
-Result: the autonomous room scan is mapping-ready under the default gate.
+Result: the autonomous room scan is mapping-ready with the yaw-span gate.
 
 | metric | value |
 | --- | ---: |
@@ -24,10 +25,16 @@ Result: the autonomous room scan is mapping-ready under the default gate.
 | duration s | 34.95 |
 | trajectory xy span m | 1.684 |
 | trajectory path length m | 4.469 |
+| point density per path m | 1659.5 |
+| trajectory yaw span deg | 556.2 |
+| trajectory p95 speed m/s | 9.502 |
+| trajectory max step speed m/s | 444.668 |
 | point cloud xy span m | 5.059 |
 | point cloud z span m | 2.435 |
 
 All four horizontal Multi-ranger directions were active. `range.zrange` contributed no accepted points in this log, so floor range should still be checked in a dedicated hover log before using the point cloud for vertical calibration.
+
+The new path-quality metrics show enough yaw coverage for a room scan, but also expose an estimator spike in `max_step_speed_m_s`. Prefer p95 speed for scan-quality judgement and inspect max-step spikes before using the trajectory for precise command-matched replay.
 
 The abort log `artifacts/crazyflie_logs/room_scan_airborne_40s.csv` is not mapping-ready: it has only 2 accepted points, 1 pose sample, no duration, and only back/right horizontal coverage.
 
