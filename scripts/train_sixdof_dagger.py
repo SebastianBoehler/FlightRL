@@ -32,6 +32,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=511)
     parser.add_argument("--eval-steps", type=int, default=800)
     parser.add_argument("--eval-num-envs", type=int, default=128)
+    parser.add_argument("--select-by-eval", action="store_true")
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
@@ -65,6 +66,8 @@ def main() -> None:
             val_ratio=args.val_ratio,
             seed=args.seed + 100 * iteration,
             eval_steps=args.eval_steps,
+            eval_num_envs=args.eval_num_envs,
+            select_by_eval=args.select_by_eval,
             use_native_step=args.native_step,
         )
         checkpoint = train_offline_policy(load_dataset(dataset_path), train_config)

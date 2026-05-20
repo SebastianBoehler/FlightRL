@@ -236,6 +236,7 @@ def test_dagger_training_cli_writes_iteration_report(tmp_path: Path) -> None:
             "4",
             "--eval-num-envs",
             "4",
+            "--select-by-eval",
         ],
         cwd=ROOT,
         check=True,
@@ -246,3 +247,5 @@ def test_dagger_training_cli_writes_iteration_report(tmp_path: Path) -> None:
     assert (output_dir / "iter_01.pt").exists()
     assert summary["iterations"][0]["iteration"] == 1
     assert "gate" in summary["iterations"][0]
+    checkpoint = torch.load(output_dir / "iter_01.pt", map_location="cpu")
+    assert checkpoint["selection_mode"] == "eval"
