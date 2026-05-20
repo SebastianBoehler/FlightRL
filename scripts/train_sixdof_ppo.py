@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--action-std", type=float, default=0.25)
     parser.add_argument("--imitation-coef", type=float, default=0.0, help="Teacher-action MSE weight on policy-visited states.")
     parser.add_argument("--reference-coef", type=float, default=0.0, help="MSE weight to keep actor near the initialized policy.")
+    parser.add_argument("--reward-mode", default="env", choices=("env", "progress"))
     parser.add_argument("--eval-steps", type=int, default=400)
     parser.add_argument("--eval-num-envs", type=int, default=128)
     parser.add_argument("--seed", type=int, default=919)
@@ -62,7 +63,7 @@ def main() -> None:
     history = []
     start = perf_counter()
     for update in range(1, args.updates + 1):
-        rollout = collect_rollout(env, model, horizon=args.horizon, action_std=args.action_std)
+        rollout = collect_rollout(env, model, horizon=args.horizon, action_std=args.action_std, reward_mode=args.reward_mode)
         losses = ppo_update(model, optimizer, rollout, config, reference_actor)
         if update == 1 or update == args.updates or update % max(1, args.updates // 4) == 0:
             metrics = eval_actor(model, args)
@@ -127,6 +128,7 @@ def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, s
         "eval_reset_profile": args.eval_reset_profile,
         "imitation_coef": args.imitation_coef,
         "reference_coef": args.reference_coef,
+        "reward_mode": args.reward_mode,
         "use_native_step": args.native_step,
         "note": "Closed-loop PPO simulation checkpoint; not approved for live hardware.",
     }

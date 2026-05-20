@@ -19,6 +19,7 @@ class PpoVariant:
     action_std: float
     imitation_coef: float
     reference_coef: float
+    reward_mode: str = "env"
     updates: int = 16
     update_epochs: int = 2
 
@@ -54,8 +55,8 @@ def default_variants() -> list[PpoVariant]:
     return [
         PpoVariant("ref1_std006_lr5e5", 5e-5, 0.06, 0.05, 1.0),
         PpoVariant("ref2_std006_lr5e5", 5e-5, 0.06, 0.05, 2.0),
-        PpoVariant("ref1_std004_lr3e5", 3e-5, 0.04, 0.05, 1.0),
-        PpoVariant("teacher025_ref1_std006", 5e-5, 0.06, 0.25, 1.0),
+        PpoVariant("progress_ref1_std006", 5e-5, 0.06, 0.05, 1.0, "progress"),
+        PpoVariant("progress_ref2_std004", 3e-5, 0.04, 0.05, 2.0, "progress"),
     ]
 
 
@@ -106,6 +107,8 @@ def train_command(init_checkpoint: str, checkpoint: Path, variant: PpoVariant, n
         str(variant.imitation_coef),
         "--reference-coef",
         str(variant.reference_coef),
+        "--reward-mode",
+        variant.reward_mode,
         "--reset-profile",
         "position_yaw_medium",
         "--eval-reset-profile",

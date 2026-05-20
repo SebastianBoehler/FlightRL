@@ -45,3 +45,45 @@ Aligned-label result:
 | ref2_std006_lr5e5 | 0.5430 | 0.8638 | 3.2971 | 0.0195 | 0.3192 | 87.9312 |
 
 After label alignment, `ref2_std006_lr5e5` ranks best, but still fails all gates and remains below `curriculum_h128` on medium completion.
+
+Progress reward shaping pass: PPO rollout collection now supports `--reward-mode progress`, which stores a shaped reward based on position-error progress, speed, yaw-error proxy, horizontal clearance, control effort, and termination. The base simulator reward remains available as `--reward-mode env`.
+
+Command:
+
+```bash
+python scripts/run_sixdof_ppo_sweep.py \
+  --run \
+  --report artifacts/replay/sixdof_position_yaw_ppo_sweep_progress.json \
+  --output-dir artifacts/ppo/position_yaw_progress
+```
+
+Progress-shaping result:
+
+| variant | reward mode | medium completed | medium survival | medium pos err m | medium clearance p01 m | broad completed | broad survival | broad pos err m |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ref1_std006_lr5e5 | env | 0.4727 | 0.8451 | 3.2287 | 0.0512 | 0.0156 | 0.3187 | 85.8053 |
+| ref2_std006_lr5e5 | env | 0.5430 | 0.8638 | 3.2971 | 0.0553 | 0.0195 | 0.3192 | 87.9312 |
+| progress_ref1_std006 | progress | 0.5938 | 0.8817 | 2.9854 | 0.0688 | 0.0156 | 0.3201 | 84.2743 |
+| progress_ref2_std004 | progress | 0.6172 | 0.8881 | 2.8228 | 0.0745 | 0.0156 | 0.3211 | 84.9585 |
+
+Direct validation-suite comparison:
+
+```bash
+python scripts/evaluate_sixdof_suite.py \
+  --teacher teacher_medium position_yaw \
+  --candidate curriculum_h128 artifacts/curriculum/position_yaw/easy_medium_h128/checkpoint.pt position_yaw \
+  --candidate ppo_progress_ref2 artifacts/ppo/position_yaw_progress/progress_ref2_std004/checkpoint.pt position_yaw \
+  --steps 400 --num-envs 256 --native-step --reset-profile position_yaw_medium \
+  --output artifacts/replay/sixdof_position_yaw_ppo_progress_medium_suite.json
+```
+
+| profile | candidate | completed | survival | pos err m | clearance p01 m | passed |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| medium | teacher_medium | 1.0000 | 1.0000 | 0.1354 | 1.0227 | yes |
+| medium | curriculum_h128 | 0.6016 | 0.8767 | 3.1451 | 0.0712 | no |
+| medium | ppo_progress_ref2 | 0.6289 | 0.8838 | 2.9349 | 0.0716 | no |
+| broad | teacher_broad | 0.9844 | 0.9880 | 0.0625 | 0.4581 | yes |
+| broad | curriculum_h128 | 0.0117 | 0.3296 | 88.7315 | 0.0421 | no |
+| broad | ppo_progress_ref2 | 0.0234 | 0.3582 | 76.1579 | 0.0389 | no |
+
+Conclusion: progress shaping is the best short PPO variant so far. It slightly beats `curriculum_h128` on the medium reset suite, but still fails clearance, completion, and position-error gates. Broad reset behavior remains weak, so the next training change should target curriculum breadth and obstacle clearance rather than just PPO optimizer knobs.

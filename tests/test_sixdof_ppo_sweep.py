@@ -19,6 +19,7 @@ def test_default_ppo_sweep_covers_reference_and_action_knobs() -> None:
     variants = SWEEP.default_variants()
     assert {variant.reference_coef for variant in variants} >= {1.0, 2.0}
     assert {variant.action_std for variant in variants} >= {0.04, 0.06}
+    assert {variant.reward_mode for variant in variants} >= {"env", "progress"}
 
 
 def test_ppo_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
@@ -44,6 +45,7 @@ def test_ppo_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
     assert len(report["records"]) == 1
     command = report["records"][0]["commands"][0]
     assert "--reference-coef" in command
+    assert "--reward-mode" in command
     assert output.with_suffix(".md").exists()
 
 

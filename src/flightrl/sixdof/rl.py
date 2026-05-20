@@ -68,7 +68,7 @@ def load_actor_checkpoint(model: SixDofActorCritic, checkpoint: dict | None) -> 
         model.actor.load_state_dict(checkpoint["state_dict"])
 
 
-def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: float) -> dict[str, np.ndarray]:
+def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: float, reward_mode: str = "env") -> dict[str, np.ndarray]:
     observations, actions, log_probs, rewards, dones, values, teacher = [], [], [], [], [], [], []
     obs = env.observations.copy()
     for _ in range(horizon):
@@ -76,13 +76,15 @@ def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: 
         with torch.no_grad():
             action, log_prob, _entropy, value = model.act(obs_tensor, action_std)
         teacher_action = teacher_actions(env, task=env.task).copy()
-        next_obs, reward, terminal, truncation, _info = env.step(action.cpu().numpy())
+        previous_error = position_error(env)
+        action_np = action.cpu().numpy()
+        next_obs, reward, terminal, truncation, _info = env.step(action_np)
         done = terminal | truncation
         observations.append(obs.copy())
-        actions.append(action.cpu().numpy().astype(np.float32))
+        actions.append(action_np.astype(np.float32))
         teacher.append(teacher_action)
         log_probs.append(log_prob.cpu().numpy().astype(np.float32))
-        rewards.append(reward.copy())
+        rewards.append(rollout_reward(env, reward, done, previous_error, action_np, reward_mode))
         dones.append(done.astype(np.float32))
         values.append(value.cpu().numpy().astype(np.float32))
         obs = env.reset_done(done).copy() if np.any(done) else next_obs.copy()
@@ -98,6 +100,26 @@ def collect_rollout(env, model: SixDofActorCritic, *, horizon: int, action_std: 
         "values": np.asarray(values, dtype=np.float32),
         "next_value": next_value,
     }
+
+
+def position_error(env) -> np.ndarray:
+    return np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)
+
+
+def rollout_reward(env, base_reward: np.ndarray, done: np.ndarray, previous_error: np.ndarray, actions: np.ndarray, mode: str) -> np.ndarray:
+    if mode == "env":
+        return base_reward.copy()
+    if mode != "progress":
+        raise ValueError(f"unknown PPO reward mode {mode!r}")
+    current_error = position_error(env)
+    progress = previous_error - current_error
+    speed = np.linalg.norm(env.velocity, axis=1)
+    yaw_error = np.abs(env.observations[:, 16])
+    clearance_penalty = np.maximum(0.0, 0.25 - np.min(env.ranges_m[:, :4], axis=1))
+    control = np.linalg.norm(actions, axis=1)
+    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - 0.1 * yaw_error - clearance_penalty - 0.01 * control
+    reward -= done.astype(np.float32)
+    return reward.astype(np.float32)
 
 
 def compute_advantages(rollout: dict[str, np.ndarray], gamma: float, gae_lambda: float) -> tuple[np.ndarray, np.ndarray]:
