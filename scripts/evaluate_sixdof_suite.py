@@ -52,6 +52,7 @@ def main() -> None:
             "total": len(records),
             "passed": sum(1 for record in records if record["gate"]["passed"]),
             "failed": sum(1 for record in records if not record["gate"]["passed"]),
+            "best_checkpoint_by_task": best_checkpoint_by_task(records),
         },
         "safety": "Simulation validation only; passing this suite does not approve live hardware deployment.",
     }
@@ -93,6 +94,41 @@ def build_record(label: str, controller: str, checkpoint: Path | None, tasks: tu
     }
 
 
+def best_checkpoint_by_task(records: list[dict]) -> dict[str, dict]:
+    best: dict[str, dict] = {}
+    for record in records:
+        if record["controller"] != "checkpoint" or len(record["tasks"]) != 1:
+            continue
+        task = record["tasks"][0]
+        candidate = compact_candidate(record)
+        if task not in best or candidate_score(candidate) < candidate_score(best[task]):
+            best[task] = candidate
+    return best
+
+
+def compact_candidate(record: dict) -> dict:
+    metrics = record["metrics"]
+    return {
+        "label": record["label"],
+        "checkpoint": record["checkpoint"],
+        "passed": record["gate"]["passed"],
+        "failures": record["gate"]["failures"],
+        "mean_position_error_m": metrics["mean_position_error_m"],
+        "clearance_p01_m": metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
+        "mean_completed_fraction": metrics["mean_completed_fraction"],
+        "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
+    }
+
+
+def candidate_score(candidate: dict) -> tuple:
+    return (
+        0 if candidate["passed"] else 1,
+        candidate["mean_position_error_m"],
+        -candidate["mean_completed_fraction"],
+        -candidate["clearance_p01_m"],
+    )
+
+
 def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Validation Suite",
@@ -115,10 +151,16 @@ def render_markdown(report: dict) -> str:
         [
             "",
             f"Passed `{summary['passed']}` of `{summary['total']}` records.",
-            "",
-            report["safety"],
         ]
     )
+    if summary["best_checkpoint_by_task"]:
+        lines.extend(["", "## Best Checkpoints By Task", ""])
+        for task, candidate in summary["best_checkpoint_by_task"].items():
+            lines.append(
+                f"- `{task}`: `{candidate['label']}` passed=`{candidate['passed']}` "
+                f"pos_err=`{candidate['mean_position_error_m']:.4f}` completed=`{candidate['mean_completed_fraction']:.4f}`"
+            )
+    lines.extend(["", report["safety"]])
     return "\n".join(lines)
 
 
