@@ -20,6 +20,21 @@ STATE_KEYS = (
     "stabilizer.yaw",
 )
 TIME_KEY = "host_time_s"
+CALIBRATION_REQUIRED = (
+    TIME_KEY,
+    "stateEstimate.x",
+    "stateEstimate.y",
+    "stateEstimate.z",
+    "vx_m_s",
+    "vy_m_s",
+    "vz_m_s",
+    "yawrate_deg_s",
+    "range.front",
+    "range.back",
+    "range.left",
+    "range.right",
+    "range.up",
+)
 
 
 def load_rows(path: str | Path) -> list[dict[str, str]]:
@@ -98,6 +113,74 @@ def fit_signal(real_values: np.ndarray, sim_values: np.ndarray) -> dict[str, flo
         "raw_bias": float(np.mean(raw_error)),
         "fitted_bias": float(np.mean(fitted_error)),
     }
+
+
+def assess_log_quality(
+    rows: list[dict[str, str]],
+    *,
+    required: tuple[str, ...] = CALIBRATION_REQUIRED,
+    min_rows: int = 100,
+    min_duration_s: float = 5.0,
+    min_range_valid_ratio: float = 0.25,
+) -> dict:
+    columns = set(rows[0]) if rows else set()
+    missing = [key for key in required if key not in columns]
+    report = {
+        "rows": len(rows),
+        "duration_s": duration_s(rows),
+        "sample_rate_hz": sample_rate_hz(rows),
+        "time_monotonic": time_monotonic(rows),
+        "missing_columns": missing,
+        "range_valid_ratio": range_valid_ratios(rows),
+    }
+    failures = []
+    if report["rows"] < min_rows:
+        failures.append("rows")
+    if report["duration_s"] < min_duration_s:
+        failures.append("duration")
+    if not report["time_monotonic"]:
+        failures.append("time_monotonic")
+    if missing:
+        failures.append("missing_columns")
+    weak_ranges = [
+        key
+        for key in RANGE_KEYS
+        if key in required and report["range_valid_ratio"].get(key, 0.0) < min_range_valid_ratio
+    ]
+    if weak_ranges:
+        failures.append("range_validity")
+    report["weak_range_columns"] = weak_ranges
+    report["calibration_ready"] = not failures
+    report["failures"] = failures
+    return report
+
+
+def duration_s(rows: list[dict[str, str]]) -> float:
+    if len(rows) < 2:
+        return 0.0
+    return max(value(rows[-1], TIME_KEY) - value(rows[0], TIME_KEY), 0.0)
+
+
+def sample_rate_hz(rows: list[dict[str, str]]) -> float:
+    duration = duration_s(rows)
+    return float((len(rows) - 1) / duration) if len(rows) > 1 and duration > 0 else 0.0
+
+
+def time_monotonic(rows: list[dict[str, str]]) -> bool:
+    if len(rows) < 2:
+        return bool(rows)
+    times = [value(row, TIME_KEY) for row in rows]
+    return all(curr > prev for prev, curr in zip(times, times[1:]))
+
+
+def range_valid_ratios(rows: list[dict[str, str]]) -> dict[str, float]:
+    ratios = {}
+    for key in RANGE_KEYS:
+        if not rows or key not in rows[0]:
+            continue
+        values = np.asarray([value(row, key) for row in rows], dtype=np.float32)
+        ratios[key] = float(np.mean((values > 20.0) & (values < 4000.0)))
+    return ratios
 
 
 def aligned_signal_metrics(real_rows, sim_rows, real_t: np.ndarray, sim_t: np.ndarray, mask: np.ndarray, key: str) -> dict[str, float]:
