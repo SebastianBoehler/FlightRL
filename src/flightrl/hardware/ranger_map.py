@@ -157,6 +157,79 @@ def summarize_map(
     return summary
 
 
+def estimate_room_bounds(
+    points: list[RangerPoint],
+    trajectory: list[DronePose] | None = None,
+    *,
+    lower_quantile: float = 0.02,
+    upper_quantile: float = 0.98,
+    padding_m: float = 0.05,
+    floor_m: float = 0.0,
+    max_range_m: float = 4.0,
+) -> dict:
+    if not 0.0 <= lower_quantile < upper_quantile <= 1.0:
+        raise ValueError("quantiles must satisfy 0 <= lower < upper <= 1")
+    horizontal = [point for point in points if point.sensor in HORIZONTAL_RANGER_KEYS]
+    source = horizontal if len(horizontal) >= 4 else points
+    warnings = []
+    if len(horizontal) < 4:
+        warnings.append("weak_horizontal_coverage")
+    x_min, x_max = quantile_bounds([point.x_m for point in source], lower_quantile, upper_quantile, padding_m)
+    y_min, y_max = quantile_bounds([point.y_m for point in source], lower_quantile, upper_quantile, padding_m)
+
+    down_points = [point.z_m for point in points if point.sensor == "range.zrange"]
+    up_points = [point.z_m for point in points if point.sensor == "range.up"]
+    z_min = quantile_bounds(down_points, lower_quantile, upper_quantile, padding_m)[0] if down_points else floor_m
+    if not down_points:
+        warnings.append("floor_from_default")
+    z_source = up_points or [point.z_m for point in points]
+    if trajectory:
+        z_source = [*z_source, *[pose.z_m for pose in trajectory]]
+    z_max = quantile_bounds(z_source, lower_quantile, upper_quantile, padding_m)[1]
+    if not up_points:
+        warnings.append("ceiling_from_non_up_points")
+
+    bounds = enforce_min_span(
+        {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max, "z_min": z_min, "z_max": z_max},
+        min_span_m=0.1,
+    )
+    return {
+        **bounds,
+        "width_m": bounds["x_max"] - bounds["x_min"],
+        "depth_m": bounds["y_max"] - bounds["y_min"],
+        "height_m": bounds["z_max"] - bounds["z_min"],
+        "max_range_m": max_range_m,
+        "point_count": len(points),
+        "horizontal_point_count": len(horizontal),
+        "up_point_count": len(up_points),
+        "down_point_count": len(down_points),
+        "method": "axis_aligned_quantile_box",
+        "lower_quantile": lower_quantile,
+        "upper_quantile": upper_quantile,
+        "padding_m": padding_m,
+        "warnings": warnings,
+    }
+
+
+def quantile_bounds(values: list[float], lower_quantile: float, upper_quantile: float, padding_m: float) -> tuple[float, float]:
+    if not values:
+        return -padding_m, padding_m
+    array = np.asarray(values, dtype=np.float32)
+    return float(np.quantile(array, lower_quantile) - padding_m), float(np.quantile(array, upper_quantile) + padding_m)
+
+
+def enforce_min_span(bounds: dict[str, float], *, min_span_m: float) -> dict[str, float]:
+    adjusted = dict(bounds)
+    for low_key, high_key in (("x_min", "x_max"), ("y_min", "y_max"), ("z_min", "z_max")):
+        span = adjusted[high_key] - adjusted[low_key]
+        if span >= min_span_m:
+            continue
+        center = 0.5 * (adjusted[low_key] + adjusted[high_key])
+        adjusted[low_key] = center - min_span_m * 0.5
+        adjusted[high_key] = center + min_span_m * 0.5
+    return adjusted
+
+
 def bounds_summary(values: np.ndarray) -> dict[str, float]:
     if len(values) == 0:
         return {"x_span_m": 0.0, "y_span_m": 0.0, "z_span_m": 0.0, "xy_span_m": 0.0}

@@ -31,6 +31,38 @@ All four horizontal Multi-ranger directions were active. `range.zrange` contribu
 
 The abort log `artifacts/crazyflie_logs/room_scan_airborne_40s.csv` is not mapping-ready: it has only 2 accepted points, 1 pose sample, no duration, and only back/right horizontal coverage.
 
+## Estimated Room Bounds
+
+`scripts/summarize_crazyflie_room.py` now writes an axis-aligned room estimate for sim-side replay checks. Current bounds from `room_scan_autonomous_35s.csv`:
+
+| bound | value m |
+| --- | ---: |
+| x_min | -1.751 |
+| x_max | 0.624 |
+| y_min | -1.756 |
+| y_max | 1.682 |
+| z_min | 0.000 |
+| z_max | 2.415 |
+| width | 2.375 |
+| depth | 3.438 |
+| height | 2.415 |
+
+Warning: `floor_from_default`. The scan did not provide accepted down-ranger floor points, so the estimate uses `z_min=0.0`.
+
+Smoke rollout using this room estimate:
+
+```bash
+python scripts/rollout_sixdof_policy.py \
+  --teacher \
+  --task obstacle_avoidance \
+  --room-report artifacts/replay/room_scan_autonomous_35s.room.json \
+  --steps 120 \
+  --seed 51 \
+  --output artifacts/trajectories/sixdof_teacher_room_estimate_smoke.csv
+```
+
+Result: 120 simulated rows. Time-aligned replay comparison against the real room scan currently overlaps only 1.19 seconds because this is not a command-matched replay, but it proves the measured-room bounds can drive the Python 6-DoF sim path. Custom room reports are intentionally rejected with `--native-step` until the native C kernel accepts configurable room bounds.
+
 ## Native 6-DoF Throughput
 
 Command:

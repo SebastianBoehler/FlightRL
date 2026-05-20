@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from flightrl.hardware.ranger_map import points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
+from flightrl.hardware.ranger_map import estimate_room_bounds, points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +53,19 @@ def test_prepare_rows_filters_height_and_normalizes_origin() -> None:
     assert prepared[0]["stateEstimate.y"] == "0.0"
 
 
+def test_estimate_room_bounds_uses_horizontal_points_and_floor_hits() -> None:
+    rows = sample_rows(count=4, dt=1.0, x_step=0.1)
+    estimate = estimate_room_bounds(points_from_rows(rows), trajectory_from_rows(rows), padding_m=0.05)
+
+    assert estimate["x_min"] < -0.8
+    assert estimate["x_max"] > 1.4
+    assert estimate["y_min"] < -0.8
+    assert estimate["y_max"] > 0.7
+    assert estimate["z_min"] < 0.01
+    assert estimate["down_point_count"] == len(rows)
+    assert estimate["horizontal_point_count"] == len(rows) * 4
+
+
 def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     log = tmp_path / "room.csv"
     log.write_text(csv_text(sample_rows(count=4, dt=1.0, x_step=0.1)))
@@ -81,6 +94,7 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
 
     data = json.loads(output.read_text())
     assert data["summary"]["mapping_ready"]
+    assert data["room_estimate"]["method"] == "axis_aligned_quantile_box"
     assert output.with_suffix(".md").exists()
     assert "mapping_ready=True" in result.stdout
 

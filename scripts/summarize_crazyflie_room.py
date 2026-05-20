@@ -5,7 +5,7 @@ import csv
 import json
 from pathlib import Path
 
-from flightrl.hardware.ranger_map import points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
+from flightrl.hardware.ranger_map import estimate_room_bounds, points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
 
 
 def main() -> None:
@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--min-duration-s", type=float, default=10.0)
     parser.add_argument("--min-horizontal-sensors", type=int, default=3)
     parser.add_argument("--min-trajectory-xy-span-m", type=float, default=0.25)
+    parser.add_argument("--room-padding-m", type=float, default=0.05)
     parser.add_argument("--strict", action="store_true", help="exit non-zero when mapping_ready is false")
     args = parser.parse_args()
 
@@ -53,6 +54,7 @@ def main() -> None:
             "min_trajectory_xy_span_m": args.min_trajectory_xy_span_m,
         },
         "summary": summary,
+        "room_estimate": estimate_room_bounds(points, trajectory, padding_m=args.room_padding_m, max_range_m=args.max_range_m),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n")
@@ -89,7 +91,31 @@ def render_markdown(report: dict) -> str:
     table.extend(f"| {key} | {value} |" for key, value in rows)
     sensor_rows = ["| sensor | points |", "| --- | ---: |"]
     sensor_rows.extend(f"| {sensor} | {count} |" for sensor, count in summary["sensor_counts"].items())
-    return "\n".join(["# Crazyflie Room Map Quality", "", *table, "", "## Sensor Coverage", "", *sensor_rows, ""]) + "\n"
+    room = report["room_estimate"]
+    room_rows = ["| bound | value m |", "| --- | ---: |"]
+    room_rows.extend(
+        f"| {key} | {room[key]:.3f} |"
+        for key in ("x_min", "x_max", "y_min", "y_max", "z_min", "z_max", "width_m", "depth_m", "height_m")
+    )
+    warnings = ", ".join(room["warnings"]) or "none"
+    return "\n".join(
+        [
+            "# Crazyflie Room Map Quality",
+            "",
+            *table,
+            "",
+            "## Sensor Coverage",
+            "",
+            *sensor_rows,
+            "",
+            "## Estimated Box Room",
+            "",
+            *room_rows,
+            "",
+            f"Warnings: {warnings}",
+            "",
+        ]
+    ) + "\n"
 
 
 if __name__ == "__main__":

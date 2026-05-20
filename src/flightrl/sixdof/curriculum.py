@@ -48,6 +48,9 @@ def sample_reset(
     position[:, 0] = rng.uniform(-profile.initial_xy_abs, profile.initial_xy_abs, count)
     position[:, 1] = rng.uniform(-profile.initial_xy_abs, profile.initial_xy_abs, count)
     position[:, 2] = rng.uniform(*profile.z_range, count)
+    position[:, 0] = clip_axis(position[:, 0], room.x_min, room.x_max, margin=0.25)
+    position[:, 1] = clip_axis(position[:, 1], room.y_min, room.y_max, margin=0.25)
+    position[:, 2] = clip_axis(position[:, 2], room.z_min, room.z_max, margin=0.25)
 
     yaw = rng.uniform(-np.pi, np.pi, count).astype(np.float32)
     roll = rng.normal(0.0, profile.attitude_std, count).astype(np.float32)
@@ -71,6 +74,12 @@ def sample_target(profile: ResetProfile, rng: np.random.Generator, position: np.
     target[:, 1] = np.clip(target[:, 1], room.y_min + 0.25, room.y_max - 0.25)
     target[:, 2] = np.clip(target[:, 2], room.z_min + 0.35, room.z_max - 0.25)
     return target.astype(np.float32)
+
+
+def clip_axis(values: np.ndarray, low: float, high: float, *, margin: float) -> np.ndarray:
+    if low + margin > high - margin:
+        return np.full_like(values, 0.5 * (low + high))
+    return np.clip(values, low + margin, high - margin)
 
 
 def sample_target_yaw(profile: ResetProfile, rng: np.random.Generator, yaw: np.ndarray) -> np.ndarray:
