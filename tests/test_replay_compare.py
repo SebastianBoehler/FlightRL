@@ -105,3 +105,31 @@ def test_replay_compare_filters_invalid_range_sentinels(tmp_path: Path) -> None:
     signal = json.loads(output.read_text())["aligned"]["signals"]["range.front"]
     assert signal["samples"] == 2
     assert signal["rmse"] == 0.0
+
+
+def test_replay_calibration_cli_writes_fit_report(tmp_path: Path) -> None:
+    real = tmp_path / "real.csv"
+    sim = tmp_path / "sim.csv"
+    output = tmp_path / "calibration.json"
+    real.write_text("host_time_s,range.front\n0,1000\n1,2000\n2,3000\n")
+    sim.write_text("host_time_s,range.front\n0,500\n1,1000\n2,1500\n")
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/fit_replay_calibration.py",
+            "--real",
+            str(real),
+            "--sim",
+            str(sim),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    fit = json.loads(output.read_text())["calibration"]["signals"]["range.front"]
+    assert abs(fit["scale"] - 2.0) < 1e-6
+    assert fit["fitted_rmse"] < 1e-6
+    assert output.with_suffix(".md").exists()
