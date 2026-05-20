@@ -59,6 +59,7 @@ def test_sixdof_suite_evaluates_teacher_and_checkpoint(tmp_path: Path) -> None:
     assert report["records"][0]["controller"] == "teacher"
     assert report["records"][1]["tasks"] == ["obstacle_avoidance"]
     assert "mean_yaw_error_rad" in report["records"][0]["metrics"]
+    assert "position_yaw" in report["records"][0]["per_task_gate"]
     best = report["summary"]["best_checkpoint_by_task"]["obstacle_avoidance"]
     assert best["label"] == "candidate"
     assert best["checkpoint"] == str(checkpoint)
@@ -75,6 +76,35 @@ def test_sixdof_suite_ranks_single_task_checkpoint_candidates() -> None:
     best = SUITE.best_checkpoint_by_task(records)
     assert best["position_yaw"]["label"] == "passed"
     assert "circle" not in best
+
+
+def test_sixdof_suite_builds_per_task_gate_failures() -> None:
+    metrics = {
+        "per_task": {
+            "position_yaw": {
+                "clearance_p01_m": 0.05,
+                "min_clearance_m": 0.05,
+                "completed_fraction": 0.5,
+                "survival_fraction": 0.5,
+                "mean_position_error_m": 2.0,
+                "mean_yaw_error_rad": 0.1,
+                "yaw_error_p95_rad": 0.2,
+            },
+            "obstacle_avoidance": {
+                "clearance_p01_m": 0.4,
+                "min_clearance_m": 0.4,
+                "completed_fraction": 1.0,
+                "survival_fraction": 1.0,
+                "mean_position_error_m": 0.2,
+                "mean_yaw_error_rad": 0.0,
+                "yaw_error_p95_rad": 0.0,
+            },
+        }
+    }
+    gates = SUITE.per_task_gate(metrics, {"min_clearance_m": 0.08, "min_completed_fraction": 0.9, "max_position_error_m": 1.0, "max_yaw_error_rad": None, "max_yaw_p95_error_rad": None})
+
+    assert gates["position_yaw"]["failures"] == ["min_clearance", "completion", "position_error"]
+    assert gates["obstacle_avoidance"]["passed"] is True
 
 
 def record(label: str, task: str, passed: bool, position_error: float, completed: float, clearance: float, tasks=None) -> dict:

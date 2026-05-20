@@ -60,6 +60,7 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
     report = json.loads(output.read_text())
     assert report["records"][0]["edge_parity"]["passed"] is True
     assert report["records"][0]["edge_latency"]["per_sample_us"] == 3.0
+    assert report["records"][0]["per_task_gate"]["position_yaw"]["passed"] is True
     assert report["records"][0]["checkpoint_meta"]["observation_mode"] == "base"
     assert report["records"][0]["mean_yaw_error_rad"] == 0.05
     assert report["best_by_task"]["position_yaw"]["yaw_error_p95_rad"] == 0.07
@@ -102,6 +103,7 @@ def suite_record(label: str, checkpoint: Path) -> dict:
         "checkpoint": str(checkpoint),
         "tasks": ["position_yaw"],
         "gate": {"passed": True, "failures": []},
+        "per_task_gate": {"position_yaw": {"passed": True, "failures": []}},
         "metrics": {
             "mean_completed_fraction": 1.0,
             "mean_survival_fraction": 1.0,

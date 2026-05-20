@@ -98,7 +98,20 @@ def build_record(label: str, controller: str, checkpoint: Path | None, tasks: tu
         "checkpoint": str(checkpoint) if checkpoint else None,
         "tasks": list(tasks),
         "gate": gate_status(metrics, **thresholds),
+        "per_task_gate": per_task_gate(metrics, thresholds),
         "metrics": metrics,
+    }
+
+
+def per_task_gate(metrics: dict, thresholds: dict) -> dict[str, dict]:
+    return {task: gate_status(normalize_task_metrics(values), **thresholds) for task, values in metrics.get("per_task", {}).items()}
+
+
+def normalize_task_metrics(metrics: dict) -> dict:
+    return {
+        **metrics,
+        "mean_completed_fraction": metrics["completed_fraction"],
+        "mean_survival_fraction": metrics.get("survival_fraction", metrics["completed_fraction"]),
     }
 
 
@@ -175,8 +188,21 @@ def render_markdown(report: dict) -> str:
                 f"- `{task}`: `{candidate['label']}` passed=`{candidate['passed']}` "
                 f"pos_err=`{candidate['mean_position_error_m']:.4f}` completed=`{candidate['mean_completed_fraction']:.4f}`"
             )
+    if any(record.get("per_task_gate") for record in report["records"]):
+        lines.extend(["", "## Per-Task Gates", ""])
+        for record in report["records"]:
+            if record.get("per_task_gate"):
+                lines.append(f"- `{record['label']}`: {format_task_gates(record['per_task_gate'])}")
     lines.extend(["", report["safety"]])
     return "\n".join(lines)
+
+
+def format_task_gates(per_task: dict[str, dict]) -> str:
+    parts = []
+    for task, gate in per_task.items():
+        failures = ",".join(gate["failures"]) or "pass"
+        parts.append(f"{task}={failures}")
+    return "; ".join(parts)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,7 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
             "mean_yaw_error_rad": record.get("mean_yaw_error_rad"),
             "yaw_error_p95_rad": record.get("yaw_error_p95_rad"),
             "clearance_p01_m": record.get("clearance_p01_m"),
+            "per_task_gate": record.get("per_task_gate", {}),
         },
         "edge_parity": parity,
         "edge_latency": latency,
@@ -179,6 +180,12 @@ def render_markdown(report: dict) -> str:
         )
     room = report["global_evidence"]["room"]
     native = report["global_evidence"]["native_parity"]
+    if any(record["sim"].get("per_task_gate") for record in report["records"]):
+        lines.extend(["", "## Per-Task Gates", ""])
+        for record in report["records"]:
+            gates = record["sim"].get("per_task_gate", {})
+            if gates:
+                lines.append(f"- `{record['label']}`: {format_task_gates(gates)}")
     lines.extend(
         [
             "",
@@ -193,6 +200,14 @@ def render_markdown(report: dict) -> str:
 
 def format_optional(value: float | None) -> str:
     return f"{value:.3f}" if value is not None else "n/a"
+
+
+def format_task_gates(per_task: dict[str, dict]) -> str:
+    parts = []
+    for task, gate in per_task.items():
+        failures = ",".join(gate["failures"]) or "pass"
+        parts.append(f"{task}={failures}")
+    return "; ".join(parts)
 
 
 if __name__ == "__main__":

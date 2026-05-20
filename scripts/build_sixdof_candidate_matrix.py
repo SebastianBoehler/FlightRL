@@ -74,6 +74,7 @@ def checkpoint_records(suite_path: Path, parity: dict[str, dict], latency: dict[
                 "clearance_p01_m": metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
                 "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
                 "action_saturation_fraction": metrics.get("action_saturation_fraction"),
+                "per_task_gate": record.get("per_task_gate", {}),
                 "checkpoint_meta": checkpoint_meta(checkpoint),
                 "edge_parity": compact_parity(parity_report, max_parity_error),
                 "edge_latency": compact_latency(latency.get(label)),
@@ -167,6 +168,7 @@ def compact_record(record: dict) -> dict:
     compact["tasks"] = record["tasks"]
     compact["mean_yaw_error_rad"] = record.get("mean_yaw_error_rad")
     compact["yaw_error_p95_rad"] = record.get("yaw_error_p95_rad")
+    compact["per_task_gate"] = record.get("per_task_gate", {})
     compact["edge_latency"] = record.get("edge_latency", {"present": False})
     return compact
 

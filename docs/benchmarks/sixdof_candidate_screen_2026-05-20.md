@@ -96,9 +96,9 @@ python scripts/build_sixdof_readiness_report.py \
 | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | obstacle_avoidance | obstacle_focus | true | none | 9.967 | 1.0000 | 0.1402 | 0.4839 |
 | position_yaw | history1_h128 | false | sim_gate | 9.323 | 0.6602 | 3.8810 | 0.0889 |
-| multitask | safe_horizon800 | false | sim_gate | 9.996 | 0.5078 | 3.0538 | 0.0446 |
+| multitask | safe_horizon800 | false | sim_gate | 9.996 | 0.5547 | 2.3717 | 0.0613 |
 
-Global evidence used by the readiness report: room map ready with 7416 points, and Python/native parity passed across easy, medium, and broad resets with worst state RMSE `2.96e-7`, worst ranger RMSE `0.00151` mm, and zero terminal mismatches. The readiness report now carries the matrix's best multi-task candidate alongside single-task candidates. After edge export, the best multi-task candidate is blocked only by the sim gate. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
+Global evidence used by the readiness report: room map ready with 7416 points, and Python/native parity passed across easy, medium, and broad resets with worst state RMSE `2.96e-7`, worst ranger RMSE `0.00151` mm, and zero terminal mismatches. The readiness report now carries the matrix's best multi-task candidate alongside single-task candidates. After edge export, the best multi-task candidate is blocked only by the sim gate. Per-task gate reporting shows `safe_horizon800` still fails position_yaw and circle on clearance/completion/position error, while obstacle_avoidance is down to completion/position error only. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
 
 Yaw-aware validation pass: checkpoint and suite evaluators now report `mean_yaw_error_rad` and `yaw_error_p95_rad`, and can gate with `--max-yaw-error-rad` plus `--max-yaw-p95-error-rad`.
 
@@ -151,6 +151,12 @@ Current refreshed selections:
 | --- | --- | ---: | --- | ---: | ---: | ---: |
 | obstacle_avoidance | obstacle_focus | true | pass | 1.0000 | 0.1402 | 0.4839 |
 | position_yaw | history1_h128 | false | pass | 0.6602 | 3.8810 | 0.0889 |
-| multitask | safe_horizon800 | false | pass | 0.5078 | 3.0538 | 0.0446 |
+| multitask | safe_horizon800 | false | pass | 0.5547 | 2.3717 | 0.0613 |
 
 The refreshed matrix preserves the same deployment boundary: obstacle avoidance is the only learned checkpoint with both a passing sim gate and edge evidence. The strongest multi-task checkpoint now has edge evidence too, but it remains blocked by clearance, completion, and position-error failures.
+
+Per-task gate refresh:
+
+| checkpoint | position_yaw | obstacle_avoidance | circle |
+| --- | --- | --- | --- |
+| safe_horizon800 | min_clearance, completion, position_error | completion, position_error | min_clearance, completion, position_error |

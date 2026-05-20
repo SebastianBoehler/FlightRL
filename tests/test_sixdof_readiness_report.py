@@ -54,6 +54,7 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     assert report["records"][0]["ready"] is True
     assert report["records"][0]["sim"]["mean_yaw_error_rad"] == 0.05
     assert report["records"][0]["sim"]["yaw_error_p95_rad"] == 0.07
+    assert report["records"][0]["sim"]["per_task_gate"]["obstacle_avoidance"]["passed"] is True
     assert report["summary"]["ready_tasks"] == ["obstacle_avoidance"]
     assert report["records"][1]["task"] == "multitask"
     assert report["records"][1]["tasks"] == ["position_yaw", "obstacle_avoidance"]
@@ -102,6 +103,7 @@ def candidate_record(*, label: str = "candidate", passed: bool = True, parity: b
         "clearance_p01_m": 0.5,
         "edge_parity": {"present": parity, "passed": parity},
         "edge_latency": {"present": latency is not None, **({"per_sample_us": latency} if latency is not None else {})},
+        "per_task_gate": {task: {"passed": True, "failures": []} for task in (tasks or ["obstacle_avoidance"])},
     }
 
 
