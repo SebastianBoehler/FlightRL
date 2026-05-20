@@ -124,6 +124,12 @@ python scripts/evaluate_sixdof_checkpoint.py \
   --checkpoint artifacts/checkpoints/sixdof_multitask_h256.pt \
   --native-step \
   --output artifacts/replay/sixdof_multitask_h256_gate.json
+
+python scripts/evaluate_sixdof_checkpoint.py \
+  --checkpoint artifacts/dagger/sixdof_obstacle_focus_refine/iter_02.pt \
+  --task obstacle_avoidance \
+  --native-step \
+  --output artifacts/replay/sixdof_obstacle_focus_refine_gate.json
 ```
 
 The gate checks low-percentile simulated wall clearance, terminal-free completion fraction, and mean position error. It also reports control diagnostics: action magnitude, saturation fraction, and learned-policy disagreement with the analytic teacher on the states visited by the policy. A pass is only a simulation acceptance signal; it does not approve live Crazyflie deployment.
@@ -133,6 +139,8 @@ Use the teacher gate first. If the analytic teacher fails a task, a learned chec
 Use the offline action-gap report before closed-loop gates. If a policy cannot match teacher actions on teacher-visited states, closed-loop rollout failures are expected and more DAgger/RL training is premature.
 
 If teacher-state imitation has a low action gap but fails closed-loop, collect DAgger data with `build_sixdof_dagger_dataset.py`. That script rolls out the checkpoint, records policy-visited states, labels those states with the analytic teacher, and optionally prepends an existing compatible dataset. This directly targets distribution shift between the teacher rollouts and states induced by the learned policy. Use `train_sixdof_dagger.py` for repeated collect/train/evaluate iterations; it writes per-iteration datasets, checkpoints, gate reports, and a `summary.json`.
+
+For task-conditioned checkpoints, pass `--task` to evaluate a specific task without changing the checkpoint's one-hot task encoding. This is useful when one task has been refined through DAgger and the full multi-task gate is expected to remain stricter.
 
 Training uses the same 800-step horizon for checkpoint selection by default. For CI smoke tests or quick experiments, reduce it explicitly with `--eval-steps`.
 

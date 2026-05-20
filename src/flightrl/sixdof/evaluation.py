@@ -33,9 +33,13 @@ def evaluate_policy(
     steps: int = 300,
     num_envs: int = 128,
     use_native_step: bool = False,
+    eval_tasks: tuple[str, ...] | None = None,
 ) -> dict:
+    selected_tasks = eval_tasks or tasks
+    validate_task_subset(selected_tasks, tasks)
     per_task = {
-        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step) for idx, task in enumerate(tasks)
+        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step)
+        for idx, task in enumerate(selected_tasks)
     }
     return aggregate_task_metrics(per_task)
 
@@ -128,6 +132,12 @@ def model_actions(model: SixDofPolicy, _env, obs: np.ndarray, task_indices: np.n
 
 def teacher_action(_model, env: SixDofCrazyflieEnv, _obs, _task_indices, _tasks, task: str) -> np.ndarray:
     return teacher_actions(env, task=task)
+
+
+def validate_task_subset(selected_tasks: tuple[str, ...], policy_tasks: tuple[str, ...]) -> None:
+    missing = [task for task in selected_tasks if task not in policy_tasks]
+    if missing:
+        raise ValueError(f"selected task(s) not present in checkpoint: {', '.join(missing)}")
 
 
 def gate_status(metrics: dict, *, min_clearance_m: float, min_completed_fraction: float, max_position_error_m: float) -> dict:

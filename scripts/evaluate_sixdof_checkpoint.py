@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a 6-DoF checkpoint against sim safety gates")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--teacher", action="store_true", help="Evaluate the analytic teacher/reference controller instead of a checkpoint")
-    parser.add_argument("--task", default="position_yaw", help="Task spec used with --teacher")
+    parser.add_argument("--task", default=None, help="Task spec used with --teacher, or checkpoint task subset")
     parser.add_argument("--output", default=None)
     parser.add_argument("--steps", type=int, default=800)
     parser.add_argument("--num-envs", type=int, default=256)
@@ -28,7 +28,7 @@ def main() -> None:
 
     if args.teacher:
         checkpoint_path = None
-        tasks = parse_task_spec(args.task)
+        tasks = parse_task_spec(args.task or "position_yaw")
         metrics = evaluate_teacher(tasks, seed=args.seed, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step)
     else:
         if args.checkpoint is None:
@@ -36,14 +36,16 @@ def main() -> None:
         checkpoint_path = Path(args.checkpoint)
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         model = load_policy_from_checkpoint(checkpoint)
-        tasks = checkpoint_tasks(checkpoint)
+        checkpoint_task_list = checkpoint_tasks(checkpoint)
+        tasks = parse_task_spec(args.task) if args.task else checkpoint_task_list
         metrics = evaluate_policy(
             model,
-            tasks,
+            checkpoint_task_list,
             seed=args.seed,
             steps=args.steps,
             num_envs=args.num_envs,
             use_native_step=args.native_step,
+            eval_tasks=tasks,
         )
     gate = gate_status(
         metrics,

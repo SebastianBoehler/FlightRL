@@ -11,6 +11,7 @@ from flightrl.sixdof.dagger import collect_policy_dataset, merge_datasets
 from flightrl.sixdof.dataset import load_dataset, write_dataset
 from flightrl.sixdof.evaluation import checkpoint_tasks
 from flightrl.sixdof.offline import OfflineTrainConfig, train_offline_policy
+from flightrl.sixdof.tasks import parse_task_spec
 
 
 def main() -> None:
@@ -91,14 +92,16 @@ def main() -> None:
 
 def evaluate_checkpoint(checkpoint: dict, checkpoint_path: Path, args, *, seed: int) -> dict:
     model = load_policy_from_checkpoint(checkpoint)
-    tasks = checkpoint_tasks(checkpoint)
+    checkpoint_task_list = checkpoint_tasks(checkpoint)
+    tasks = parse_task_spec(args.task) if args.task else checkpoint_task_list
     metrics = evaluate_policy(
         model,
-        tasks,
+        checkpoint_task_list,
         seed=seed,
         steps=args.eval_steps,
         num_envs=args.eval_num_envs,
         use_native_step=args.native_step,
+        eval_tasks=tasks,
     )
     gate = gate_status(
         metrics,
