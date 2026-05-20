@@ -114,6 +114,13 @@ def test_eval_selected_checkpoint_score_prioritizes_survival_and_clearance() -> 
     assert checkpoint_score(safer, config) < checkpoint_score(precise_crash, config)
 
 
+def test_eval_selected_checkpoint_score_uses_survival_for_failed_candidates() -> None:
+    config = OfflineTrainConfig(dataset="dummy", select_by_eval=True)
+    late_failure = checkpoint_payload(completed=0.0, survival=0.8, clearance=0.1, position_error=4.0)
+    early_failure = checkpoint_payload(completed=0.0, survival=0.2, clearance=0.2, position_error=2.0)
+    assert checkpoint_score(late_failure, config) < checkpoint_score(early_failure, config)
+
+
 def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.pt"
     torch.save(
@@ -143,11 +150,12 @@ def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
     assert loaded["metadata"]["source_checkpoint"] == str(checkpoint)
 
 
-def checkpoint_payload(*, completed: float, clearance: float, position_error: float) -> dict:
+def checkpoint_payload(*, completed: float, clearance: float, position_error: float, survival: float | None = None) -> dict:
     return {
         "val_loss": 0.1,
         "selection_metrics": {
             "mean_completed_fraction": completed,
+            "mean_survival_fraction": completed if survival is None else survival,
             "clearance_p01_m": clearance,
             "min_clearance_m": clearance,
             "mean_position_error_m": position_error,

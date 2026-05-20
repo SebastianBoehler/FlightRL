@@ -65,6 +65,7 @@ def aggregate_task_metrics(per_task: dict[str, dict[str, float]]) -> dict:
         "min_clearance_m": float(np.min([metrics["min_clearance_m"] for metrics in per_task.values()])),
         "clearance_p01_m": float(np.min([metrics["clearance_p01_m"] for metrics in per_task.values()])),
         "mean_completed_fraction": float(np.mean([metrics["completed_fraction"] for metrics in per_task.values()])),
+        "mean_survival_fraction": float(np.mean([metrics["survival_fraction"] for metrics in per_task.values()])),
         "mean_terminal_fraction": float(np.mean([metrics["terminal_fraction"] for metrics in per_task.values()])),
         "per_task": per_task,
     }
@@ -94,6 +95,7 @@ def evaluate_one(
     action_abs = []
     action_l2 = []
     survived = np.ones(env.num_envs, dtype=bool)
+    alive_samples = []
     for _ in range(steps):
         actions = action_fn(model, env, obs, task_indices, tasks, task)
         teacher = teacher_actions(env, task=task)
@@ -104,6 +106,7 @@ def evaluate_one(
         rewards.append(reward)
         min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
         survived &= ~terminals.astype(bool)
+        alive_samples.append(survived.astype(np.float32))
     pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
     clearances = np.concatenate(min_clearance)
     result = {
@@ -112,6 +115,7 @@ def evaluate_one(
         "min_clearance_m": float(np.min(clearances)),
         "clearance_p01_m": float(np.quantile(clearances, 0.01)),
         "completed_fraction": float(np.mean(survived)),
+        "survival_fraction": float(np.mean(np.concatenate(alive_samples))),
         "terminal_fraction": float(1.0 - np.mean(survived)),
         "action_abs_mean": float(np.mean(np.concatenate(action_abs))),
         "action_abs_max": float(np.max(np.concatenate(action_abs))),

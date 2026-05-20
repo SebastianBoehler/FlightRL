@@ -131,6 +131,7 @@ def select_best(reports: list[dict]) -> dict | None:
         reports,
         key=lambda report: (
             0 if report["gate"]["passed"] else 1,
+            -report["metrics"].get("mean_survival_fraction", report["metrics"]["mean_completed_fraction"]),
             report["metrics"]["mean_position_error_m"],
             -report["metrics"]["mean_completed_fraction"],
         ),

@@ -49,3 +49,4 @@ def test_checkpoint_eval_accepts_task_subset(tmp_path: Path) -> None:
     data = json.loads(report.read_text())
     assert data["tasks"] == ["obstacle_avoidance"]
     assert list(data["metrics"]["per_task"]) == ["obstacle_avoidance"]
+    assert "mean_survival_fraction" in data["metrics"]

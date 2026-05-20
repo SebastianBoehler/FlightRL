@@ -116,6 +116,7 @@ def compact_candidate(record: dict) -> dict:
         "mean_position_error_m": metrics["mean_position_error_m"],
         "clearance_p01_m": metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
         "mean_completed_fraction": metrics["mean_completed_fraction"],
+        "mean_survival_fraction": metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
         "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
     }
 
@@ -123,6 +124,7 @@ def compact_candidate(record: dict) -> dict:
 def candidate_score(candidate: dict) -> tuple:
     return (
         0 if candidate["passed"] else 1,
+        -candidate["mean_survival_fraction"],
         candidate["mean_position_error_m"],
         -candidate["mean_completed_fraction"],
         -candidate["clearance_p01_m"],
@@ -133,8 +135,8 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Validation Suite",
         "",
-        "| label | controller | tasks | passed | failures | pos err m | clearance p01 m | completed | action sat | teacher L2 |",
-        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| label | controller | tasks | passed | failures | pos err m | clearance p01 m | completed | survival | action sat | teacher L2 |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for record in report["records"]:
         metrics = record["metrics"]
@@ -143,7 +145,9 @@ def render_markdown(report: dict) -> str:
             f"| {record['label']} | {record['controller']} | {', '.join(record['tasks'])} | {gate['passed']} | "
             f"{', '.join(gate['failures']) or 'none'} | {metrics['mean_position_error_m']:.4f} | "
             f"{metrics.get('clearance_p01_m', metrics['min_clearance_m']):.4f} | "
-            f"{metrics['mean_completed_fraction']:.4f} | {metrics.get('action_saturation_fraction', 0.0):.4f} | "
+            f"{metrics['mean_completed_fraction']:.4f} | "
+            f"{metrics.get('mean_survival_fraction', metrics['mean_completed_fraction']):.4f} | "
+            f"{metrics.get('action_saturation_fraction', 0.0):.4f} | "
             f"{metrics.get('teacher_action_l2_mean', 0.0):.4f} |"
         )
     summary = report["summary"]

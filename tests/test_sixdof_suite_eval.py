@@ -86,6 +86,7 @@ def record(label: str, task: str, passed: bool, position_error: float, completed
         "metrics": {
             "mean_position_error_m": position_error,
             "mean_completed_fraction": completed,
+            "mean_survival_fraction": completed,
             "min_clearance_m": clearance,
             "clearance_p01_m": clearance,
         },

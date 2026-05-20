@@ -84,6 +84,7 @@ def checkpoint_score(checkpoint: dict, config: OfflineTrainConfig) -> tuple:
     metrics = checkpoint["selection_metrics"]
     return (
         -metrics["mean_completed_fraction"],
+        -metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
         -metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
         metrics["mean_position_error_m"],
         checkpoint["val_loss"],
