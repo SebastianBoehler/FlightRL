@@ -100,3 +100,31 @@ python scripts/run_sixdof_ppo_sweep.py \
 ```
 
 This wrote `artifacts/replay/sixdof_position_yaw_ppo_sweep_smoke.md` with both baseline and first PPO variant marked `ok`. The short gate horizons are command-path evidence only; the next quality screen should run longer native-step PPO variants.
+
+Conservative native-step screen:
+
+```bash
+python scripts/run_sixdof_ppo_sweep.py \
+  --run \
+  --max-variants 2 \
+  --baseline-checkpoint artifacts/curriculum/position_yaw/easy_medium_h128/checkpoint.pt \
+  --init-checkpoint artifacts/curriculum/position_yaw/easy_medium_h128/checkpoint.pt \
+  --report artifacts/replay/sixdof_position_yaw_ppo_sweep_conservative2.json \
+  --output-dir artifacts/ppo/position_yaw_conservative2 \
+  --train-num-envs 256 \
+  --horizon 48 \
+  --minibatch-size 4096 \
+  --train-eval-steps 200 \
+  --eval-num-envs 128 \
+  --medium-steps 300 \
+  --broad-steps 500 \
+  --native-step
+```
+
+| variant | medium completed | medium pos err m | broad completed | broad pos err m |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 0.7891 | 1.4620 | 0.1250 | 23.0570 |
+| stable_ref4_std002_lr1e5 | 0.8125 | 1.4779 | 0.1406 | 23.0949 |
+| stable_ref8_std001_lr5e6 | 0.8047 | 1.4605 | 0.1328 | 23.1343 |
+
+The first conservative PPO variant slightly improved medium completion versus baseline but still failed completion and position-error gates. Broad evaluation remains unusable, with yaw and position failures. Treat this as evidence that cautious PPO can move medium-profile metrics, but needs stronger curriculum before broad deployment gates.
