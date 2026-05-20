@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--min-horizontal-sensors", type=int, default=3)
     parser.add_argument("--min-trajectory-xy-span-m", type=float, default=0.25)
     parser.add_argument("--min-yaw-span-deg", type=float, default=0.0)
+    parser.add_argument("--max-step-speed-m-s", type=float, default=0.0, help="Optional trajectory glitch gate; 0 disables it.")
     parser.add_argument("--room-padding-m", type=float, default=0.05)
     parser.add_argument("--strict", action="store_true", help="exit non-zero when mapping_ready is false")
     args = parser.parse_args()
@@ -40,6 +41,7 @@ def main() -> None:
         min_horizontal_sensors=args.min_horizontal_sensors,
         min_trajectory_xy_span_m=args.min_trajectory_xy_span_m,
         min_yaw_span_deg=args.min_yaw_span_deg,
+        max_step_speed_m_s=args.max_step_speed_m_s,
     )
     report = {
         "input": str(input_path),
@@ -55,6 +57,7 @@ def main() -> None:
             "min_horizontal_sensors": args.min_horizontal_sensors,
             "min_trajectory_xy_span_m": args.min_trajectory_xy_span_m,
             "min_yaw_span_deg": args.min_yaw_span_deg,
+            "max_step_speed_m_s": args.max_step_speed_m_s,
         },
         "summary": summary,
         "room_estimate": estimate_room_bounds(points, trajectory, padding_m=args.room_padding_m, max_range_m=args.max_range_m),
@@ -92,6 +95,8 @@ def render_markdown(report: dict) -> str:
         ("trajectory_mean_speed_m_s", f"{quality['mean_speed_m_s']:.3f}"),
         ("trajectory_p95_speed_m_s", f"{quality['p95_speed_m_s']:.3f}"),
         ("trajectory_max_step_speed_m_s", f"{quality['max_step_speed_m_s']:.3f}"),
+        ("trajectory_speed_glitch_count", str(quality["speed_glitch_count"])),
+        ("trajectory_speed_glitch_fraction", f"{quality['speed_glitch_fraction']:.4f}"),
         ("trajectory_z_std_m", f"{quality['z_std_m']:.3f}"),
         ("trajectory_yaw_span_deg", f"{quality['yaw_span_deg']:.1f}"),
         ("trajectory_path_efficiency", f"{quality['path_efficiency']:.3f}"),

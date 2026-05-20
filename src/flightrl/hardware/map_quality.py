@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def trajectory_quality(trajectory, pose_xyz: np.ndarray, duration_s: float, path_length_m: float) -> dict[str, float]:
+def trajectory_quality(trajectory, pose_xyz: np.ndarray, duration_s: float, path_length_m: float, max_step_speed_m_s: float = 0.0) -> dict[str, float]:
     if len(trajectory) == 0:
         return empty_trajectory_quality()
     straight = float(np.linalg.norm(pose_xyz[-1] - pose_xyz[0])) if len(pose_xyz) >= 2 else 0.0
@@ -13,12 +13,15 @@ def trajectory_quality(trajectory, pose_xyz: np.ndarray, duration_s: float, path
     valid_dt = dt > 1e-6
     speeds = step_dist[valid_dt] / dt[valid_dt] if len(step_dist) and np.any(valid_dt) else np.asarray([], dtype=np.float32)
     yaws = np.unwrap(np.deg2rad([pose.yaw_deg for pose in trajectory]))
+    speed_glitches = speeds > max_step_speed_m_s if max_step_speed_m_s > 0 and len(speeds) else np.asarray([], dtype=bool)
     return {
         "straight_line_m": straight,
         "loop_closure_m": straight,
         "mean_speed_m_s": float(np.mean(speeds)) if len(speeds) else 0.0,
         "p95_speed_m_s": float(np.quantile(speeds, 0.95)) if len(speeds) else 0.0,
         "max_step_speed_m_s": float(np.max(speeds)) if len(speeds) else 0.0,
+        "speed_glitch_count": int(np.sum(speed_glitches)),
+        "speed_glitch_fraction": float(np.mean(speed_glitches)) if len(speed_glitches) else 0.0,
         "z_std_m": float(np.std(pose_xyz[:, 2])) if len(pose_xyz) else 0.0,
         "yaw_span_deg": float(np.rad2deg(np.ptp(yaws))) if len(yaws) else 0.0,
         "path_efficiency": straight / max(path_length_m, 1e-6),
@@ -33,6 +36,8 @@ def empty_trajectory_quality() -> dict[str, float]:
         "mean_speed_m_s": 0.0,
         "p95_speed_m_s": 0.0,
         "max_step_speed_m_s": 0.0,
+        "speed_glitch_count": 0,
+        "speed_glitch_fraction": 0.0,
         "z_std_m": 0.0,
         "yaw_span_deg": 0.0,
         "path_efficiency": 0.0,

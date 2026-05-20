@@ -36,6 +36,19 @@ All four horizontal Multi-ranger directions were active. `range.zrange` contribu
 
 The new path-quality metrics show enough yaw coverage for a room scan, but also expose an estimator spike in `max_step_speed_m_s`. Prefer p95 speed for scan-quality judgement and inspect max-step spikes before using the trajectory for precise command-matched replay.
 
+Strict path-quality command:
+
+```bash
+python scripts/summarize_crazyflie_room.py \
+  --input artifacts/crazyflie_logs/room_scan_autonomous_35s.csv \
+  --output artifacts/replay/room_scan_autonomous_35s.strict_path.room.json \
+  --markdown artifacts/replay/room_scan_autonomous_35s.strict_path.room.md \
+  --min-yaw-span-deg 45 \
+  --max-step-speed-m-s 20
+```
+
+Result: strict path quality is not ready because of `speed_glitch`. The scan has `9` speed spikes above `20m/s` (`0.0043` of trajectory steps), with p95 speed `9.502m/s` and max step speed `444.668m/s`. This is still useful for coarse room bounds but should not be used as a command-matched replay log until the estimator spike is filtered or a cleaner scan is recorded.
+
 The abort log `artifacts/crazyflie_logs/room_scan_airborne_40s.csv` is not mapping-ready: it has only 2 accepted points, 1 pose sample, no duration, and only back/right horizontal coverage.
 
 ## Estimated Room Bounds

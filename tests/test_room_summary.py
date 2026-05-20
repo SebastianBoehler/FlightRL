@@ -24,6 +24,7 @@ def test_summarize_map_marks_sufficient_scan_ready() -> None:
         min_horizontal_sensors=4,
         min_trajectory_xy_span_m=0.25,
         min_yaw_span_deg=45.0,
+        max_step_speed_m_s=1.0,
     )
 
     assert summary["mapping_ready"]
@@ -32,6 +33,7 @@ def test_summarize_map_marks_sufficient_scan_ready() -> None:
     assert summary["trajectory_quality"]["yaw_span_deg"] >= 80.0
     assert summary["trajectory_quality"]["mean_speed_m_s"] > 0.0
     assert summary["trajectory_quality"]["p95_speed_m_s"] > 0.0
+    assert summary["trajectory_quality"]["speed_glitch_count"] == 0
     assert summary["point_density_per_path_m"] > 0.0
     assert summary["sensor_counts"]["range.front"] == len(rows)
 
@@ -42,6 +44,16 @@ def test_summarize_map_reports_static_or_sparse_scan_failures() -> None:
 
     assert not summary["mapping_ready"]
     assert {"points", "duration", "trajectory_xy_span", "yaw_span"}.issubset(summary["failures"])
+
+
+def test_summarize_map_reports_speed_glitches() -> None:
+    rows = sample_rows(count=5, dt=1.0, x_step=0.1, yaw_step=12.0)
+    rows[-1]["stateEstimate.x"] = "30.0"
+    summary = summarize_map(points_from_rows(rows), trajectory_from_rows(rows), max_step_speed_m_s=5.0)
+
+    assert not summary["mapping_ready"]
+    assert "speed_glitch" in summary["failures"]
+    assert summary["trajectory_quality"]["speed_glitch_count"] > 0
 
 
 def test_prepare_rows_filters_height_and_normalizes_origin() -> None:
@@ -92,6 +104,8 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
             "0.2",
             "--min-yaw-span-deg",
             "0",
+            "--max-step-speed-m-s",
+            "5",
         ],
         cwd=ROOT,
         check=True,
@@ -104,6 +118,7 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     assert data["room_estimate"]["method"] == "axis_aligned_quantile_box"
     assert "trajectory_quality" in data["summary"]
     assert "point_density_per_path_m" in data["summary"]
+    assert data["summary"]["trajectory_quality"]["speed_glitch_count"] == 0
     assert output.with_suffix(".md").exists()
     assert "mapping_ready=True" in result.stdout
 

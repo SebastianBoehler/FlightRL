@@ -129,6 +129,7 @@ def summarize_map(
     min_horizontal_sensors: int = 3,
     min_trajectory_xy_span_m: float = 0.25,
     min_yaw_span_deg: float = 0.0,
+    max_step_speed_m_s: float = 0.0,
 ) -> dict:
     sensor_counts = {key: sum(1 for point in points if point.sensor == key) for key in RANGER_KEYS}
     active_horizontal = [key for key in HORIZONTAL_RANGER_KEYS if sensor_counts[key] > 0]
@@ -146,7 +147,7 @@ def summarize_map(
         "point_cloud": bounds_summary(point_xyz),
         "trajectory": bounds_summary(pose_xyz),
         "trajectory_path_length_m": trajectory_path_length,
-        "trajectory_quality": trajectory_quality(trajectory, pose_xyz, duration, trajectory_path_length),
+        "trajectory_quality": trajectory_quality(trajectory, pose_xyz, duration, trajectory_path_length, max_step_speed_m_s),
     }
     summary["point_density_per_path_m"] = float(len(points) / max(summary["trajectory_path_length_m"], 1e-6))
     failures = []
@@ -160,6 +161,8 @@ def summarize_map(
         failures.append("trajectory_xy_span")
     if summary["trajectory_quality"]["yaw_span_deg"] < min_yaw_span_deg:
         failures.append("yaw_span")
+    if max_step_speed_m_s > 0.0 and summary["trajectory_quality"]["speed_glitch_count"] > 0:
+        failures.append("speed_glitch")
     summary["mapping_ready"] = not failures
     summary["failures"] = failures
     return summary
