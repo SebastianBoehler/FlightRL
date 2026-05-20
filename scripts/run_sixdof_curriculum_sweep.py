@@ -43,7 +43,7 @@ def main() -> None:
             record["results"] = run_commands(record["commands"])
             record["gates"] = load_gate_summaries(record)
 
-    report = {"run": args.run, "native_step": args.native_step, "records": records}
+    report = {"run": args.run, "native_step": args.native_step, "records": records, "summary": sweep_summary(records)}
     output = Path(args.report)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -190,6 +190,53 @@ def load_gate_summary(path: str) -> dict | None:
     }
 
 
+def sweep_summary(records: list[dict]) -> dict:
+    return {
+        "total": len(records),
+        "completed": sum(1 for record in records if all_success(record.get("results"))),
+        "best_medium": best_record(records, "medium"),
+        "best_broad": best_record(records, "broad"),
+    }
+
+
+def all_success(results: list[dict] | None) -> bool:
+    return bool(results) and all(result["returncode"] == 0 for result in results)
+
+
+def best_record(records: list[dict], gate_name: str) -> dict | None:
+    candidates = []
+    for record in records:
+        gate = (record.get("gates") or {}).get(gate_name)
+        if gate is not None:
+            candidates.append((gate_score(gate), compact_record(record, gate)))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def gate_score(gate: dict) -> tuple:
+    return (
+        0 if gate["passed"] else 1,
+        -gate["mean_completed_fraction"],
+        -gate["mean_survival_fraction"],
+        gate["mean_position_error_m"],
+        -gate["clearance_p01_m"],
+    )
+
+
+def compact_record(record: dict, gate: dict) -> dict:
+    return {
+        "name": record["variant"]["name"],
+        "checkpoint": record["checkpoint"],
+        "passed": gate["passed"],
+        "failures": gate["failures"],
+        "mean_completed_fraction": gate["mean_completed_fraction"],
+        "mean_survival_fraction": gate["mean_survival_fraction"],
+        "mean_position_error_m": gate["mean_position_error_m"],
+        "clearance_p01_m": gate["clearance_p01_m"],
+    }
+
+
 def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Position/Yaw Curriculum Sweep",
@@ -210,6 +257,17 @@ def render_markdown(report: dict) -> str:
             f"| {variant['name']} | {', '.join(variant['profiles'])} | {variant['hidden_size']} | "
             f"{variant['epochs']} | {variant['eval_profile']} | {status} | {medium_completed} | {broad_completed} |"
         )
+    summary = report.get("summary") or {}
+    if summary.get("best_medium") or summary.get("best_broad"):
+        lines.extend(["", "## Best Candidates", ""])
+        for label, key in (("medium", "best_medium"), ("broad", "best_broad")):
+            candidate = summary.get(key)
+            if candidate:
+                lines.append(
+                    f"- `{label}`: `{candidate['name']}` passed=`{candidate['passed']}` "
+                    f"completed=`{candidate['mean_completed_fraction']:.4f}` "
+                    f"pos_err=`{candidate['mean_position_error_m']:.4f}`"
+                )
     lines.extend(["", "Commands and artifact paths are stored in the JSON report."])
     return "\n".join(lines)
 

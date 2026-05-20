@@ -67,3 +67,30 @@ def test_load_gate_summary_compacts_metrics(tmp_path: Path) -> None:
     summary = SWEEP.load_gate_summary(str(gate))
     assert summary["passed"] is False
     assert summary["mean_survival_fraction"] == 0.8
+
+
+def test_sweep_summary_ranks_best_gate_candidate() -> None:
+    records = [
+        record("early", completed=0.2, survival=0.7, position_error=1.0),
+        record("late", completed=0.5, survival=0.6, position_error=2.0),
+    ]
+    summary = SWEEP.sweep_summary(records)
+    assert summary["completed"] == 2
+    assert summary["best_medium"]["name"] == "late"
+
+
+def record(name: str, *, completed: float, survival: float, position_error: float) -> dict:
+    gate = {
+        "passed": False,
+        "failures": ["completion"],
+        "mean_completed_fraction": completed,
+        "mean_survival_fraction": survival,
+        "mean_position_error_m": position_error,
+        "clearance_p01_m": 0.1,
+    }
+    return {
+        "variant": {"name": name},
+        "checkpoint": f"{name}.pt",
+        "results": [{"returncode": 0}],
+        "gates": {"medium": gate, "broad": gate},
+    }
