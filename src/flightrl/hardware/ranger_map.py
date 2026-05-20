@@ -31,6 +31,17 @@ class RangerPoint:
     distance_m: float
 
 
+@dataclass(frozen=True, slots=True)
+class DronePose:
+    time_s: float
+    x_m: float
+    y_m: float
+    z_m: float
+    roll_deg: float
+    pitch_deg: float
+    yaw_deg: float
+
+
 def points_from_rows(
     rows: Iterable[Mapping[str, str | float]],
     *,
@@ -68,6 +79,23 @@ def points_from_rows(
                 )
             )
     return points
+
+
+def trajectory_from_rows(rows: Iterable[Mapping[str, str | float]]) -> list[DronePose]:
+    poses: list[DronePose] = []
+    for row in rows:
+        poses.append(
+            DronePose(
+                time_s=_float(row, "host_time_s"),
+                x_m=_float(row, "stateEstimate.x"),
+                y_m=_float(row, "stateEstimate.y"),
+                z_m=_float(row, "stateEstimate.z"),
+                roll_deg=_float(row, "stabilizer.roll"),
+                pitch_deg=_float(row, "stabilizer.pitch"),
+                yaw_deg=_float(row, "stabilizer.yaw"),
+            )
+        )
+    return poses
 
 
 def euler_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
