@@ -58,6 +58,7 @@ def test_sixdof_suite_evaluates_teacher_and_checkpoint(tmp_path: Path) -> None:
     assert report["summary"]["total"] == 2
     assert report["records"][0]["controller"] == "teacher"
     assert report["records"][1]["tasks"] == ["obstacle_avoidance"]
+    assert "mean_yaw_error_rad" in report["records"][0]["metrics"]
     best = report["summary"]["best_checkpoint_by_task"]["obstacle_avoidance"]
     assert best["label"] == "candidate"
     assert best["checkpoint"] == str(checkpoint)
@@ -85,6 +86,8 @@ def record(label: str, task: str, passed: bool, position_error: float, completed
         "gate": {"passed": passed, "failures": [] if passed else ["position_error"]},
         "metrics": {
             "mean_position_error_m": position_error,
+            "mean_yaw_error_rad": 0.2,
+            "yaw_error_p95_rad": 0.3,
             "mean_completed_fraction": completed,
             "mean_survival_fraction": completed,
             "min_clearance_m": clearance,

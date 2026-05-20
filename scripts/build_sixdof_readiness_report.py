@@ -81,6 +81,8 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
             "passed": record.get("passed", False),
             "mean_completed_fraction": record.get("mean_completed_fraction"),
             "mean_position_error_m": record.get("mean_position_error_m"),
+            "mean_yaw_error_rad": record.get("mean_yaw_error_rad"),
+            "yaw_error_p95_rad": record.get("yaw_error_p95_rad"),
             "clearance_p01_m": record.get("clearance_p01_m"),
         },
         "edge_parity": parity,

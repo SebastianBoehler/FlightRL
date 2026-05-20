@@ -45,6 +45,8 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
 
     report = json.loads(output.read_text())
     assert report["records"][0]["ready"] is True
+    assert report["records"][0]["sim"]["mean_yaw_error_rad"] == 0.05
+    assert report["records"][0]["sim"]["yaw_error_p95_rad"] == 0.07
     assert report["summary"]["ready_tasks"] == ["obstacle_avoidance"]
     assert output.with_suffix(".md").exists()
 
@@ -75,6 +77,8 @@ def candidate_record(*, passed: bool = True, parity: bool = True, latency: float
         "failures": [] if passed else ["position_error"],
         "mean_completed_fraction": 1.0,
         "mean_position_error_m": 0.1,
+        "mean_yaw_error_rad": 0.05,
+        "yaw_error_p95_rad": 0.07,
         "clearance_p01_m": 0.5,
         "edge_parity": {"present": parity, "passed": parity},
         "edge_latency": {"present": latency is not None, **({"per_sample_us": latency} if latency is not None else {})},

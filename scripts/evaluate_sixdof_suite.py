@@ -23,6 +23,8 @@ def main() -> None:
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
+    parser.add_argument("--max-yaw-error-rad", type=float, default=None)
+    parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
     parser.add_argument("--fail-on-gate", action="store_true")
     args = parser.parse_args()
 
@@ -33,6 +35,8 @@ def main() -> None:
         "min_clearance_m": args.min_clearance_m,
         "min_completed_fraction": args.min_completed_fraction,
         "max_position_error_m": args.max_position_error_m,
+        "max_yaw_error_rad": args.max_yaw_error_rad,
+        "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,
     }
     records = []
     for idx, (label, task_spec) in enumerate(args.teacher):
@@ -118,6 +122,8 @@ def compact_candidate(record: dict) -> dict:
         "passed": record["gate"]["passed"],
         "failures": record["gate"]["failures"],
         "mean_position_error_m": metrics["mean_position_error_m"],
+        "mean_yaw_error_rad": metrics.get("mean_yaw_error_rad"),
+        "yaw_error_p95_rad": metrics.get("yaw_error_p95_rad"),
         "clearance_p01_m": metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
         "mean_completed_fraction": metrics["mean_completed_fraction"],
         "mean_survival_fraction": metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
@@ -139,8 +145,8 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Validation Suite",
         "",
-        "| label | controller | tasks | passed | failures | pos err m | clearance p01 m | completed | survival | action sat | teacher L2 |",
-        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| label | controller | tasks | passed | failures | pos err m | yaw err rad | clearance p01 m | completed | survival | action sat | teacher L2 |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for record in report["records"]:
         metrics = record["metrics"]
@@ -148,6 +154,7 @@ def render_markdown(report: dict) -> str:
         lines.append(
             f"| {record['label']} | {record['controller']} | {', '.join(record['tasks'])} | {gate['passed']} | "
             f"{', '.join(gate['failures']) or 'none'} | {metrics['mean_position_error_m']:.4f} | "
+            f"{metrics.get('mean_yaw_error_rad', 0.0):.4f} | "
             f"{metrics.get('clearance_p01_m', metrics['min_clearance_m']):.4f} | "
             f"{metrics['mean_completed_fraction']:.4f} | "
             f"{metrics.get('mean_survival_fraction', metrics['mean_completed_fraction']):.4f} | "

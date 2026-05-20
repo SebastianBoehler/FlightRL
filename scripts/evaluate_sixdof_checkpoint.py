@@ -24,6 +24,8 @@ def main() -> None:
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
+    parser.add_argument("--max-yaw-error-rad", type=float, default=None)
+    parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
     parser.add_argument("--fail-on-gate", action="store_true")
     args = parser.parse_args()
 
@@ -55,6 +57,8 @@ def main() -> None:
         min_clearance_m=args.min_clearance_m,
         min_completed_fraction=args.min_completed_fraction,
         max_position_error_m=args.max_position_error_m,
+        max_yaw_error_rad=args.max_yaw_error_rad,
+        max_yaw_p95_error_rad=args.max_yaw_p95_error_rad,
     )
     report = {
         "checkpoint": str(checkpoint_path) if checkpoint_path else None,
@@ -68,6 +72,8 @@ def main() -> None:
             "min_clearance_m": args.min_clearance_m,
             "min_completed_fraction": args.min_completed_fraction,
             "max_position_error_m": args.max_position_error_m,
+            "max_yaw_error_rad": args.max_yaw_error_rad,
+            "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,
         },
         "gate": gate,
         "metrics": metrics,

@@ -64,6 +64,8 @@ def checkpoint_records(suite_path: Path, parity: dict[str, dict], latency: dict[
                 "mean_completed_fraction": metrics["mean_completed_fraction"],
                 "mean_survival_fraction": metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
                 "mean_position_error_m": metrics["mean_position_error_m"],
+                "mean_yaw_error_rad": metrics.get("mean_yaw_error_rad"),
+                "yaw_error_p95_rad": metrics.get("yaw_error_p95_rad"),
                 "clearance_p01_m": metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
                 "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
                 "action_saturation_fraction": metrics.get("action_saturation_fraction"),
@@ -135,7 +137,12 @@ def score(record: dict) -> tuple:
 
 
 def compact_record(record: dict) -> dict:
-    compact = {key: record[key] for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")}
+    compact = {
+        key: record[key]
+        for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")
+    }
+    compact["mean_yaw_error_rad"] = record.get("mean_yaw_error_rad")
+    compact["yaw_error_p95_rad"] = record.get("yaw_error_p95_rad")
     compact["edge_latency"] = record.get("edge_latency", {"present": False})
     return compact
 

@@ -61,6 +61,8 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
     assert report["records"][0]["edge_parity"]["passed"] is True
     assert report["records"][0]["edge_latency"]["per_sample_us"] == 3.0
     assert report["records"][0]["checkpoint_meta"]["observation_mode"] == "base"
+    assert report["records"][0]["mean_yaw_error_rad"] == 0.05
+    assert report["best_by_task"]["position_yaw"]["yaw_error_p95_rad"] == 0.07
     assert report["best_by_task"]["position_yaw"]["label"] == "candidate"
     assert output.with_suffix(".md").exists()
 
@@ -68,7 +70,7 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
 def test_candidate_matrix_prefers_passing_candidates() -> None:
     records = [
         {"label": "failed", "tasks": ["position_yaw"], "passed": False, "edge_parity": {"present": True}, "mean_completed_fraction": 0.9, "mean_survival_fraction": 0.9, "mean_position_error_m": 0.1, "clearance_p01_m": 0.2, "checkpoint": "a", "failures": ["completion"]},
-        {"label": "passed", "tasks": ["position_yaw"], "passed": True, "edge_parity": {"present": False}, "mean_completed_fraction": 0.2, "mean_survival_fraction": 0.2, "mean_position_error_m": 2.0, "clearance_p01_m": 0.1, "checkpoint": "b", "failures": []},
+        {"label": "passed", "tasks": ["position_yaw"], "passed": True, "edge_parity": {"present": False}, "mean_completed_fraction": 0.2, "mean_survival_fraction": 0.2, "mean_position_error_m": 2.0, "mean_yaw_error_rad": 0.1, "yaw_error_p95_rad": 0.2, "clearance_p01_m": 0.1, "checkpoint": "b", "failures": []},
     ]
     assert MATRIX.best_by_task(records)["position_yaw"]["label"] == "passed"
 
@@ -84,6 +86,8 @@ def suite_record(label: str, checkpoint: Path) -> dict:
             "mean_completed_fraction": 1.0,
             "mean_survival_fraction": 1.0,
             "mean_position_error_m": 0.1,
+            "mean_yaw_error_rad": 0.05,
+            "yaw_error_p95_rad": 0.07,
             "min_clearance_m": 0.2,
             "clearance_p01_m": 0.2,
         },

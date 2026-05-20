@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .env import SixDofCrazyflieEnv
+from .env import SixDofCrazyflieEnv, quat_to_yaw, wrap_angle
 from .observation import augment_observation
 from .policies import SixDofPolicy, teacher_actions
 from .tasks import append_task_encoding, parse_task_spec
@@ -67,6 +67,8 @@ def aggregate_task_metrics(per_task: dict[str, dict[str, float]]) -> dict:
     summary = {
         "mean_reward": float(np.mean([metrics["mean_reward"] for metrics in per_task.values()])),
         "mean_position_error_m": float(np.mean([metrics["mean_position_error_m"] for metrics in per_task.values()])),
+        "mean_yaw_error_rad": float(np.mean([metrics["mean_yaw_error_rad"] for metrics in per_task.values()])),
+        "yaw_error_p95_rad": float(np.max([metrics["yaw_error_p95_rad"] for metrics in per_task.values()])),
         "min_clearance_m": float(np.min([metrics["min_clearance_m"] for metrics in per_task.values()])),
         "clearance_p01_m": float(np.min([metrics["clearance_p01_m"] for metrics in per_task.values()])),
         "mean_completed_fraction": float(np.mean([metrics["completed_fraction"] for metrics in per_task.values()])),
@@ -101,6 +103,7 @@ def evaluate_one(
     min_clearance = []
     action_abs = []
     action_l2 = []
+    yaw_errors = []
     survived = np.ones(env.num_envs, dtype=bool)
     alive_samples = []
     previous_obs = None
@@ -122,15 +125,20 @@ def evaluate_one(
         previous_action = actions.copy()
         rewards.append(reward)
         min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
+        yaw_errors.append(np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion))))
         survived &= ~terminals.astype(bool)
         alive_samples.append(survived.astype(np.float32))
         fresh = (terminals | truncations).astype(bool)
         previous_action[fresh] = 0.0
     pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
+    yaw_error = np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion)))
     clearances = np.concatenate(min_clearance)
+    yaw_error_samples = np.concatenate(yaw_errors)
     result = {
         "mean_reward": float(np.mean(rewards)),
         "mean_position_error_m": float(np.mean(pos_error)),
+        "mean_yaw_error_rad": float(np.mean(yaw_error)),
+        "yaw_error_p95_rad": float(np.quantile(yaw_error_samples, 0.95)),
         "min_clearance_m": float(np.min(clearances)),
         "clearance_p01_m": float(np.quantile(clearances, 0.01)),
         "completed_fraction": float(np.mean(survived)),
@@ -162,7 +170,15 @@ def validate_task_subset(selected_tasks: tuple[str, ...], policy_tasks: tuple[st
         raise ValueError(f"selected task(s) not present in checkpoint: {', '.join(missing)}")
 
 
-def gate_status(metrics: dict, *, min_clearance_m: float, min_completed_fraction: float, max_position_error_m: float) -> dict:
+def gate_status(
+    metrics: dict,
+    *,
+    min_clearance_m: float,
+    min_completed_fraction: float,
+    max_position_error_m: float,
+    max_yaw_error_rad: float | None = None,
+    max_yaw_p95_error_rad: float | None = None,
+) -> dict:
     failures = []
     if metrics.get("clearance_p01_m", metrics["min_clearance_m"]) < min_clearance_m:
         failures.append("min_clearance")
@@ -170,4 +186,8 @@ def gate_status(metrics: dict, *, min_clearance_m: float, min_completed_fraction
         failures.append("completion")
     if metrics["mean_position_error_m"] > max_position_error_m:
         failures.append("position_error")
+    if max_yaw_error_rad is not None and metrics.get("mean_yaw_error_rad", 0.0) > max_yaw_error_rad:
+        failures.append("yaw_error")
+    if max_yaw_p95_error_rad is not None and metrics.get("yaw_error_p95_rad", 0.0) > max_yaw_p95_error_rad:
+        failures.append("yaw_error_p95")
     return {"passed": not failures, "failures": failures}

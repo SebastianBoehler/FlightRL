@@ -98,3 +98,19 @@ python scripts/build_sixdof_readiness_report.py \
 | position_yaw | history1_h128 | false | sim_gate | 9.323 | 0.6602 | 3.8810 | 0.0889 |
 
 Global evidence used by the readiness report: room map ready with 7416 points, and Python/native parity passed across easy, medium, and broad resets with worst state RMSE `2.96e-7`, worst ranger RMSE `0.00151` mm, and zero terminal mismatches. This report is a simulation/edge-bench promotion gate, not approval for autonomous live flight.
+
+Yaw-aware validation pass: checkpoint and suite evaluators now report `mean_yaw_error_rad` and `yaw_error_p95_rad`, and can gate with `--max-yaw-error-rad` plus `--max-yaw-p95-error-rad`.
+
+```bash
+python scripts/evaluate_sixdof_checkpoint.py --teacher --task position_yaw --reset-profile position_yaw_medium --steps 400 --num-envs 256 --native-step --max-yaw-error-rad 0.35 --max-yaw-p95-error-rad 0.60 --output artifacts/replay/sixdof_teacher_position_yaw_medium_yaw_gate.json
+python scripts/evaluate_sixdof_checkpoint.py --checkpoint artifacts/curriculum/position_yaw/easy_medium_history1_h128/checkpoint.pt --task position_yaw --reset-profile position_yaw_medium --steps 400 --num-envs 256 --native-step --max-yaw-error-rad 0.35 --max-yaw-p95-error-rad 0.60 --output artifacts/replay/sixdof_history1_h128_medium_yaw_gate.json
+```
+
+| controller | passed | failures | mean yaw err rad | yaw p95 rad | completed | pos err m |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| teacher | true | none | 0.0011 | 0.3995 | 1.0000 | 0.1354 |
+| history1_h128 | false | min_clearance, completion, position_error | 0.1306 | 0.4677 | 0.6250 | 3.6545 |
+
+The current history checkpoint is not primarily yaw-limited on the medium profile; it still fails position/completion/clearance. The yaw metrics are now present so future position/orientation checkpoints cannot pass while hiding heading errors.
+
+A shorter 200-step suite with the same yaw thresholds passed for `history1_h128` (`completed=0.9453`, `pos_err=0.8279m`, `mean_yaw_error=0.0284rad`), which confirms the checkpoint can hold briefly on the medium reset. It does not override the longer 400/800-step failures; use the short suite only as a smoke signal for future curriculum work.
