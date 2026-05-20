@@ -61,6 +61,7 @@ def main() -> None:
     parser.add_argument("--max-vertical-speed-m-s", type=float, default=0.15)
     parser.add_argument("--yawrate-deg-s", type=float, default=18.0)
     parser.add_argument("--min-airborne-height-m", type=float, default=0.20)
+    parser.add_argument("--takeoff-timeout-s", type=float, default=5.0)
     parser.add_argument("--confirm-flight", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -96,8 +97,7 @@ def run_live(args) -> list[dict[str, float | str]]:
             print(f"room scan started: duration_s={args.duration_s:.1f}, height_m={args.height_m:.2f}", flush=True)
             deadline = time() + args.duration_s
             with modules.sync_logger_cls(scf, build_log_configs(modules, config)) as logger:
-                latest.update(read_next_values(logger))
-                if float(latest.get("stateEstimate.z", 0.0)) < args.min_airborne_height_m:
+                if not wait_until_airborne(logger, latest, rows, args):
                     print(
                         "room scan abort: Crazyflie did not reach min airborne height "
                         f"{args.min_airborne_height_m:.2f} m",
@@ -105,7 +105,10 @@ def run_live(args) -> list[dict[str, float | str]]:
                     )
                     return [{"host_time_s": time(), **latest, "mode": "abort_not_airborne"}]
                 while time() < deadline:
-                    latest.update(read_next_values(logger))
+                    values = read_next_values(logger)
+                    if values is None:
+                        break
+                    latest.update(values)
                     command = build_scan_command(reading_from_telemetry(latest), args)
                     motion.start_linear_motion(command.vx_m_s, command.vy_m_s, command.vz_m_s, rate_yaw=command.yawrate_deg_s)
                     rows.append({"host_time_s": time(), **latest, **asdict(command)})
@@ -120,9 +123,25 @@ def run_live(args) -> list[dict[str, float | str]]:
     return rows
 
 
-def read_next_values(logger) -> dict[str, float]:
-    _timestamp, values, _conf = next(logger)
+def read_next_values(logger) -> dict[str, float] | None:
+    try:
+        _timestamp, values, _conf = next(logger)
+    except StopIteration:
+        return None
     return {key: float(value) for key, value in values.items()}
+
+
+def wait_until_airborne(logger, latest: dict[str, float], rows: list[dict[str, float | str]], args) -> bool:
+    deadline = time() + args.takeoff_timeout_s
+    while time() < deadline:
+        values = read_next_values(logger)
+        if values is None:
+            return False
+        latest.update(values)
+        rows.append({"host_time_s": time(), **latest, "vx_m_s": 0.0, "vy_m_s": 0.0, "vz_m_s": 0.0, "yawrate_deg_s": 0.0, "mode": "takeoff_wait"})
+        if float(latest.get("stateEstimate.z", 0.0)) >= args.min_airborne_height_m:
+            return True
+    return False
 
 
 def build_scan_command(reading, args) -> ScanCommand:

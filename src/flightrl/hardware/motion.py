@@ -119,7 +119,10 @@ def arm_crazyflie_for_flight(cf: CrazyflieArmLike, *, sleep: Callable[[float], N
 
 def disarm_crazyflie_after_flight(cf: CrazyflieArmLike, *, sleep: Callable[[float], None] = default_sleep) -> None:
     try:
-        cf.param.set_value("system.arm", "0")
+        try:
+            cf.param.set_value("system.arm", "0")
+        except Exception:
+            pass
     finally:
         disarm_after_flight(cf.supervisor, sleep=sleep)
 
