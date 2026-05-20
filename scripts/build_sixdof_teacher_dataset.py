@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--reset-profile", default=None, help="Named reset curriculum, for example position_yaw_easy or position_yaw_medium.")
     parser.add_argument("--observation-mode", default="base", choices=OBSERVATION_MODES)
+    parser.add_argument("--execution-noise-std", type=float, default=0.0, help="Stddev of clipped action noise used only for executing teacher rollouts.")
     parser.add_argument("--append-dataset", action="append", default=[], help="Existing compatible dataset to prepend.")
     parser.add_argument("--output", default="artifacts/datasets/sixdof_teacher_safe_tasks.npz")
     args = parser.parse_args()
@@ -28,6 +29,7 @@ def main() -> None:
         use_native_step=args.native_step,
         reset_profile=args.reset_profile,
         observation_mode=args.observation_mode,
+        execution_noise_std=args.execution_noise_std,
     )
     if args.append_dataset:
         dataset = merge_datasets(args.append_dataset, dataset)

@@ -20,9 +20,12 @@ def collect_teacher_dataset(
     use_native_step: bool,
     reset_profile: str | None = None,
     observation_mode: str = "base",
+    execution_noise_std: float = 0.0,
 ) -> dict[str, np.ndarray | dict]:
     if observation_mode not in OBSERVATION_MODES:
         raise ValueError(f"unknown observation mode {observation_mode!r}")
+    if execution_noise_std < 0:
+        raise ValueError("execution_noise_std must be non-negative")
     tasks = parse_task_spec(task_spec)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
@@ -44,10 +47,11 @@ def collect_teacher_dataset(
         observations.append(augment_observation(model_obs, previous_obs, previous_action, observation_mode))
         actions.append(labels.copy())
         task_indices_all.append(task_indices.copy())
-        obs, _reward, terminal, truncation, _info = env.step(labels)
+        executed = execution_actions(labels, rng, execution_noise_std)
+        obs, _reward, terminal, truncation, _info = env.step(executed)
         terminals.append(terminal.copy())
         previous_obs = model_obs.copy()
-        previous_action = labels.copy()
+        previous_action = executed.copy()
         fresh[:] = False
         done = terminal | truncation
         if np.any(done):
@@ -71,6 +75,8 @@ def collect_teacher_dataset(
         "base_observation_dim": 28,
         "action_dim": int(stacked_actions.shape[1]),
         "terminal_fraction": float(np.mean(stacked_terminals)),
+        "execution_policy": "noisy_teacher" if execution_noise_std > 0 else "teacher",
+        "execution_noise_std": execution_noise_std,
     }
     return {
         "observations": stacked_obs,
@@ -133,6 +139,13 @@ def sample_task_indices(rng: np.random.Generator, num_envs: int, tasks: tuple[st
     if len(tasks) == 1:
         return np.zeros(num_envs, dtype=np.int64)
     return rng.integers(0, len(tasks), size=num_envs, dtype=np.int64)
+
+
+def execution_actions(labels: np.ndarray, rng: np.random.Generator, noise_std: float) -> np.ndarray:
+    if noise_std <= 0:
+        return labels
+    noise = rng.normal(0.0, noise_std, size=labels.shape).astype(np.float32)
+    return np.clip(labels + noise, -1.0, 1.0).astype(np.float32)
 
 
 def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:

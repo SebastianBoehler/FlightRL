@@ -71,3 +71,45 @@ python scripts/run_sixdof_puffer_sweep.py \
 | large_h32_rr1_h128 | 8192 | 8 | 8 | 32 | 16384 | 1 | 0.0003 | 0.001 | 128 | 474900 |
 
 Result: replay ratio `1` with hidden size `128` is still the throughput baseline. The `8192`-agent run reached `474.9K` train SPS, narrowly ahead of the `4096`-agent fast run at `471.0K`. Hidden size `256` roughly halved train throughput for this short run.
+
+## Current Refresh
+
+Native simulator refresh:
+
+```bash
+python scripts/benchmark_sixdof_sweep.py \
+  --env-counts 2048 4096 8192 16384 \
+  --steps 500 \
+  --output artifacts/replay/sixdof_native_benchmark_latest_recovery_run.json
+```
+
+| envs | python SPS | native raw SPS | native env SPS |
+| ---: | ---: | ---: | ---: |
+| 2048 | 870618 | 17225199 | 16153914 |
+| 4096 | 1039572 | 16947002 | 16604104 |
+| 8192 | 1101787 | 15533642 | 15047310 |
+| 16384 | 1130103 | 14699517 | 14398359 |
+
+Best native env throughput in this run was `16,604,104` steps/sec at `4096` envs.
+
+Puffer refresh used the compiled env name `flightrl_sixdof_sweep`. A first attempt with `flightrl_sixdof_sweep_512` failed because the Puffer checkout had been built for `flightrl_sixdof_sweep`.
+
+```bash
+python scripts/run_sixdof_puffer_sweep.py \
+  --run \
+  --no-build \
+  --env-name flightrl_sixdof_sweep \
+  --pufferlib-root ../PufferLib-4-flightrl \
+  --total-timesteps 524288 \
+  --output artifacts/replay/sixdof_puffer_sweep_recovery_run_full.json
+```
+
+| variant | agents | buffers | threads | horizon | minibatch | replay | lr | entropy | hidden | train SPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| small_h16_rr2_h64 | 1024 | 1 | 1 | 16 | 2048 | 2 | 0.0003 | 0.001 | 64 | 309000 |
+| base_h32_rr2_h128 | 4096 | 8 | 8 | 32 | 8192 | 2 | 0.0003 | 0.001 | 128 | 220900 |
+| fast_h32_rr1_h128 | 4096 | 8 | 8 | 32 | 16384 | 1 | 0.0007 | 0.003 | 128 | 372400 |
+| wide_h32_rr1_h256 | 4096 | 8 | 8 | 32 | 16384 | 1 | 0.0005 | 0.002 | 256 | 230000 |
+| large_h32_rr1_h128 | 8192 | 8 | 8 | 32 | 16384 | 1 | 0.0003 | 0.001 | 128 | 377700 |
+
+Result: the current fastest Puffer setting is still replay ratio `1`, hidden size `128`. In this refresh, `8192` agents reached `377.7K` train SPS and the `4096`-agent fast run reached `372.4K`.

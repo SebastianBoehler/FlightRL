@@ -115,3 +115,28 @@ python scripts/train_sixdof_offline.py \
 | history1 inverse_std 24ep | 0.3672 | 0.7021 | 35.3566 | 0.0722 | 0.0742 | 0.3162 | 120.2756 |
 
 Conclusion: inverse-std weighting slightly improves this same-budget control run, but both are much worse than the earlier `history1_h128` candidate. The weighting knob is useful for reproducible ablations, but it is not the missing ingredient for position/yaw. The next serious attempt should be closed-loop optimization or dataset aggregation that explicitly samples failure recovery states.
+
+Recovery-state dataset pass: added `--execution-noise-std` to teacher dataset collection. Labels remain clean teacher commands, but the simulator executes clipped noisy teacher commands so the dataset includes off-trajectory recovery states. The `history1` observation stores the executed previous action.
+
+Commands:
+
+```bash
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 721 --reset-profile position_yaw_easy --observation-mode history1 --execution-noise-std 0.05 --output artifacts/curriculum/position_yaw/recovery_history1_h128/dataset_01_easy_noise.npz --native-step
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 722 --reset-profile position_yaw_medium --observation-mode history1 --execution-noise-std 0.05 --append-dataset artifacts/curriculum/position_yaw/recovery_history1_h128/dataset_01_easy_noise.npz --output artifacts/curriculum/position_yaw/recovery_history1_h128/dataset_02_medium_noise.npz --native-step
+python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_yaw/recovery_history1_h128/dataset_02_medium_noise.npz --checkpoint artifacts/checkpoints/sixdof_position_yaw_history1_recovery_h128.pt --epochs 16 --batch-size 8192 --hidden-size 128 --learning-rate 1e-3 --eval-steps 500 --eval-num-envs 256 --select-by-eval --eval-reset-profile position_yaw_medium --native-step
+```
+
+Mixed clean plus mild recovery command:
+
+```bash
+python scripts/build_sixdof_teacher_dataset.py --task position_yaw --num-envs 512 --steps 192 --seed 723 --reset-profile position_yaw_medium --observation-mode history1 --execution-noise-std 0.015 --append-dataset artifacts/curriculum/position_yaw/easy_medium_history1_h128/dataset_02_position_yaw_medium.npz --output artifacts/curriculum/position_yaw/mixed_recovery_history1_h128/dataset_clean_plus_medium_noise0015.npz --native-step
+python scripts/train_sixdof_offline.py --dataset artifacts/curriculum/position_yaw/mixed_recovery_history1_h128/dataset_clean_plus_medium_noise0015.npz --checkpoint artifacts/checkpoints/sixdof_position_yaw_history1_mixed_recovery0015_h128.pt --epochs 14 --batch-size 8192 --hidden-size 128 --learning-rate 8e-4 --eval-steps 500 --eval-num-envs 256 --select-by-eval --eval-reset-profile position_yaw_medium --native-step
+```
+
+| variant | medium completed | medium survival | medium pos err m | medium clearance p01 m | broad completed | broad survival | broad pos err m |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| history1 baseline | 0.6250 | 0.8845 | 3.6545 | 0.0788 | 0.0234 | 0.2786 | 109.1113 |
+| noisy recovery 0.05 | 0.1484 | 0.6831 | 15.2497 | 0.0475 | 0.0156 | 0.3681 | 49.2559 |
+| clean + recovery 0.015 | 0.5547 | 0.7926 | 21.3515 | 0.0763 | 0.1367 | 0.3762 | 91.3530 |
+
+Conclusion: noisy teacher execution is now available for recovery-data ablations, but these two static-imitation variants do not pass the position/yaw gate. Mild mixed recovery improves broad completion versus the `history1` baseline, while medium position error regresses badly. This supports moving the next position/yaw effort toward closed-loop PPO/DAgger or a recurrent policy instead of more unweighted one-step behavior cloning.
