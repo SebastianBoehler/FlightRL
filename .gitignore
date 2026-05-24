@@ -22,6 +22,8 @@ env/
 
 # Local tooling
 .DS_Store
+.learnings/
+.journal/
 
 # Workspace-specific symlink
 resources
