@@ -20,27 +20,26 @@ BODY_RAYS = np.asarray(
 
 
 @dataclass(frozen=True, slots=True)
-class BoxRoom:
+class AxisAlignedObstacle:
     x_min: float = -2.0
     x_max: float = 2.0
     y_min: float = -2.0
     y_max: float = 2.0
     z_min: float = 0.0
     z_max: float = 2.5
-    max_range_m: float = 4.0
 
     @property
     def bounds(self) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
         return ((self.x_min, self.x_max), (self.y_min, self.y_max), (self.z_min, self.z_max))
 
-    def contains(self, positions: np.ndarray, margin: float = 0.03) -> np.ndarray:
-        x_ok = (positions[:, 0] >= self.x_min + margin) & (positions[:, 0] <= self.x_max - margin)
-        y_ok = (positions[:, 1] >= self.y_min + margin) & (positions[:, 1] <= self.y_max - margin)
-        z_ok = (positions[:, 2] >= self.z_min + margin) & (positions[:, 2] <= self.z_max - margin)
+    def contains_points(self, positions: np.ndarray, margin: float = 0.0) -> np.ndarray:
+        x_ok = (positions[:, 0] >= self.x_min - margin) & (positions[:, 0] <= self.x_max + margin)
+        y_ok = (positions[:, 1] >= self.y_min - margin) & (positions[:, 1] <= self.y_max + margin)
+        z_ok = (positions[:, 2] >= self.z_min - margin) & (positions[:, 2] <= self.z_max + margin)
         return x_ok & y_ok & z_ok
 
-    def raycast(self, positions: np.ndarray, directions: np.ndarray) -> np.ndarray:
-        distances = np.full(positions.shape[0], self.max_range_m, dtype=np.float32)
+    def raycast(self, positions: np.ndarray, directions: np.ndarray, max_range_m: float) -> np.ndarray:
+        distances = np.full(positions.shape[0], max_range_m, dtype=np.float32)
         eps = 1e-6
         for axis, (low, high) in enumerate(self.bounds):
             for plane in (low, high):
@@ -56,6 +55,31 @@ class BoxRoom:
                     coord[active] = positions[active, other_axis] + t[active] * directions[active, other_axis]
                     hit &= (coord >= other_low - eps) & (coord <= other_high + eps)
                 distances = np.where(hit & (t < distances), t, distances)
+        return np.clip(distances, 0.0, max_range_m)
+
+
+@dataclass(frozen=True, slots=True)
+class BoxRoom(AxisAlignedObstacle):
+    max_range_m: float = 4.0
+    obstacles: tuple[AxisAlignedObstacle, ...] = ()
+
+    def contains(self, positions: np.ndarray, margin: float = 0.03) -> np.ndarray:
+        inside_room = (
+            (positions[:, 0] >= self.x_min + margin)
+            & (positions[:, 0] <= self.x_max - margin)
+            & (positions[:, 1] >= self.y_min + margin)
+            & (positions[:, 1] <= self.y_max - margin)
+            & (positions[:, 2] >= self.z_min + margin)
+            & (positions[:, 2] <= self.z_max - margin)
+        )
+        for obstacle in self.obstacles:
+            inside_room &= ~obstacle.contains_points(positions, margin=margin)
+        return inside_room
+
+    def raycast(self, positions: np.ndarray, directions: np.ndarray) -> np.ndarray:
+        distances = AxisAlignedObstacle.raycast(self, positions, directions, self.max_range_m)
+        for obstacle in self.obstacles:
+            distances = np.minimum(distances, obstacle.raycast(positions, directions, self.max_range_m))
         return np.clip(distances, 0.0, self.max_range_m)
 
 
