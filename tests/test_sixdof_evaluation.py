@@ -5,9 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 
+import numpy as np
 import torch
 
-from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy
+from flightrl.sixdof.evaluation import position_error_for_task
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,3 +85,12 @@ def test_checkpoint_eval_can_gate_yaw_error(tmp_path: Path) -> None:
     assert data["thresholds"]["max_yaw_p95_error_rad"] == 0.0
     assert "yaw_error" in data["gate"]["failures"]
     assert "yaw_error_p95" in data["gate"]["failures"]
+
+
+def test_circle_eval_position_error_uses_orbit_not_center() -> None:
+    env = SixDofCrazyflieEnv(num_envs=1, seed=17, task="circle", reset_profile="circle_recovery")
+    env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
+    env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
+
+    assert position_error_for_task(env, "circle")[0] < 1e-5
+    assert position_error_for_task(env, "position_yaw")[0] > 0.7

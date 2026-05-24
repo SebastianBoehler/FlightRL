@@ -6,10 +6,14 @@ import numpy as np
 
 from .curriculum import ResetProfile, resolve_reset_profile, sample_reset
 from .geometry import BoxRoom, body_rays_world, normalize_quat, quat_to_matrix
+from .motor_rpm import MotorRpmParams, step_motor_rpm
+from .native_reset import native_reset_one
 
 
 OBSERVATION_DIM = 28
 ACTION_DIM = 4
+TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "attitude": 2, "circle": 3}
+REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3}
 
 
 @dataclass(slots=True)
@@ -33,10 +37,13 @@ class SixDofCrazyflieEnv:
         task: str = "position_yaw",
         use_native_step: bool = False,
         reset_profile: str | ResetProfile | None = None,
+        action_mode: str = "body_rate",
     ) -> None:
         self.num_envs = int(num_envs)
         self.dt = float(dt)
         self.task = task
+        self.action_mode = validate_action_mode(action_mode)
+        self.hardware_action_interface = "sim_only_motor_rpm" if self.action_mode == "motor_rpm" else "firmware_setpoint"
         self.use_native_step = bool(use_native_step)
         self.reset_profile = resolve_reset_profile(reset_profile)
         self.room = room or BoxRoom()
@@ -52,6 +59,9 @@ class SixDofCrazyflieEnv:
         self.quaternion = np.zeros((self.num_envs, 4), dtype=np.float32)
         self.body_rates = np.zeros_like(self.position)
         self.previous_action = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
+        self.motor_params = MotorRpmParams()
+        self.motor_hover_rpm = self.motor_params.hover_rpm
+        self.motor_rpm = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.target_position = np.zeros_like(self.position)
         self.target_yaw = np.zeros(self.num_envs, dtype=np.float32)
         self.ranges_m = np.zeros((self.num_envs, 6), dtype=np.float32)
@@ -60,6 +70,10 @@ class SixDofCrazyflieEnv:
         self.rewards = np.zeros(self.num_envs, dtype=np.float32)
         self.terminals = np.zeros(self.num_envs, dtype=np.uint8)
         self.truncations = np.zeros(self.num_envs, dtype=np.uint8)
+        self.native_task_ids = np.full(self.num_envs, TASK_IDS.get(self.task, 0), dtype=np.int32)
+        self.native_reward_mode_id = 0
+        self.native_previous_error = np.zeros(self.num_envs, dtype=np.float32)
+        self.native_context_required = self.task == "circle"
         self.reset(seed=seed)
 
     def reset(self, seed: int | None = None) -> tuple[np.ndarray, list[dict[str, float]]]:
@@ -80,11 +94,13 @@ class SixDofCrazyflieEnv:
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
-        if self.use_native_step:
+        if self.use_native_step and self.action_mode != "motor_rpm":
             from .native import native_step_env
 
             native_step_env(self, clipped)
             return self.observations, self.rewards, self.terminals, self.truncations, []
+        elif self.action_mode == "motor_rpm":
+            step_motor_rpm(self, clipped)
         else:
             self._python_step(clipped)
         self.step_count += 1
@@ -115,7 +131,7 @@ class SixDofCrazyflieEnv:
     def observation(self) -> np.ndarray:
         pos_error = self.target_position - self.position
         yaw = quat_to_yaw(self.quaternion)
-        yaw_error = wrap_angle(self.target_yaw - yaw)
+        yaw_error = wrap_angle(self.observation_target_yaw() - yaw)
         obs = np.concatenate(
             [
                 pos_error / np.asarray([2.0, 2.0, 1.5], dtype=np.float32),
@@ -131,6 +147,44 @@ class SixDofCrazyflieEnv:
             axis=1,
         )
         return obs.astype(np.float32)
+
+    def observation_target_yaw(self) -> np.ndarray:
+        if self.task != "circle":
+            return self.target_yaw
+        from .yaw import circle_tangent_yaw
+
+        return circle_tangent_yaw(self)
+
+    def native_reset(self, seed: int = 0) -> np.ndarray:
+        rng = np.uint32(seed)
+        for idx in range(self.num_envs):
+            rng = native_reset_one(self, idx, rng)
+        self._update_ranges()
+        self.observations[:] = self.observation()
+        return self.observations
+
+    def set_native_context(
+        self,
+        *,
+        task_indices: np.ndarray | None = None,
+        tasks: tuple[str, ...] | None = None,
+        reward_mode: str = "env",
+        previous_error: np.ndarray | None = None,
+    ) -> None:
+        if reward_mode not in REWARD_MODE_IDS:
+            raise ValueError(f"unknown native reward mode {reward_mode!r}")
+        self.native_reward_mode_id = REWARD_MODE_IDS[reward_mode]
+        if task_indices is None:
+            self.native_task_ids.fill(TASK_IDS.get(self.task, 0))
+        else:
+            task_names = tasks or (self.task,)
+            ids = np.asarray([TASK_IDS[name] for name in task_names], dtype=np.int32)
+            self.native_task_ids[:] = ids[np.asarray(task_indices, dtype=np.int64)]
+        if previous_error is None:
+            self.native_previous_error.fill(0.0)
+        else:
+            self.native_previous_error[:] = np.asarray(previous_error, dtype=np.float32)
+        self.native_context_required = self.native_reward_mode_id != 0 or bool(np.any(self.native_task_ids == TASK_IDS["circle"]))
 
     def snapshot(self) -> SixDofSnapshot:
         return SixDofSnapshot(
@@ -155,6 +209,7 @@ class SixDofCrazyflieEnv:
         self.target_position[mask] = target
         self.target_yaw[mask] = target_yaw
         self.previous_action[mask] = 0.0
+        self.motor_rpm[mask] = self.motor_hover_rpm
         self.step_count[mask] = 0
         self.rewards[mask] = 0.0
         self.terminals[mask] = 0
@@ -220,3 +275,9 @@ def room_bounds_array(room: BoxRoom) -> np.ndarray:
         [room.x_min, room.x_max, room.y_min, room.y_max, room.z_min, room.z_max, room.max_range_m],
         dtype=np.float32,
     )
+
+
+def validate_action_mode(value: str) -> str:
+    if value not in {"body_rate", "motor_rpm"}:
+        raise ValueError(f"unknown 6-DoF action mode {value!r}")
+    return value

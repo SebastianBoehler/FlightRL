@@ -59,11 +59,13 @@ def test_candidate_matrix_cli_ranks_and_reads_parity(tmp_path: Path) -> None:
 
     report = json.loads(output.read_text())
     assert report["records"][0]["edge_parity"]["passed"] is True
+    assert report["records"][0]["controller"] == "checkpoint"
     assert report["records"][0]["edge_latency"]["per_sample_us"] == 3.0
     assert report["records"][0]["per_task_gate"]["position_yaw"]["passed"] is True
     assert report["records"][0]["checkpoint_meta"]["observation_mode"] == "base"
     assert report["records"][0]["mean_yaw_error_rad"] == 0.05
     assert report["best_by_task"]["position_yaw"]["yaw_error_p95_rad"] == 0.07
+    assert report["best_by_task"]["position_yaw"]["controller"] == "checkpoint"
     assert report["best_by_task"]["position_yaw"]["label"] == "candidate"
     assert output.with_suffix(".md").exists()
 
@@ -96,6 +98,32 @@ def test_candidate_matrix_score_uses_yaw_for_position_yaw() -> None:
     assert MATRIX.score(low_yaw) < MATRIX.score(high_yaw)
 
 
+def test_candidate_matrix_keeps_teacher_residual_records(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "residual.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "controller": "teacher_residual",
+            "residual_scale": 0.05,
+        },
+        checkpoint,
+    )
+    suite = tmp_path / "suite.json"
+    record = suite_record("residual", checkpoint)
+    record["controller"] = "teacher_residual"
+    record["tasks"] = ["circle"]
+    record["metrics"]["teacher_action_l2_mean"] = 0.001
+    suite.write_text(json.dumps({"records": [record]}))
+
+    records = MATRIX.checkpoint_records(suite, {}, {}, 1e-5)
+
+    assert records[0]["controller"] == "teacher_residual"
+    assert records[0]["checkpoint_meta"]["residual_scale"] == 0.05
+    assert MATRIX.best_by_task(records)["circle"]["teacher_action_l2_mean"] == 0.001
+
+
 def suite_record(label: str, checkpoint: Path) -> dict:
     return {
         "label": label,
@@ -121,6 +149,7 @@ def record(label: str, tasks: list[str], *, completed: float, position_error: fl
         "label": label,
         "checkpoint": f"{label}.pt",
         "tasks": tasks,
+        "controller": "checkpoint",
         "passed": True,
         "failures": [],
         "mean_completed_fraction": completed,

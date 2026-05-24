@@ -29,6 +29,8 @@ def main() -> None:
     report = {
         "checkpoint": args.checkpoint,
         "torchscript": args.torchscript,
+        "controller": checkpoint.get("controller", "policy"),
+        "residual_scale": checkpoint.get("residual_scale"),
         "batch_size": args.batch_size,
         "iterations": args.iterations,
         "observation": {

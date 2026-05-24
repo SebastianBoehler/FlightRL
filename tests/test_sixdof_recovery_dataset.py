@@ -44,6 +44,23 @@ def test_recovery_dataset_records_noisy_execution_metadata() -> None:
     assert dataset["metadata"]["execution_noise_std"] == 0.05
 
 
+def test_recovery_profile_produces_explicit_recovery_dataset() -> None:
+    dataset = collect_teacher_dataset(
+        task_spec="position_yaw",
+        num_envs=4,
+        steps=3,
+        seed=41,
+        use_native_step=False,
+        reset_profile="position_yaw_recovery",
+        observation_mode="history1",
+        execution_noise_std=0.08,
+    )
+
+    assert dataset["metadata"]["reset_profile"] == "position_yaw_recovery"
+    assert dataset["metadata"]["observation_mode"] == "history1"
+    assert dataset["metadata"]["terminal_fraction"] >= 0.0
+
+
 def test_recovery_dataset_rejects_negative_noise() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         collect_teacher_dataset(

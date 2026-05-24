@@ -3,7 +3,8 @@
     "m3_motor_issue"
   ],
   "notes": [
-    "M3 motor/rotor fault is unresolved; do not treat calibration, replay, or deployment evidence as hardware-transfer ready until repaired and rebenchmarked."
+    "M3 motor/rotor fault is unresolved; do not treat calibration, replay, or deployment evidence as hardware-transfer ready until repaired and rebenchmarked.",
+    "2026-05-24 prop-off bench: M1, M2, and M4 spun at low power; M3 only twitched, indicating signal reaches the M3 channel but the motor/ESC path does not rotate."
   ],
-  "updated": "2026-05-20"
+  "updated": "2026-05-24"
 }

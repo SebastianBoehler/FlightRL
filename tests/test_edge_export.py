@@ -76,3 +76,26 @@ def test_export_sixdof_torchscript_supports_history_observation_mode(tmp_path: P
     assert report["observation"]["mode"] == "history1"
     model = torch.jit.load(str(result.model_path))
     assert model(torch.zeros((2, 60), dtype=torch.float32)).shape == (2, 4)
+
+
+def test_export_sixdof_torchscript_marks_teacher_residual_actor(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "sixdof_residual.pt"
+    torch.save(
+        {
+            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
+            "hidden_size": 16,
+            "observation_dim": 28,
+            "task": "circle",
+            "tasks": ["circle"],
+            "controller": "teacher_residual",
+            "residual_scale": 0.05,
+        },
+        checkpoint,
+    )
+
+    result = export_sixdof_torchscript(checkpoint, tmp_path / "sixdof_residual.ts", samples=8)
+
+    report = json.loads(result.report_path.read_text())
+    assert report["controller"] == "teacher_residual"
+    assert report["residual_scale"] == 0.05
+    assert report["action"]["meaning"] == ["thrust_residual", "roll_rate_residual", "pitch_rate_residual", "yaw_rate_residual"]

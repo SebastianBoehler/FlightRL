@@ -51,7 +51,7 @@ def checkpoint_records(suite_path: Path, parity: dict[str, dict], latency: dict[
     suite = json.loads(suite_path.read_text())
     records = []
     for record in suite["records"]:
-        if record["controller"] != "checkpoint":
+        if record["controller"] == "teacher":
             continue
         checkpoint = record["checkpoint"]
         gate = record["gate"]
@@ -61,6 +61,7 @@ def checkpoint_records(suite_path: Path, parity: dict[str, dict], latency: dict[
         records.append(
             {
                 "label": label,
+                "controller": record["controller"],
                 "suite": str(suite_path),
                 "checkpoint": checkpoint,
                 "tasks": record["tasks"],
@@ -93,6 +94,8 @@ def checkpoint_meta(path: str | None) -> dict:
         "observation_dim": checkpoint.get("observation_dim", 28),
         "observation_mode": checkpoint.get("observation_mode", "base"),
         "task_conditioned": checkpoint.get("task_conditioned", False),
+        "controller": checkpoint.get("controller", "policy"),
+        "residual_scale": checkpoint.get("residual_scale"),
     }
 
 
@@ -166,25 +169,28 @@ def compact_record(record: dict) -> dict:
         for key in ("label", "checkpoint", "passed", "failures", "mean_completed_fraction", "mean_position_error_m", "clearance_p01_m", "edge_parity")
     }
     compact["tasks"] = record["tasks"]
+    compact["controller"] = record.get("controller", "checkpoint")
     compact["mean_yaw_error_rad"] = record.get("mean_yaw_error_rad")
     compact["yaw_error_p95_rad"] = record.get("yaw_error_p95_rad")
+    compact["teacher_action_l2_mean"] = record.get("teacher_action_l2_mean")
     compact["per_task_gate"] = record.get("per_task_gate", {})
     compact["edge_latency"] = record.get("edge_latency", {"present": False})
     return compact
 
 
 def render_markdown(report: dict) -> str:
-    lines = ["# 6-DoF Candidate Matrix", "", "| label | tasks | passed | edge | latency us | completed | survival | pos err m | yaw err rad | yaw p95 rad | clearance p01 m | obs mode |", "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    lines = ["# 6-DoF Candidate Matrix", "", "| label | controller | tasks | passed | edge | latency us | completed | survival | pos err m | yaw err rad | yaw p95 rad | teacher L2 | clearance p01 m | obs mode |", "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     for record in sorted(report["records"], key=score):
         edge = edge_text(record["edge_parity"])
         latency = record["edge_latency"].get("per_sample_us")
         latency_text = f"{latency:.3f}" if latency is not None else "n/a"
         meta = record["checkpoint_meta"]
         lines.append(
-            f"| {record['label']} | {', '.join(record['tasks'])} | {record['passed']} | {edge} | {latency_text} | "
+            f"| {record['label']} | {record['controller']} | {', '.join(record['tasks'])} | {record['passed']} | {edge} | {latency_text} | "
             f"{record['mean_completed_fraction']:.4f} | {record['mean_survival_fraction']:.4f} | "
             f"{record['mean_position_error_m']:.4f} | {fmt(record.get('mean_yaw_error_rad'))} | "
-            f"{fmt(record.get('yaw_error_p95_rad'))} | {record['clearance_p01_m']:.4f} | {meta.get('observation_mode', 'unknown')} |"
+            f"{fmt(record.get('yaw_error_p95_rad'))} | {fmt(record.get('teacher_action_l2_mean'))} | "
+            f"{record['clearance_p01_m']:.4f} | {meta.get('observation_mode', 'unknown')} |"
         )
     if report["best_by_task"]:
         lines.extend(["", "## Best By Task", ""])

@@ -6,6 +6,7 @@ import numpy as np
 
 from .env import ACTION_DIM, OBSERVATION_DIM, SixDofCrazyflieEnv, quat_to_yaw, wrap_angle
 from .geometry import quat_to_matrix
+from .yaw import circle_tangent_yaw
 
 
 class SixDofPolicy(nn.Module):
@@ -89,8 +90,7 @@ def circle_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
     desired_velocity = 0.45 * tangent - 0.6 * (radius - 0.75) * radial / radius
     desired_velocity[:, 2] = 0.7 * (0.65 - env.position[:, 2])
     desired_acc = 2.0 * (desired_velocity - env.velocity)
-    yaw_target = np.arctan2(tangent[:, 1], tangent[:, 0]).astype(np.float32)
-    yaw_rate = 1.8 * wrap_angle(yaw_target - quat_to_yaw(env.quaternion))
+    yaw_rate = 1.8 * wrap_angle(circle_tangent_yaw(env) - quat_to_yaw(env.quaternion))
     return action_from_desired_acc(env, desired_acc, yaw_rate)
 
 

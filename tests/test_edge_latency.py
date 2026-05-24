@@ -53,6 +53,7 @@ def test_edge_latency_cli_writes_report(tmp_path: Path) -> None:
 
     report = json.loads(output.read_text())
     assert report["observation"]["mode"] == "history1"
+    assert report["controller"] == "policy"
     assert report["eager"]["per_sample_us"] > 0.0
     assert report["torchscript_result"]["per_sample_us"] > 0.0
     assert report["max_abs_error"] <= 1e-6

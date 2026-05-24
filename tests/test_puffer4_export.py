@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import json
+import subprocess
+import sys
 
 import pytest
 
@@ -102,6 +105,42 @@ def test_render_sixdof_binding_is_ocean_shaped() -> None:
     assert '#include "vecenv.h"' in binding
     assert "static void c_reset" in binding
     assert "static void c_step" in binding
+
+
+def test_sixdof_puffer_export_report_cli_writes_evidence(tmp_path: Path) -> None:
+    output = tmp_path / "report.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_sixdof_puffer_export_report.py",
+            "--pufferlib-root",
+            str(tmp_path / "PufferLib-4.0"),
+            "--env-name",
+            "flightrl_sixdof_evidence",
+            "--output",
+            str(output),
+            "--total-agents",
+            "128",
+            "--num-buffers",
+            "4",
+            "--num-threads",
+            "2",
+            "--hidden-size",
+            "64",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    report = json.loads(output.read_text())
+    assert "puffer_export=" in result.stdout
+    assert report["passed"] is True
+    assert report["config"]["vec"]["total_agents"] == "128"
+    assert report["config"]["vec"]["num_threads"] == "2"
+    assert report["files"]["binding.c"]["required_tokens"]["#define OBS_SIZE 28"]
+    assert output.with_suffix(".md").exists()
 
 
 def test_cpu_puffer_runtime_sets_openmp_guard() -> None:

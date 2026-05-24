@@ -29,6 +29,7 @@ def export_sixdof_torchscript(
     model = load_policy_from_checkpoint(checkpoint)
     observation_dim = int(checkpoint.get("observation_dim", 28))
     observation_mode = str(checkpoint.get("observation_mode", "base"))
+    controller = str(checkpoint.get("controller", "policy"))
     task_count = len(checkpoint.get("tasks", [])) if checkpoint.get("task_conditioned", False) else 1
     example = sample_sixdof_observations(seed=seed, samples=samples, observation_dim=observation_dim, observation_mode=observation_mode, task_count=task_count)
 
@@ -51,6 +52,8 @@ def export_sixdof_torchscript(
                 "checkpoint": str(checkpoint_path),
                 "model": str(output),
                 "task": checkpoint.get("task", "unknown"),
+                "controller": controller,
+                "residual_scale": checkpoint.get("residual_scale"),
                 "format": "torchscript-trace",
                 "observation": {
                     "shape": [observation_dim],
@@ -63,20 +66,32 @@ def export_sixdof_torchscript(
                     "shape": [4],
                     "dtype": "float32",
                     "bounds": [-1.0, 1.0],
-                    "meaning": ["thrust", "roll_rate", "pitch_rate", "yaw_rate"],
+                    "meaning": action_meaning(controller),
                 },
                 "parity": {
                     "samples": samples,
                     "max_abs_error": max_abs_error,
                     "mean_abs_error": mean_abs_error,
                 },
-                "safety": "Simulation export only; not approved for direct hardware control.",
+                "safety": safety_text(controller),
             },
             indent=2,
         )
         + "\n"
     )
     return EdgeExportResult(output, report, max_abs_error, mean_abs_error)
+
+
+def action_meaning(controller: str) -> list[str]:
+    if controller == "teacher_residual":
+        return ["thrust_residual", "roll_rate_residual", "pitch_rate_residual", "yaw_rate_residual"]
+    return ["thrust", "roll_rate", "pitch_rate", "yaw_rate"]
+
+
+def safety_text(controller: str) -> str:
+    if controller == "teacher_residual":
+        return "Residual actor export only; the analytic teacher/controller is not embedded and this is not approved for live hardware."
+    return "Simulation export only; not approved for direct hardware control."
 
 
 def sample_sixdof_observations(*, seed: int, samples: int, observation_dim: int, observation_mode: str, task_count: int) -> torch.Tensor:

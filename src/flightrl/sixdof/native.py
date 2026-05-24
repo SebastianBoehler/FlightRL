@@ -28,7 +28,27 @@ def native_step(
 
 
 def native_step_env(env, actions: np.ndarray) -> None:
-    _binding.sixdof_step_env(
+    if not env.native_context_required:
+        _binding.sixdof_step_env(
+            _float32(env.position),
+            _float32(env.velocity),
+            _float32(env.quaternion),
+            _float32(env.body_rates),
+            _float32(env.ranges_m),
+            _float32(env.target_position),
+            _float32(env.target_yaw),
+            _float32(env.previous_action),
+            _int32(env.step_count),
+            _float32(actions),
+            _float32(env.observations),
+            _float32(env.rewards),
+            _uint8(env.terminals),
+            _uint8(env.truncations),
+            _float32(env.room_bounds),
+            float(env.dt),
+        )
+        return
+    _binding.sixdof_step_env_context(
         _float32(env.position),
         _float32(env.velocity),
         _float32(env.quaternion),
@@ -44,6 +64,9 @@ def native_step_env(env, actions: np.ndarray) -> None:
         _uint8(env.terminals),
         _uint8(env.truncations),
         _float32(env.room_bounds),
+        _int32(env.native_task_ids),
+        int(env.native_reward_mode_id),
+        _float32(env.native_previous_error),
         float(env.dt),
     )
 

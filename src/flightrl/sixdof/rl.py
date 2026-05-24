@@ -7,12 +7,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .env import ACTION_DIM
+from .circle import circle_orbit_error_from_arrays
+from .controller import executed_action_for_controller, imitation_target_for_controller, validate_controller
+from .env import ACTION_DIM, quat_to_yaw, wrap_angle
+from .dataset import sample_task_indices, task_probability_vector, teacher_labels
 from .observation import augment_observation
-from .policies import SixDofPolicy, teacher_actions
+from .policies import SixDofPolicy
+from .tasks import append_task_encoding
+from .yaw import yaw_error_for_task_indices
 
 
-REWARD_MODES = ("env", "progress", "progress_clearance")
+REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,14 +85,34 @@ def collect_rollout(
     action_std: float,
     reward_mode: str = "env",
     observation_mode: str = "base",
+    tasks: tuple[str, ...] | None = None,
+    rng: np.random.Generator | None = None,
+    task_probabilities: np.ndarray | None = None,
+    controller: str = "policy",
+    residual_scale: float = 0.0,
 ) -> dict[str, np.ndarray]:
-    observations, actions, log_probs, rewards, dones, values, teacher = [], [], [], [], [], [], []
+    validate_controller(controller)
     obs = env.observations.copy()
     previous_obs = None
     previous_action = np.zeros((env.num_envs, ACTION_DIM), dtype=np.float32)
     fresh = np.ones(env.num_envs, dtype=bool)
-    for _ in range(horizon):
-        model_obs = obs.copy()
+    tasks = tasks or (env.task,)
+    rng = rng or np.random.default_rng(0)
+    task_probabilities = task_probabilities if task_probabilities is not None else task_probability_vector(tasks)
+    task_indices = np.zeros(env.num_envs, dtype=np.int64)
+    first_model_obs = append_task_encoding(obs, task_indices, len(tasks))
+    first_policy_obs = augment_observation(first_model_obs, first_model_obs, previous_action, observation_mode)
+    observations = np.empty((horizon, env.num_envs, first_policy_obs.shape[1]), dtype=np.float32)
+    actions = np.empty((horizon, env.num_envs, ACTION_DIM), dtype=np.float32)
+    executed_actions = np.empty_like(actions)
+    teacher = np.empty_like(actions)
+    log_probs = np.empty((horizon, env.num_envs), dtype=np.float32)
+    rewards = np.empty((horizon, env.num_envs), dtype=np.float32)
+    dones = np.empty((horizon, env.num_envs), dtype=np.float32)
+    values = np.empty((horizon, env.num_envs), dtype=np.float32)
+    for step_idx in range(horizon):
+        task_indices = sample_task_indices(rng, env.num_envs, tasks, task_probabilities)
+        model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
         if previous_obs is None:
             previous_obs = model_obs.copy()
         previous_obs[fresh] = model_obs[fresh]
@@ -95,37 +120,43 @@ def collect_rollout(
         obs_tensor = torch.from_numpy(policy_obs).float()
         with torch.no_grad():
             action, log_prob, _entropy, value = model.act(obs_tensor, action_std)
-        teacher_action = teacher_actions(env, task=env.task).copy()
-        previous_error = position_error(env)
+        teacher_action = teacher_labels(env, tasks, task_indices).copy()
+        previous_error = position_error_for_task_indices(env, tasks, task_indices)
         action_np = action.cpu().numpy()
-        next_obs, reward, terminal, truncation, _info = env.step(action_np)
+        executed_action = executed_action_for_controller(controller, action_np, teacher_action, residual_scale)
+        if hasattr(env, "set_native_context"):
+            env.set_native_context(task_indices=task_indices, tasks=tasks, reward_mode=reward_mode, previous_error=previous_error)
+        next_obs, reward, terminal, truncation, _info = env.step(executed_action)
         done = terminal | truncation
-        observations.append(policy_obs.copy())
-        actions.append(action_np.astype(np.float32))
-        teacher.append(teacher_action)
-        log_probs.append(log_prob.cpu().numpy().astype(np.float32))
-        rewards.append(rollout_reward(env, reward, done, previous_error, action_np, reward_mode))
-        dones.append(done.astype(np.float32))
-        values.append(value.cpu().numpy().astype(np.float32))
+        observations[step_idx] = policy_obs
+        actions[step_idx] = action_np.astype(np.float32)
+        executed_actions[step_idx] = executed_action.astype(np.float32)
+        teacher[step_idx] = imitation_target_for_controller(controller, teacher_action)
+        log_probs[step_idx] = log_prob.cpu().numpy().astype(np.float32)
+        rewards[step_idx] = reward if getattr(env, "use_native_step", False) else rollout_reward(env, reward, done, previous_error, executed_action, reward_mode, tasks=tasks, task_indices=task_indices)
+        dones[step_idx] = done.astype(np.float32)
+        values[step_idx] = value.cpu().numpy().astype(np.float32)
         previous_obs = model_obs.copy()
-        previous_action = action_np.astype(np.float32)
+        previous_action = executed_action.astype(np.float32)
         fresh[:] = False
         obs = env.reset_done(done).copy() if np.any(done) else next_obs.copy()
         if np.any(done):
             previous_action[done.astype(bool)] = 0.0
             fresh = done.astype(bool)
     with torch.no_grad():
-        previous_obs[fresh] = obs[fresh]
-        next_obs = augment_observation(obs, previous_obs, previous_action, observation_mode)
+        model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
+        previous_obs[fresh] = model_obs[fresh]
+        next_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
         next_value = model.critic(torch.from_numpy(next_obs).float()).squeeze(1).cpu().numpy().astype(np.float32)
     return {
-        "observations": np.asarray(observations, dtype=np.float32),
-        "actions": np.asarray(actions, dtype=np.float32),
-        "teacher_actions": np.asarray(teacher, dtype=np.float32),
-        "log_probs": np.asarray(log_probs, dtype=np.float32),
-        "rewards": np.asarray(rewards, dtype=np.float32),
-        "dones": np.asarray(dones, dtype=np.float32),
-        "values": np.asarray(values, dtype=np.float32),
+        "observations": observations,
+        "actions": actions,
+        "executed_actions": executed_actions,
+        "teacher_actions": teacher,
+        "log_probs": log_probs,
+        "rewards": rewards,
+        "dones": dones,
+        "values": values,
         "next_value": next_value,
     }
 
@@ -134,13 +165,40 @@ def position_error(env) -> np.ndarray:
     return np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)
 
 
-def rollout_reward(env, base_reward: np.ndarray, done: np.ndarray, previous_error: np.ndarray, actions: np.ndarray, mode: str) -> np.ndarray:
+def position_error_for_task_indices(env, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
+    errors = np.zeros(env.num_envs, dtype=np.float32)
+    default_error = position_error(env)
+    for index, task in enumerate(tasks):
+        mask = task_indices == index
+        if not np.any(mask):
+            continue
+        errors[mask] = circle_position_error(env)[mask] if task == "circle" else default_error[mask]
+    return errors
+
+
+def circle_position_error(env, target_radius_m: float = 0.75, target_z_m: float = 0.65) -> np.ndarray:
+    return circle_orbit_error_from_arrays(env.position, env.target_position, target_radius_m, target_z_m)
+
+
+def rollout_reward(
+    env,
+    base_reward: np.ndarray,
+    done: np.ndarray,
+    previous_error: np.ndarray,
+    actions: np.ndarray,
+    mode: str,
+    *,
+    tasks: tuple[str, ...] | None = None,
+    task_indices: np.ndarray | None = None,
+) -> np.ndarray:
     if mode == "env":
         return base_reward.copy()
     if mode == "progress":
-        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.25, clearance_weight=1.0)
+        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.25, clearance_weight=1.0, yaw_weight=0.1, tasks=tasks, task_indices=task_indices)
     if mode == "progress_clearance":
-        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5)
+        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.1, tasks=tasks, task_indices=task_indices)
+    if mode == "progress_yaw_clearance":
+        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.6, tasks=tasks, task_indices=task_indices)
     raise ValueError(f"unknown PPO reward mode {mode!r}")
 
 
@@ -152,14 +210,17 @@ def shaped_progress_reward(
     *,
     clearance_threshold: float,
     clearance_weight: float,
+    yaw_weight: float,
+    tasks: tuple[str, ...] | None,
+    task_indices: np.ndarray | None,
 ) -> np.ndarray:
-    current_error = position_error(env)
+    current_error = position_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else position_error(env)
     progress = previous_error - current_error
     speed = np.linalg.norm(env.velocity, axis=1)
-    yaw_error = np.abs(env.observations[:, 16])
+    yaw_error = yaw_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion)))
     clearance_penalty = np.maximum(0.0, clearance_threshold - np.min(env.ranges_m[:, :4], axis=1))
     control = np.linalg.norm(actions, axis=1)
-    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - 0.1 * yaw_error - clearance_weight * clearance_penalty - 0.01 * control
+    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - yaw_weight * yaw_error - clearance_weight * clearance_penalty - 0.01 * control
     reward -= done.astype(np.float32)
     return reward.astype(np.float32)
 

@@ -1,0 +1,128 @@
+[radio]
+uri = "radio://0/80/2M/E7E7E7E7E7"
+cache_dir = "artifacts/cflib_cache"
+
+[safety]
+default_height_m = 0.3
+velocity_m_s = 0.15
+turn_rate_deg_s = 45.0
+turn_angle_deg = 20.0
+hover_s = 2.0
+max_flight_s = 20.0
+requires_manual_confirm = true
+
+[decks]
+expect_flow_deck = true
+expect_multiranger = true
+
+[logging]
+period_ms = 50
+output_dir = "artifacts/crazyflie_logs"
+variables = [
+  "pm.vbat",
+  "pm.vbatMV",
+  "pm.batteryLevel",
+  "pm.state",
+  "pm.chargeCurrent",
+  "pm.extVbat",
+  "pm.extVbatMV",
+  "pm.extCurr",
+  "radio.rssi",
+  "radio.isConnected",
+  "radio.numRxUc",
+  "radio.numRxBc",
+  "supervisor.info",
+  "sys.canfly",
+  "sys.isFlying",
+  "sys.isTumbled",
+  "rpm.m1",
+  "rpm.m2",
+  "rpm.m3",
+  "rpm.m4",
+  "motor.m1",
+  "motor.m2",
+  "motor.m3",
+  "motor.m4",
+  "motor.m1req",
+  "motor.m2req",
+  "motor.m3req",
+  "motor.m4req",
+  "health.motorPass",
+  "health.batteryPass",
+  "health.batterySag",
+  "health.motorTestCount",
+  "health.motorVarXM1",
+  "health.motorVarXM2",
+  "health.motorVarXM3",
+  "health.motorVarXM4",
+  "health.motorVarYM1",
+  "health.motorVarYM2",
+  "health.motorVarYM3",
+  "health.motorVarYM4",
+  "gyro.xRaw",
+  "gyro.yRaw",
+  "gyro.zRaw",
+  "gyro.xVariance",
+  "gyro.yVariance",
+  "gyro.zVariance",
+  "pid_rate.roll_outP",
+  "pid_rate.roll_outI",
+  "pid_rate.roll_outD",
+  "pid_rate.roll_outFF",
+  "pid_rate.pitch_outP",
+  "pid_rate.pitch_outI",
+  "pid_rate.pitch_outD",
+  "pid_rate.pitch_outFF",
+  "pid_rate.yaw_outP",
+  "pid_rate.yaw_outI",
+  "pid_rate.yaw_outD",
+  "pid_rate.yaw_outFF",
+  "pid_attitude.roll_outP",
+  "pid_attitude.roll_outI",
+  "pid_attitude.roll_outD",
+  "pid_attitude.roll_outFF",
+  "pid_attitude.pitch_outP",
+  "pid_attitude.pitch_outI",
+  "pid_attitude.pitch_outD",
+  "pid_attitude.pitch_outFF",
+  "pid_attitude.yaw_outP",
+  "pid_attitude.yaw_outI",
+  "pid_attitude.yaw_outD",
+  "pid_attitude.yaw_outFF",
+  "kalman.varX",
+  "kalman.varY",
+  "kalman.varZ",
+  "kalman.rtFinal",
+]
+
+[logging.variable_types]
+"pm.vbatMV" = "uint16_t"
+"pm.batteryLevel" = "uint8_t"
+"pm.state" = "int8_t"
+"pm.extVbatMV" = "uint16_t"
+"radio.rssi" = "uint8_t"
+"radio.isConnected" = "uint8_t"
+"radio.numRxUc" = "uint16_t"
+"radio.numRxBc" = "uint16_t"
+"supervisor.info" = "uint16_t"
+"sys.canfly" = "uint8_t"
+"sys.isFlying" = "uint8_t"
+"sys.isTumbled" = "uint8_t"
+"rpm.m1" = "uint16_t"
+"rpm.m2" = "uint16_t"
+"rpm.m3" = "uint16_t"
+"rpm.m4" = "uint16_t"
+"motor.m1" = "uint16_t"
+"motor.m2" = "uint16_t"
+"motor.m3" = "uint16_t"
+"motor.m4" = "uint16_t"
+"motor.m1req" = "int32_t"
+"motor.m2req" = "int32_t"
+"motor.m3req" = "int32_t"
+"motor.m4req" = "int32_t"
+"health.motorPass" = "uint8_t"
+"health.batteryPass" = "uint8_t"
+"health.motorTestCount" = "uint16_t"
+"gyro.xRaw" = "int16_t"
+"gyro.yRaw" = "int16_t"
+"gyro.zRaw" = "int16_t"

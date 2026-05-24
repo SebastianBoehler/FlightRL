@@ -55,6 +55,27 @@ def test_crazyflie_motor_bench_dry_run_runs_without_cflib() -> None:
     assert "m4" in result.stdout
 
 
+def test_crazyflie_motor_bench_dry_run_accepts_single_motor_low_power() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/crazyflie_motor_bench.py",
+            "--dry-run",
+            "--motors",
+            "3",
+            "--powers",
+            "2500",
+            "4000",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "m3: powers=[2500, 4000]" in result.stdout
+    assert "m1:" not in result.stdout
+
+
 def test_crazyflie_room_scan_dry_run_runs_without_cflib() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/crazyflie_room_scan.py", "--dry-run"],

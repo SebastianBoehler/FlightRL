@@ -66,3 +66,34 @@ def test_training_throughput_cli_smoke(tmp_path: Path) -> None:
     assert report["records"][0]["samples"] == 1024
     assert report["records"][0]["total_sps"] > 0.0
     assert output.with_suffix(".md").exists()
+
+
+def test_training_throughput_cli_supports_residual_controller(tmp_path: Path) -> None:
+    output = tmp_path / "residual_throughput.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "benchmark_sixdof_training_throughput.py"),
+            "--variants",
+            "smoke_64x16_h64",
+            "--output",
+            str(output),
+            "--task",
+            "circle",
+            "--controller",
+            "teacher_residual",
+            "--residual-scale",
+            "0.05",
+            "--no-warmup",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads(output.read_text())
+
+    assert report["controller"] == "teacher_residual"
+    assert report["residual_scale"] == 0.05
+    assert report["tasks"] == ["circle"]
+    assert report["records"][0]["samples"] == 1024

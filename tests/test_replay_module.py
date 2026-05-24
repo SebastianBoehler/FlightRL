@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from flightrl.replay import fit_linear_calibration, fit_signal
+from flightrl.replay import fit_linear_calibration, fit_signal, signal_error
 
 
 def test_fit_signal_recovers_scale_and_bias() -> None:
@@ -30,3 +30,12 @@ def test_fit_linear_calibration_uses_aligned_valid_range_samples() -> None:
     assert fit["samples"] == 2
     assert fit["scale"] == 2.0
     assert abs(fit["bias"]) < 1e-5
+
+
+def test_signal_error_wraps_yaw_degrees() -> None:
+    real = np.asarray([350.0, 10.0, -179.0], dtype=np.float32)
+    sim = np.asarray([10.0, 350.0, 179.0], dtype=np.float32)
+
+    error = signal_error("stabilizer.yaw", real, sim)
+
+    assert np.allclose(error, [20.0, -20.0, -2.0])

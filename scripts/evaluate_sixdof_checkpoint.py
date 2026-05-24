@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from flightrl.sixdof import checkpoint_tasks, evaluate_policy, evaluate_teacher, gate_status, load_policy_from_checkpoint
+from flightrl.sixdof import checkpoint_tasks, evaluate_checkpoint_policy, evaluate_teacher, gate_status
 from flightrl.sixdof.tasks import parse_task_spec
 
 
@@ -26,31 +26,31 @@ def main() -> None:
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
     parser.add_argument("--max-yaw-error-rad", type=float, default=None)
     parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
+    parser.add_argument("--max-settled-yaw-p95-error-rad", type=float, default=None)
+    parser.add_argument("--metric-start-step", type=int, default=0)
     parser.add_argument("--fail-on-gate", action="store_true")
     args = parser.parse_args()
 
     if args.teacher:
         checkpoint_path = None
         tasks = parse_task_spec(args.task or "position_yaw")
-        metrics = evaluate_teacher(tasks, seed=args.seed, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile)
+        metrics = evaluate_teacher(tasks, seed=args.seed, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile, metric_start_step=args.metric_start_step)
     else:
         if args.checkpoint is None:
             raise SystemExit("--checkpoint is required unless --teacher is set")
         checkpoint_path = Path(args.checkpoint)
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        model = load_policy_from_checkpoint(checkpoint)
         checkpoint_task_list = checkpoint_tasks(checkpoint)
         tasks = parse_task_spec(args.task) if args.task else checkpoint_task_list
-        metrics = evaluate_policy(
-            model,
-            checkpoint_task_list,
+        metrics = evaluate_checkpoint_policy(
+            checkpoint,
             seed=args.seed,
             steps=args.steps,
             num_envs=args.num_envs,
             use_native_step=args.native_step,
             eval_tasks=tasks,
             reset_profile=args.reset_profile,
-            observation_mode=checkpoint.get("observation_mode", "base"),
+            metric_start_step=args.metric_start_step,
         )
     gate = gate_status(
         metrics,
@@ -59,10 +59,11 @@ def main() -> None:
         max_position_error_m=args.max_position_error_m,
         max_yaw_error_rad=args.max_yaw_error_rad,
         max_yaw_p95_error_rad=args.max_yaw_p95_error_rad,
+        max_settled_yaw_p95_error_rad=args.max_settled_yaw_p95_error_rad,
     )
     report = {
         "checkpoint": str(checkpoint_path) if checkpoint_path else None,
-        "controller": "teacher" if args.teacher else "checkpoint",
+        "controller": "teacher" if args.teacher else checkpoint.get("controller", "checkpoint"),
         "tasks": list(tasks),
         "steps": args.steps,
         "num_envs": args.num_envs,
@@ -74,6 +75,8 @@ def main() -> None:
             "max_position_error_m": args.max_position_error_m,
             "max_yaw_error_rad": args.max_yaw_error_rad,
             "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,
+            "max_settled_yaw_p95_error_rad": args.max_settled_yaw_p95_error_rad,
+            "metric_start_step": args.metric_start_step,
         },
         "gate": gate,
         "metrics": metrics,

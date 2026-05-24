@@ -7,7 +7,7 @@ import shutil
 from .puffer4_config import Puffer4ExportSettings, render_puffer4_ini
 
 
-SIXDOF_NATIVE_FILES = ("native_sixdof.c", "native_sixdof.h")
+SIXDOF_NATIVE_FILES = ("native_sixdof.c", "native_sixdof.h", "native_sixdof_context.inc")
 
 
 @dataclass(slots=True)
@@ -68,12 +68,6 @@ static void c_close(FlightRLSixDofEnv* env);
 #define Env FlightRLSixDofEnv
 #include "vecenv.h"
 
-static float rnd(Env* env, float lo, float hi) {
-    env->rng = 1664525u * env->rng + 1013904223u;
-    float unit = (float)(env->rng >> 8) / 16777215.0f;
-    return lo + unit * (hi - lo);
-}
-
 void my_init(Env* env, Dict* kwargs) {
     env->num_agents = 1;
     env->dt = (float)dict_get(kwargs, "dt")->value;
@@ -93,35 +87,10 @@ void my_log(Log* log, Dict* out) {
     dict_set(out, "reward", log->reward);
 }
 
-static void fill_initial_observation(Env* env) {
-    float zero_action[4] = {0};
-    float reward = 0.0f;
-    int zero_step = -1;
-    flightrl_sixdof_step_env_batch(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
-        env->target_position, &env->target_yaw, env->previous_action, &zero_step, zero_action,
-        env->observations, &reward, &env->terminal, &env->truncation, env->room, 1, 0.0f);
-    env->step_count = 0;
-}
-
 static void c_reset(Env* env) {
-    env->position[0] = rnd(env, -0.8f, 0.8f);
-    env->position[1] = rnd(env, -0.8f, 0.8f);
-    env->position[2] = rnd(env, 0.35f, 0.9f);
-    memset(env->velocity, 0, sizeof(env->velocity));
-    memset(env->body_rates, 0, sizeof(env->body_rates));
-    float yaw = rnd(env, -3.14159265f, 3.14159265f);
-    env->quaternion[0] = cosf(0.5f * yaw);
-    env->quaternion[1] = 0.0f;
-    env->quaternion[2] = 0.0f;
-    env->quaternion[3] = sinf(0.5f * yaw);
-    env->target_position[0] = rnd(env, -1.0f, 1.0f);
-    env->target_position[1] = rnd(env, -1.0f, 1.0f);
-    env->target_position[2] = rnd(env, 0.45f, 0.9f);
-    env->target_yaw = rnd(env, -3.14159265f, 3.14159265f);
-    memset(env->previous_action, 0, sizeof(env->previous_action));
-    env->step_count = 0;
-    env->terminal = env->truncation = 0;
-    fill_initial_observation(env);
+    env->rng = flightrl_sixdof_reset_one(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
+        env->target_position, &env->target_yaw, env->previous_action, &env->step_count,
+        env->observations, env->rewards, &env->terminal, &env->truncation, env->room, env->rng);
 }
 
 static void c_step(Env* env) {

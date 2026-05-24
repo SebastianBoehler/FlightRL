@@ -30,6 +30,16 @@ def test_load_detailed_hardware_config_keeps_log_variable_types() -> None:
     assert config.logging.variable_types["motor.m1req"] == "int32_t"
 
 
+def test_load_low_level_hardware_config_stays_under_cflib_block_budget() -> None:
+    config = load_hardware_config(ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless_low_level.toml")
+
+    assert len(config.logging.variables) <= 80
+    assert "rpm.m3" in config.logging.variables
+    assert "health.motorVarXM3" in config.logging.variables
+    assert "pid_rate.roll_outP" in config.logging.variables
+    assert config.logging.variable_types["rpm.m3"] == "uint16_t"
+
+
 def test_invalid_demo_height_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "bad.toml"
     path.write_text(

@@ -188,7 +188,7 @@ def aligned_signal_metrics(real_rows, sim_rows, real_t: np.ndarray, sim_t: np.nd
     if arrays is None:
         return {"samples": 0}
     real_aligned, sim_aligned = arrays
-    error = sim_aligned - real_aligned
+    error = signal_error(key, real_aligned, sim_aligned)
     return {
         "samples": int(len(error)),
         "rmse": rmse(error),
@@ -236,6 +236,13 @@ def valid_signal_mask(key: str, real_values: np.ndarray, sim_values: np.ndarray)
     if key.startswith("range."):
         return (real_values > 20.0) & (real_values < 4000.0) & (sim_values > 20.0) & (sim_values < 4000.0)
     return np.ones(real_values.shape, dtype=bool)
+
+
+def signal_error(key: str, real_values: np.ndarray, sim_values: np.ndarray) -> np.ndarray:
+    error = sim_values - real_values
+    if key == "stabilizer.yaw":
+        return ((error + 180.0) % 360.0) - 180.0
+    return error
 
 
 def relative_time(rows: list[dict[str, str]]) -> np.ndarray:

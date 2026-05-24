@@ -83,6 +83,8 @@ def history_entry(epoch: int, train_loss: float, val_loss: float, eval_metrics: 
     entry = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss}
     if eval_metrics is not None:
         entry["eval_position_error_m"] = eval_metrics["mean_position_error_m"]
+        entry["eval_yaw_error_rad"] = eval_metrics.get("mean_yaw_error_rad")
+        entry["eval_yaw_error_p95_rad"] = eval_metrics.get("yaw_error_p95_rad")
         entry["eval_completed_fraction"] = eval_metrics["mean_completed_fraction"]
         entry["eval_clearance_p01_m"] = eval_metrics.get("clearance_p01_m", eval_metrics["min_clearance_m"])
     return entry
@@ -97,6 +99,9 @@ def checkpoint_score(checkpoint: dict, config: OfflineTrainConfig) -> tuple:
         -metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
         -metrics.get("clearance_p01_m", metrics["min_clearance_m"]),
         metrics["mean_position_error_m"],
+        metrics.get("mean_yaw_error_rad", 0.0),
+        metrics.get("yaw_error_p95_rad", metrics.get("mean_yaw_error_rad", 0.0)),
+        metrics.get("action_saturation_fraction", 0.0),
         checkpoint["val_loss"],
     )
 

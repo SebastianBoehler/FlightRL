@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from flightrl.sixdof import checkpoint_tasks, evaluate_policy, evaluate_teacher, gate_status, load_policy_from_checkpoint
+from flightrl.sixdof import checkpoint_tasks, evaluate_checkpoint_policy, evaluate_teacher, gate_status
 from flightrl.sixdof.tasks import parse_task_spec
 
 
@@ -25,6 +25,8 @@ def main() -> None:
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
     parser.add_argument("--max-yaw-error-rad", type=float, default=None)
     parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
+    parser.add_argument("--max-settled-yaw-p95-error-rad", type=float, default=None)
+    parser.add_argument("--metric-start-step", type=int, default=0)
     parser.add_argument("--fail-on-gate", action="store_true")
     args = parser.parse_args()
 
@@ -37,11 +39,12 @@ def main() -> None:
         "max_position_error_m": args.max_position_error_m,
         "max_yaw_error_rad": args.max_yaw_error_rad,
         "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,
+        "max_settled_yaw_p95_error_rad": args.max_settled_yaw_p95_error_rad,
     }
     records = []
     for idx, (label, task_spec) in enumerate(args.teacher):
         tasks = parse_task_spec(task_spec)
-        metrics = evaluate_teacher(tasks, seed=args.seed + idx, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile)
+        metrics = evaluate_teacher(tasks, seed=args.seed + idx, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile, metric_start_step=args.metric_start_step)
         records.append(build_record(label, "teacher", None, tasks, metrics, thresholds))
     offset = len(records)
     for idx, (label, checkpoint_path, task_spec) in enumerate(args.candidate):
@@ -76,19 +79,17 @@ def evaluate_candidate(label: str, checkpoint_path: Path, task_spec: str, args: 
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     policy_tasks = checkpoint_tasks(checkpoint)
     tasks = policy_tasks if task_spec == "checkpoint" else parse_task_spec(task_spec)
-    model = load_policy_from_checkpoint(checkpoint)
-    metrics = evaluate_policy(
-        model,
-        policy_tasks,
+    metrics = evaluate_checkpoint_policy(
+        checkpoint,
         seed=seed,
         steps=args.steps,
         num_envs=args.num_envs,
         use_native_step=args.native_step,
         eval_tasks=tasks,
         reset_profile=args.reset_profile,
-        observation_mode=checkpoint.get("observation_mode", "base"),
+        metric_start_step=args.metric_start_step,
     )
-    return build_record(label, "checkpoint", checkpoint_path, tasks, metrics, thresholds)
+    return build_record(label, checkpoint.get("controller", "checkpoint"), checkpoint_path, tasks, metrics, thresholds)
 
 
 def build_record(label: str, controller: str, checkpoint: Path | None, tasks: tuple[str, ...], metrics: dict, thresholds: dict) -> dict:
@@ -118,7 +119,7 @@ def normalize_task_metrics(metrics: dict) -> dict:
 def best_checkpoint_by_task(records: list[dict]) -> dict[str, dict]:
     best: dict[str, dict] = {}
     for record in records:
-        if record["controller"] != "checkpoint" or len(record["tasks"]) != 1:
+        if record["controller"] == "teacher" or len(record["tasks"]) != 1:
             continue
         task = record["tasks"][0]
         candidate = compact_candidate(record)
@@ -141,6 +142,7 @@ def compact_candidate(record: dict) -> dict:
         "mean_completed_fraction": metrics["mean_completed_fraction"],
         "mean_survival_fraction": metrics.get("mean_survival_fraction", metrics["mean_completed_fraction"]),
         "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
+        "settled_yaw_error_p95_rad": metrics.get("settled_yaw_error_p95_rad"),
     }
 
 
@@ -158,8 +160,8 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# 6-DoF Validation Suite",
         "",
-        "| label | controller | tasks | passed | failures | pos err m | yaw err rad | clearance p01 m | completed | survival | action sat | teacher L2 |",
-        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| label | controller | tasks | passed | failures | pos err m | yaw err rad | yaw p95 rad | settled yaw p95 | clearance p01 m | completed | survival | action sat | teacher L2 |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for record in report["records"]:
         metrics = record["metrics"]
@@ -168,6 +170,8 @@ def render_markdown(report: dict) -> str:
             f"| {record['label']} | {record['controller']} | {', '.join(record['tasks'])} | {gate['passed']} | "
             f"{', '.join(gate['failures']) or 'none'} | {metrics['mean_position_error_m']:.4f} | "
             f"{metrics.get('mean_yaw_error_rad', 0.0):.4f} | "
+            f"{metrics.get('yaw_error_p95_rad', 0.0):.4f} | "
+            f"{metrics.get('settled_yaw_error_p95_rad', 0.0):.4f} | "
             f"{metrics.get('clearance_p01_m', metrics['min_clearance_m']):.4f} | "
             f"{metrics['mean_completed_fraction']:.4f} | "
             f"{metrics.get('mean_survival_fraction', metrics['mean_completed_fraction']):.4f} | "

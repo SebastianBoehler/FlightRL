@@ -40,6 +40,8 @@ def main() -> None:
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
+    parser.add_argument("--max-yaw-error-rad", type=float, default=None)
+    parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
     parser.add_argument("--task-weight", action="append", default=[], metavar="TASK=WEIGHT", help="Per-task sample weight for offline retraining. Repeatable.")
     parser.add_argument("--task-probability", action="append", default=[], metavar="TASK=WEIGHT", help="Relative DAgger rollout sampling weight. Unspecified tasks keep weight 1.0.")
     args = parser.parse_args()
@@ -125,6 +127,8 @@ def evaluate_checkpoint(checkpoint: dict, checkpoint_path: Path, args, *, seed: 
         min_clearance_m=args.min_clearance_m,
         min_completed_fraction=args.min_completed_fraction,
         max_position_error_m=args.max_position_error_m,
+        max_yaw_error_rad=args.max_yaw_error_rad,
+        max_yaw_p95_error_rad=args.max_yaw_p95_error_rad,
     )
     return {
         "checkpoint": str(checkpoint_path),
@@ -148,6 +152,8 @@ def select_best(reports: list[dict]) -> dict | None:
             0 if report["gate"]["passed"] else 1,
             -report["metrics"].get("mean_survival_fraction", report["metrics"]["mean_completed_fraction"]),
             report["metrics"]["mean_position_error_m"],
+            report["metrics"].get("mean_yaw_error_rad", 0.0),
+            report["metrics"].get("yaw_error_p95_rad", 0.0),
             -report["metrics"]["mean_completed_fraction"],
         ),
     )

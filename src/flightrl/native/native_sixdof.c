@@ -1,5 +1,5 @@
 #include <math.h>
-
+#include <stdint.h>
 #include "native_sixdof.h"
 
 #define SIXDOF_ROOM_X_MIN -2.0f
@@ -13,11 +13,14 @@
 #define SIXDOF_DRAG 0.10f
 #define SIXDOF_RATE_TAU 0.045f
 #define SIXDOF_OBS_DIM 28
+#define SIXDOF_TASK_CIRCLE 3
+#define SIXDOF_REWARD_PROGRESS 1
+#define SIXDOF_REWARD_PROGRESS_CLEARANCE 2
+#define SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE 3
 
 static const float DEFAULT_ROOM[7] = {
     SIXDOF_ROOM_X_MIN, SIXDOF_ROOM_X_MAX, SIXDOF_ROOM_Y_MIN, SIXDOF_ROOM_Y_MAX, SIXDOF_ROOM_Z_MIN, SIXDOF_ROOM_Z_MAX, 4.0f
 };
-
 static float clampf(float value, float lo, float hi) {
     return value < lo ? lo : (value > hi ? hi : value);
 }
@@ -135,6 +138,34 @@ static float wrap_angle(float value) {
     return value;
 }
 
+static float circle_tangent_yaw(const float *p, const float *target) {
+    float rx = p[0] - target[0];
+    float ry = p[1] - target[1];
+    float radius = sqrtf(rx * rx + ry * ry);
+    if (radius < 0.2f) {
+        radius = 0.2f;
+    }
+    return atan2f(rx / radius, -ry / radius);
+}
+
+static float task_yaw_target(const float *p, const float *target, float target_yaw, int task_id) {
+    return task_id == SIXDOF_TASK_CIRCLE ? circle_tangent_yaw(p, target) : target_yaw;
+}
+
+static float norm3(const float *values);
+
+static float task_position_error(const float *p, const float *target, int task_id) {
+    if (task_id == SIXDOF_TASK_CIRCLE) {
+        float dx = p[0] - target[0];
+        float dy = p[1] - target[1];
+        float radius_error = sqrtf(dx * dx + dy * dy) - 0.75f;
+        float z_error = p[2] - 0.65f;
+        return sqrtf(radius_error * radius_error + z_error * z_error);
+    }
+    float err[3] = {target[0] - p[0], target[1] - p[1], target[2] - p[2]};
+    return norm3(err);
+}
+
 static unsigned char in_room(const float *p, const float *room) {
     const float *r = room_or_default(room);
     const float margin = 0.03f;
@@ -156,6 +187,9 @@ static void assemble_one(
     float target_yaw,
     const float *action,
     int step_count,
+    int task_id,
+    int reward_mode,
+    float previous_error,
     float *obs,
     float *reward,
     unsigned char *terminal,
@@ -163,7 +197,8 @@ static void assemble_one(
     const float *room
 ) {
     float pos_error[3] = {target[0] - p[0], target[1] - p[1], target[2] - p[2]};
-    float yaw_error = wrap_angle(target_yaw - yaw_from_quat(q));
+    float effective_yaw = task_yaw_target(p, target, target_yaw, task_id);
+    float yaw_error = wrap_angle(effective_yaw - yaw_from_quat(q));
     float min_clearance = ranges[0];
     for (int i = 1; i < 4; ++i) {
         if (ranges[i] < min_clearance) {
@@ -172,10 +207,19 @@ static void assemble_one(
     }
     float clearance_penalty = fmaxf(0.0f, 0.35f - min_clearance);
     float action_norm = sqrtf(action[0] * action[0] + action[1] * action[1] + action[2] * action[2] + action[3] * action[3]);
+    float current_error = task_position_error(p, target, task_id);
     *reward = 1.0f - norm3(pos_error) - 0.15f * norm3(v) - 0.1f * fabsf(yaw_error) - 1.5f * clearance_penalty - 0.02f * action_norm;
     *terminal = in_room(p, room) ? 0 : 1;
     *truncation = step_count >= 800 ? 1 : 0;
-
+    if (reward_mode >= SIXDOF_REWARD_PROGRESS && reward_mode <= SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE) {
+        float threshold = reward_mode == SIXDOF_REWARD_PROGRESS ? 0.25f : 0.45f;
+        float clearance_weight = reward_mode == SIXDOF_REWARD_PROGRESS ? 1.0f : 2.5f;
+        float yaw_weight = reward_mode == SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE ? 0.6f : 0.1f;
+        float progress_clearance = fmaxf(0.0f, threshold - min_clearance);
+        *reward = 0.2f + 3.0f * (previous_error - current_error) - 0.05f * current_error - 0.02f * norm3(v) -
+            yaw_weight * fabsf(yaw_error) - clearance_weight * progress_clearance - 0.01f * action_norm -
+            ((*terminal || *truncation) ? 1.0f : 0.0f);
+    }
     obs[0] = pos_error[0] / 2.0f;
     obs[1] = pos_error[1] / 2.0f;
     obs[2] = pos_error[2] / 1.5f;
@@ -208,8 +252,7 @@ void flightrl_sixdof_step_batch(float *position, float *velocity, float *quatern
 }
 
 void flightrl_sixdof_step_env_batch(
-    float *position,
-    float *velocity,
+    float *position, float *velocity,
     float *quaternion,
     float *body_rates,
     float *ranges,
@@ -243,6 +286,9 @@ void flightrl_sixdof_step_env_batch(
             target_yaw[env],
             action,
             step_count[env],
+            0,
+            0,
+            0.0f,
             observations + env * SIXDOF_OBS_DIM,
             rewards + env,
             terminals + env,
@@ -251,3 +297,4 @@ void flightrl_sixdof_step_env_batch(
         );
     }
 }
+#include "native_sixdof_context.inc"
