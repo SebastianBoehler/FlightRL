@@ -21,6 +21,15 @@ def test_load_crazyflie_hardware_config() -> None:
     assert config.decks.expect_multiranger is True
 
 
+def test_load_detailed_hardware_config_keeps_log_variable_types() -> None:
+    config = load_hardware_config(ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless_detailed.toml")
+
+    assert "motor.m1" in config.logging.variables
+    assert "controller.cmd_thrust" in config.logging.variables
+    assert config.logging.variable_types["motor.m1"] == "uint16_t"
+    assert config.logging.variable_types["motor.m1req"] == "int32_t"
+
+
 def test_invalid_demo_height_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "bad.toml"
     path.write_text(

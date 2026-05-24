@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output", type=Path, default=Path("artifacts/crazyflie_logs/motor_bench.csv"))
     parser.add_argument("--powers", type=int, nargs="+", default=[14000, 20000, 26000, 32000])
+    parser.add_argument("--motors", type=int, nargs="+", default=[1, 2, 3, 4], choices=[1, 2, 3, 4])
     parser.add_argument("--confirm-props-off", action="store_true", help="required for real motor output")
     parser.add_argument("--dry-run", action="store_true", help="print planned sequence without touching cflib")
     args = parser.parse_args(argv)
@@ -28,13 +29,13 @@ def main(argv: list[str] | None = None) -> int:
     config = load_hardware_config(args.config)
     if args.dry_run:
         print(f"dry_run motor bench: uri={config.radio.uri}")
-        for motor in range(1, 5):
+        for motor in args.motors:
             print(f"m{motor}: powers={args.powers}")
         return 0
     if not args.confirm_props_off:
         parser.error("--confirm-props-off is required for real motor output")
 
-    rows = run_bench(config, args.powers)
+    rows = run_bench(config, args.powers, args.motors)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["motor", "power", "rpm", "motor_output", "motor_requested", "vbat"])
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def run_bench(config, powers: list[int]) -> list[dict[str, object]]:
+def run_bench(config, powers: list[int], motors: list[int]) -> list[dict[str, object]]:
     modules = require_cflib()
     rows: list[dict[str, object]] = []
     with sync_crazyflie_context(config, modules) as scf:
@@ -52,7 +53,7 @@ def run_bench(config, powers: list[int]) -> list[dict[str, object]]:
         try:
             _zero_all(cf)
             _set_param(cf, "motorPowerSet.enable", 1)
-            for motor in range(1, 5):
+            for motor in motors:
                 rows.extend(_run_motor(cf, scf, motor, powers))
         finally:
             _zero_all(cf)
@@ -64,7 +65,11 @@ def run_bench(config, powers: list[int]) -> list[dict[str, object]]:
 def _run_motor(cf, scf, motor: int, powers: list[int]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     logconf = LogConfig(name=f"Motor{motor}", period_in_ms=20)
-    for variable in [f"rpm.m{motor}", f"motor.m{motor}", f"motor.m{motor}req", "pm.vbat"]:
+    variables = _available_variables(cf, [f"rpm.m{motor}", f"motor.m{motor}", f"motor.m{motor}req", "pm.vbat"])
+    if not variables:
+        raise RuntimeError("no motor bench log variables are available in the Crazyflie TOC")
+    print(f"m{motor}: logging {variables}")
+    for variable in variables:
         logconf.add_variable(variable)
     with SyncLogger(scf, logconf) as logger:
         for power in powers:
@@ -96,6 +101,20 @@ def _collect_latest(logger, seconds: float) -> dict:
 def _set_param(cf, name: str, value: int) -> None:
     cf.param.set_value(name, str(value))
     sleep(0.05)
+
+
+def _available_variables(cf, variables: list[str]) -> list[str]:
+    toc = getattr(getattr(getattr(cf, "log", None), "toc", None), "toc", None)
+    if not isinstance(toc, dict):
+        return variables
+    available = []
+    for variable in variables:
+        group, _, name = variable.partition(".")
+        if group in toc and name in toc[group]:
+            available.append(variable)
+        else:
+            print(f"skipping unavailable log variable: {variable}")
+    return available
 
 
 def _zero_all(cf) -> None:

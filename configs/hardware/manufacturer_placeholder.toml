@@ -3,6 +3,10 @@ dt = 0.02
 action_mode = "motor_quad"
 reset_mode = "deterministic"
 
+[sim2real]
+measured = false
+source = "manufacturer_priors"
+
 [drone]
 mass = 1.15
 inertia = 0.09

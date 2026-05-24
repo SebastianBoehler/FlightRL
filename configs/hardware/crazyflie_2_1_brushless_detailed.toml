@@ -1,0 +1,98 @@
+[radio]
+uri = "radio://0/80/2M/E7E7E7E7E7"
+cache_dir = "artifacts/cflib_cache"
+
+[safety]
+default_height_m = 0.3
+velocity_m_s = 0.15
+turn_rate_deg_s = 45.0
+turn_angle_deg = 20.0
+hover_s = 2.0
+max_flight_s = 20.0
+requires_manual_confirm = true
+
+[decks]
+expect_flow_deck = true
+expect_multiranger = true
+
+[logging]
+period_ms = 50
+output_dir = "artifacts/crazyflie_logs"
+variables = [
+  "stateEstimate.x",
+  "stateEstimate.y",
+  "stateEstimate.z",
+  "stateEstimate.vx",
+  "stateEstimate.vy",
+  "stateEstimate.vz",
+  "stateEstimate.roll",
+  "stateEstimate.pitch",
+  "stateEstimate.yaw",
+  "stateEstimate.qx",
+  "stateEstimate.qy",
+  "stateEstimate.qz",
+  "stateEstimate.qw",
+  "acc.x",
+  "acc.y",
+  "acc.z",
+  "gyro.x",
+  "gyro.y",
+  "gyro.z",
+  "stabilizer.thrust",
+  "stabilizer.intToOut",
+  "controller.cmd_thrust",
+  "controller.cmd_roll",
+  "controller.cmd_pitch",
+  "controller.cmd_yaw",
+  "controller.actuatorThrust",
+  "ctrltarget.x",
+  "ctrltarget.y",
+  "ctrltarget.z",
+  "ctrltarget.vx",
+  "ctrltarget.vy",
+  "ctrltarget.vz",
+  "ctrltarget.roll",
+  "ctrltarget.pitch",
+  "ctrltarget.yaw",
+  "ctrltarget.thrust",
+  "ctrltarget.mode_x",
+  "ctrltarget.mode_y",
+  "ctrltarget.mode_z",
+  "ctrltarget.mode_roll",
+  "ctrltarget.mode_pitch",
+  "ctrltarget.mode_yaw",
+  "ctrltarget.mode_quat",
+  "motor.m1",
+  "motor.m2",
+  "motor.m3",
+  "motor.m4",
+  "motor.m1req",
+  "motor.m2req",
+  "motor.m3req",
+  "motor.m4req",
+  "pm.vbat",
+  "range.front",
+  "range.back",
+  "range.left",
+  "range.right",
+  "range.up",
+  "range.zrange",
+]
+
+[logging.variable_types]
+"stabilizer.intToOut" = "uint32_t"
+"ctrltarget.mode_x" = "uint8_t"
+"ctrltarget.mode_y" = "uint8_t"
+"ctrltarget.mode_z" = "uint8_t"
+"ctrltarget.mode_roll" = "uint8_t"
+"ctrltarget.mode_pitch" = "uint8_t"
+"ctrltarget.mode_yaw" = "uint8_t"
+"ctrltarget.mode_quat" = "uint8_t"
+"motor.m1" = "uint16_t"
+"motor.m2" = "uint16_t"
+"motor.m3" = "uint16_t"
+"motor.m4" = "uint16_t"
+"motor.m1req" = "int32_t"
+"motor.m2req" = "int32_t"
+"motor.m3req" = "int32_t"
+"motor.m4req" = "int32_t"

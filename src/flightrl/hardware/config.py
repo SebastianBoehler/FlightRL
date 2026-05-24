@@ -62,6 +62,7 @@ class CrazyflieLoggingConfig:
     period_ms: int = 50
     output_dir: str = "artifacts/crazyflie_logs"
     variables: tuple[str, ...] = DEFAULT_LOG_VARIABLES
+    variable_types: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -109,6 +110,8 @@ def _load_logging(raw: dict[str, Any]) -> CrazyflieLoggingConfig:
     data = dict(raw)
     if "variables" in data:
         data["variables"] = tuple(str(value) for value in data["variables"])
+    if "variable_types" in data:
+        data["variable_types"] = {str(key): str(value) for key, value in data["variable_types"].items()}
     return CrazyflieLoggingConfig(**data)
 
 

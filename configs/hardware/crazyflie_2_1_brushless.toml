@@ -40,4 +40,5 @@ variables = [
   "range.left",
   "range.right",
   "range.up",
+  "range.zrange",
 ]

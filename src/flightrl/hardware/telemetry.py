@@ -49,6 +49,7 @@ class TelemetryCsvWriter:
 def build_log_configs(modules, config: CrazyflieHardwareConfig):
     configs = []
     variables = tuple(config.logging.variables)
+    variable_types = getattr(config.logging, "variable_types", {})
     for index in range(0, len(variables), MAX_VARIABLES_PER_LOG_BLOCK):
         chunk = variables[index : index + MAX_VARIABLES_PER_LOG_BLOCK]
         log_config = modules.log_config_cls(
@@ -56,23 +57,51 @@ def build_log_configs(modules, config: CrazyflieHardwareConfig):
             period_in_ms=config.logging.period_ms,
         )
         for variable in chunk:
-            log_config.add_variable(variable, "float")
+            log_config.add_variable(variable, variable_types.get(variable, "float"))
         configs.append(log_config)
     return configs
 
 
 def write_sync_log(scf, modules, config: CrazyflieHardwareConfig, output_path: str | Path, duration_s: float) -> int:
-    log_configs = build_log_configs(modules, config)
+    variables = available_log_variables(scf, tuple(config.logging.variables))
+    log_configs = build_log_configs(modules, _with_log_variables(config, variables))
     deadline = time() + duration_s
+    latest: dict[str, object] = {}
     count = 0
-    with TelemetryCsvWriter(output_path, variables=config.logging.variables) as writer:
+    with TelemetryCsvWriter(output_path, variables=variables) as writer:
         with modules.sync_logger_cls(scf, log_configs) as logger:
             for crazyflie_time_ms, values, _logconf in logger:
-                writer.write_sample(TelemetrySample(time(), int(crazyflie_time_ms), values))
-                count += 1
+                latest.update(values)
+                if all(variable in latest for variable in variables):
+                    writer.write_sample(TelemetrySample(time(), int(crazyflie_time_ms), latest.copy()))
+                    count += 1
                 if time() >= deadline:
                     break
     return count
+
+
+def available_log_variables(scf, variables: Sequence[str]) -> tuple[str, ...]:
+    toc = getattr(getattr(getattr(getattr(scf, "cf", scf), "log", None), "toc", None), "toc", None)
+    if not isinstance(toc, dict):
+        return tuple(variables)
+    available: list[str] = []
+    for variable in variables:
+        group, _, name = variable.partition(".")
+        if group in toc and name in toc[group]:
+            available.append(variable)
+    return tuple(available)
+
+
+def _with_log_variables(config: CrazyflieHardwareConfig, variables: tuple[str, ...]):
+    from dataclasses import replace
+    from dataclasses import is_dataclass
+    from types import SimpleNamespace
+
+    if is_dataclass(config) and is_dataclass(config.logging):
+        return replace(config, logging=replace(config.logging, variables=variables))
+    logging = SimpleNamespace(**vars(config.logging))
+    logging.variables = variables
+    return SimpleNamespace(**{**vars(config), "logging": logging})
 
 
 def default_log_path(config: CrazyflieHardwareConfig, *, prefix: str = "flight") -> Path:

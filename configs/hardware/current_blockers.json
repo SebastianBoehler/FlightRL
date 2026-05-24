@@ -1,0 +1,9 @@
+{
+  "blockers": [
+    "m3_motor_issue"
+  ],
+  "notes": [
+    "M3 motor/rotor fault is unresolved; do not treat calibration, replay, or deployment evidence as hardware-transfer ready until repaired and rebenchmarked."
+  ],
+  "updated": "2026-05-20"
+}
