@@ -44,6 +44,7 @@ Budget note:
 - Add battery voltage scaling and actuator saturation.
 - Add IMU bias/noise, optical-flow noise, range noise, latency, and packet loss.
 - Make domain randomization operate on measured hardware parameters.
+- Use the optional MuJoCo backend as a physics-reference lane for rigid-body/contact checks, then port only validated fast-path effects into the native C/Ocean env for sweep-scale training.
 
 ### Phase 3: Train Stabilization And Command Following
 

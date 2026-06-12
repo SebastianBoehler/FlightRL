@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+
+from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_mujoco_backend_shapes_when_available() -> None:
+    if not is_mujoco_available():
+        pytest.skip("MuJoCo optional dependency is not installed")
+    env = MuJoCoCrazyflieEnv(num_envs=2, seed=4)
+    obs, _ = env.reset(seed=4)
+    assert obs.shape == (2, 28)
+    actions = np.zeros((2, 4), dtype=np.float32)
+    next_obs, rewards, terminals, truncations, _ = env.step(actions)
+    assert next_obs.shape == obs.shape
+    assert rewards.shape == (2,)
+    assert terminals.shape == (2,)
+    assert truncations.shape == (2,)
+    assert np.isfinite(next_obs).all()
+
+
+def test_mujoco_benchmark_writes_report(tmp_path: Path) -> None:
+    output = tmp_path / "mujoco_bench.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "benchmark_mujoco_sixdof.py"),
+            "--env-counts",
+            "1",
+            "--steps",
+            "2",
+            "--output",
+            str(output),
+            "--allow-missing-mujoco",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads(output.read_text())
+    assert report["status"] in {"ok", "missing_mujoco"}
+    if report["status"] == "ok":
+        assert report["results"][0]["num_envs"] == 1
+        assert report["results"][0]["mujoco_sps"] > 0.0
+    assert output.with_suffix(".md").exists()

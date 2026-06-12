@@ -24,6 +24,9 @@ dev = [
 hardware = [
   "cflib>=0.1.32,<0.2",
 ]
+mujoco = [
+  "mujoco>=3.2",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -212,6 +212,15 @@ Native 6-DoF stepping benchmark:
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
 ```
 
+Optional MuJoCo backend benchmark:
+
+```bash
+python -m pip install -e ".[mujoco]" --no-build-isolation
+python scripts/benchmark_mujoco_sixdof.py --env-counts 1 8 32 128 --steps 300
+```
+
+The MuJoCo backend keeps the same 28-dimensional observation shape, 4-dimensional action shape, reward surface, and room-range task wrapper as the native 6-DoF env, but uses MuJoCo for rigid-body integration and contacts. It is a validation and calibration lane, not a replacement for the high-throughput native C/Ocean path. Use it to compare which dynamics and randomization knobs are worth porting into the native env before large PPO sweeps.
+
 Export the native 6-DoF environment into an upstream PufferLib 4 checkout:
 
 ```bash
