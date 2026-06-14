@@ -13,6 +13,15 @@
 #define SIXDOF_DRAG 0.10f
 #define SIXDOF_RATE_TAU 0.045f
 #define SIXDOF_OBS_DIM 28
+#define SIXDOF_PHYS_MASS 0
+#define SIXDOF_PHYS_GRAVITY 1
+#define SIXDOF_PHYS_LINEAR_DRAG 2
+#define SIXDOF_PHYS_RATE_TAU 3
+#define SIXDOF_PHYS_THRUST_SCALE 4
+#define SIXDOF_PHYS_MAX_RATE_ROLL 5
+#define SIXDOF_PHYS_MAX_RATE_PITCH 6
+#define SIXDOF_PHYS_MAX_RATE_YAW 7
+#define SIXDOF_PHYS_MOTOR_TAU 8
 #define SIXDOF_TASK_CIRCLE 3
 #define SIXDOF_REWARD_PROGRESS 1
 #define SIXDOF_REWARD_PROGRESS_CLEARANCE 2
@@ -21,6 +30,7 @@
 static const float DEFAULT_ROOM[7] = {
     SIXDOF_ROOM_X_MIN, SIXDOF_ROOM_X_MAX, SIXDOF_ROOM_Y_MIN, SIXDOF_ROOM_Y_MAX, SIXDOF_ROOM_Z_MIN, SIXDOF_ROOM_Z_MAX, 4.0f
 };
+static const float DEFAULT_PHYSICS[SIXDOF_PHYSICS_DIM] = {SIXDOF_MASS, SIXDOF_GRAVITY, SIXDOF_DRAG, SIXDOF_RATE_TAU, 0.75f, 6.0f, 6.0f, 4.0f, 0.0f};
 static float clampf(float value, float lo, float hi) {
     return value < lo ? lo : (value > hi ? hi : value);
 }
@@ -54,6 +64,10 @@ static void quat_matrix(const float *q, float r[9]) {
 
 static const float *room_or_default(const float *room) {
     return room ? room : DEFAULT_ROOM;
+}
+
+static const float *physics_or_default(const float *physics) {
+    return physics ? physics : DEFAULT_PHYSICS;
 }
 
 static float raycast_room(const float *p, const float *d, const float *room) {
@@ -90,38 +104,7 @@ static void update_ranges(const float *p, const float *q, float *ranges, const f
     }
 }
 
-static void step_one(float *p, float *v, float *q, float *rates, float *ranges, const float *action, const float *room, float dt) {
-    const float max_rate[3] = {6.0f, 6.0f, 4.0f};
-    float alpha = dt / (SIXDOF_RATE_TAU + dt);
-    float thrust = SIXDOF_MASS * SIXDOF_GRAVITY * (1.0f + 0.75f * clampf(action[0], -1.0f, 1.0f));
-
-    for (int i = 0; i < 3; ++i) {
-        float target = clampf(action[i + 1], -1.0f, 1.0f) * max_rate[i];
-        rates[i] += alpha * (target - rates[i]);
-    }
-
-    float omega[4] = {0.0f, rates[0], rates[1], rates[2]};
-    float qdot[4] = {
-        -0.5f * (q[1] * omega[1] + q[2] * omega[2] + q[3] * omega[3]),
-        0.5f * (q[0] * omega[1] + q[2] * omega[3] - q[3] * omega[2]),
-        0.5f * (q[0] * omega[2] - q[1] * omega[3] + q[3] * omega[1]),
-        0.5f * (q[0] * omega[3] + q[1] * omega[2] - q[2] * omega[1]),
-    };
-    for (int i = 0; i < 4; ++i) {
-        q[i] += qdot[i] * dt;
-    }
-    normalize_quat(q);
-
-    float r[9];
-    quat_matrix(q, r);
-    float accel[3] = {r[2] * thrust / SIXDOF_MASS, r[5] * thrust / SIXDOF_MASS, r[8] * thrust / SIXDOF_MASS - SIXDOF_GRAVITY};
-    for (int i = 0; i < 3; ++i) {
-        accel[i] -= SIXDOF_DRAG * v[i];
-        v[i] += accel[i] * dt;
-        p[i] += v[i] * dt;
-    }
-    update_ranges(p, q, ranges, room);
-}
+#include "native_sixdof_step.inc"
 
 static float yaw_from_quat(const float *q) {
     return atan2f(2.0f * (q[0] * q[3] + q[1] * q[2]), 1.0f - 2.0f * (q[2] * q[2] + q[3] * q[3]));
@@ -190,12 +173,14 @@ static void assemble_one(
     int task_id,
     int reward_mode,
     float previous_error,
+    const float *physics,
     float *obs,
     float *reward,
     unsigned char *terminal,
     unsigned char *truncation,
     const float *room
 ) {
+    const float *phys = physics_or_default(physics);
     float pos_error[3] = {target[0] - p[0], target[1] - p[1], target[2] - p[2]};
     float effective_yaw = task_yaw_target(p, target, target_yaw, task_id);
     float yaw_error = wrap_angle(effective_yaw - yaw_from_quat(q));
@@ -229,9 +214,9 @@ static void assemble_one(
     for (int i = 0; i < 4; ++i) {
         obs[6 + i] = q[i];
     }
-    obs[10] = rates[0] / 6.0f;
-    obs[11] = rates[1] / 6.0f;
-    obs[12] = rates[2] / 4.0f;
+    obs[10] = rates[0] / phys[SIXDOF_PHYS_MAX_RATE_ROLL];
+    obs[11] = rates[1] / phys[SIXDOF_PHYS_MAX_RATE_PITCH];
+    obs[12] = rates[2] / phys[SIXDOF_PHYS_MAX_RATE_YAW];
     obs[13] = target[0] / 2.0f;
     obs[14] = target[1] / 2.0f;
     obs[15] = target[2] / 2.5f;
@@ -245,9 +230,10 @@ static void assemble_one(
     }
 }
 
-void flightrl_sixdof_step_batch(float *position, float *velocity, float *quaternion, float *body_rates, float *ranges, const float *actions, const float *room, int num_envs, float dt) {
+void flightrl_sixdof_step_batch(float *position, float *velocity, float *quaternion, float *body_rates, float *ranges, float *thrust_state, const float *actions, const float *physics, const float *room, int num_envs, float dt) {
     for (int env = 0; env < num_envs; ++env) {
-        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6, actions + env * 4, room, dt);
+        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6,
+            thrust_state + env, actions + env * 4, physics + env * SIXDOF_PHYSICS_DIM, room, dt);
     }
 }
 
@@ -256,6 +242,8 @@ void flightrl_sixdof_step_env_batch(
     float *quaternion,
     float *body_rates,
     float *ranges,
+    float *thrust_state,
+    const float *physics,
     float *target_position,
     float *target_yaw,
     float *previous_action,
@@ -274,7 +262,9 @@ void flightrl_sixdof_step_env_batch(
         for (int i = 0; i < 4; ++i) {
             action[i] = clampf(actions[env * 4 + i], -1.0f, 1.0f);
         }
-        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6, action, room, dt);
+        const float *phys = physics + env * SIXDOF_PHYSICS_DIM;
+        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6,
+            thrust_state + env, action, phys, room, dt);
         step_count[env] += 1;
         assemble_one(
             position + env * 3,
@@ -289,6 +279,7 @@ void flightrl_sixdof_step_env_batch(
             0,
             0,
             0.0f,
+            phys,
             observations + env * SIXDOF_OBS_DIM,
             rewards + env,
             terminals + env,

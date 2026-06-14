@@ -14,6 +14,7 @@ REQUIRED_BINDING_TOKENS = (
     '#include "vecenv.h"',
     "flightrl_sixdof_step_env_batch",
     'dict_get(kwargs, "room_x_min")',
+    'dict_get(kwargs, "mass_kg")',
 )
 
 
@@ -91,6 +92,25 @@ def validate(files: dict, config: dict, args: argparse.Namespace) -> list[dict]:
         check("config_num_threads", int_value(config, "vec", "num_threads") == args.num_threads),
         check("config_hidden_size", int_value(config, "policy", "hidden_size") == args.hidden_size),
         check("room_bounds_present", all(key in config.get("env", {}) for key in ("room_x_min", "room_x_max", "room_y_min", "room_y_max", "room_z_min", "room_z_max", "max_range_m"))),
+        check("native_step_include_copied", files.get("native_sixdof_step.inc", {}).get("exists", False)),
+        check("native_step_include_referenced", file_contains(files, "native_sixdof.c", '#include "native_sixdof_step.inc"')),
+        check(
+            "physics_knobs_present",
+            all(
+                key in config.get("env", {})
+                for key in (
+                    "mass_kg",
+                    "gravity_m_s2",
+                    "linear_drag",
+                    "rate_tau_s",
+                    "thrust_scale",
+                    "max_rate_roll",
+                    "max_rate_pitch",
+                    "max_rate_yaw",
+                    "motor_tau_s",
+                )
+            ),
+        ),
     ]
     return checks
 
@@ -102,6 +122,11 @@ def check(name: str, passed: bool) -> dict[str, bool | str]:
 def int_value(config: dict, section: str, key: str) -> int | None:
     value = config.get(section, {}).get(key)
     return int(value) if value is not None else None
+
+
+def file_contains(files: dict, name: str, token: str) -> bool:
+    path = Path(files.get(name, {}).get("path", ""))
+    return path.exists() and token in path.read_text()
 
 
 def parse_ini(path: Path) -> dict[str, dict[str, str]]:

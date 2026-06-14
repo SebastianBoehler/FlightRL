@@ -165,6 +165,20 @@ python scripts/benchmark_sixdof_sweep.py \
 
 This compares the Python vectorized spec, the raw native C dynamics/raycast kernel, and the native-backed environment hot loop. The benchmark is an implementation-health signal, not a policy-quality metric.
 
+Use the Crazyflie physics/randomization benchmark to measure the sim-to-real training path:
+
+```bash
+python scripts/benchmark_sixdof_native.py \
+  --num-envs 1024 \
+  --steps 1000 \
+  --physics-profile crazyflie_brushless \
+  --domain-randomization crazyflie_training
+```
+
+The native path keeps a per-env physics row for mass, gravity, linear drag, body-rate response, thrust scale, max body rates, and motor thrust lag. The `crazyflie_training` profile randomizes those cheap scalar knobs per reset so they can be fitted or narrowed from real Crazyflie logs without giving up the C/Ocean throughput advantage.
+
+When the MuJoCo validation lane is used, also sweep MuJoCo-side configuration knobs as hyperparameters rather than treating the XML as fixed ground truth. Start with timestep/substeps, solver iterations/tolerances, contact friction/solref/solimp, actuator gains and limits, body inertias, damping, and sensor noise. Keep the sweep tied to real-log replay error and native-env portability: useful ranges should either explain observed Crazyflie behavior or become cheap randomization ranges in the native C/Ocean env.
+
 On the current Apple Silicon development machine, the sweep peaked at `16,030,292` native env steps/sec with `4096` envs. The raw native kernel stayed around `15.0M-16.5M` steps/sec in the 1024-16384 env range, while the Python vectorized spec was around `0.7M-1.1M` steps/sec. The practical starting point for native/Puffer sizing is therefore `4096` total agents.
 
 To summarize a checkpoint candidate after gate, action-gap, and edge export:

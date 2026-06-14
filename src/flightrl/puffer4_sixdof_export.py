@@ -7,7 +7,7 @@ import shutil
 from .puffer4_config import Puffer4ExportSettings, render_puffer4_ini
 
 
-SIXDOF_NATIVE_FILES = ("native_sixdof.c", "native_sixdof.h", "native_sixdof_context.inc")
+SIXDOF_NATIVE_FILES = ("native_sixdof.c", "native_sixdof.h", "native_sixdof_context.inc", "native_sixdof_step.inc")
 
 
 @dataclass(slots=True)
@@ -55,6 +55,8 @@ typedef struct {
     float target_position[3];
     float target_yaw;
     float previous_action[4];
+    float thrust_state;
+    float physics[SIXDOF_PHYSICS_DIM];
     int step_count;
     unsigned char terminal;
     unsigned char truncation;
@@ -79,6 +81,15 @@ void my_init(Env* env, Dict* kwargs) {
     env->room[4] = (float)dict_get(kwargs, "room_z_min")->value;
     env->room[5] = (float)dict_get(kwargs, "room_z_max")->value;
     env->room[6] = (float)dict_get(kwargs, "max_range_m")->value;
+    env->physics[0] = (float)dict_get(kwargs, "mass_kg")->value;
+    env->physics[1] = (float)dict_get(kwargs, "gravity_m_s2")->value;
+    env->physics[2] = (float)dict_get(kwargs, "linear_drag")->value;
+    env->physics[3] = (float)dict_get(kwargs, "rate_tau_s")->value;
+    env->physics[4] = (float)dict_get(kwargs, "thrust_scale")->value;
+    env->physics[5] = (float)dict_get(kwargs, "max_rate_roll")->value;
+    env->physics[6] = (float)dict_get(kwargs, "max_rate_pitch")->value;
+    env->physics[7] = (float)dict_get(kwargs, "max_rate_yaw")->value;
+    env->physics[8] = (float)dict_get(kwargs, "motor_tau_s")->value;
 }
 
 void my_log(Log* log, Dict* out) {
@@ -89,13 +100,14 @@ void my_log(Log* log, Dict* out) {
 
 static void c_reset(Env* env) {
     env->rng = flightrl_sixdof_reset_one(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
+        &env->thrust_state, env->physics,
         env->target_position, &env->target_yaw, env->previous_action, &env->step_count,
         env->observations, env->rewards, &env->terminal, &env->truncation, env->room, env->rng);
 }
 
 static void c_step(Env* env) {
     flightrl_sixdof_step_env_batch(env->position, env->velocity, env->quaternion, env->body_rates, env->ranges,
-        env->target_position, &env->target_yaw, env->previous_action, &env->step_count, env->actions,
+        &env->thrust_state, env->physics, env->target_position, &env->target_yaw, env->previous_action, &env->step_count, env->actions,
         env->observations, env->rewards, &env->terminal, &env->truncation, env->room, 1, env->dt);
     env->terminals[0] = (env->terminal || env->truncation) ? 1.0f : 0.0f;
     env->log.episode_return += env->rewards[0];
@@ -148,6 +160,15 @@ def build_sixdof_sections(settings: Puffer4ExportSettings) -> dict[str, dict[str
             "room_z_min": 0.0,
             "room_z_max": 2.5,
             "max_range_m": 4.0,
+            "mass_kg": 0.036,
+            "gravity_m_s2": 9.81,
+            "linear_drag": 0.08,
+            "rate_tau_s": 0.045,
+            "thrust_scale": 0.75,
+            "max_rate_roll": 6.0,
+            "max_rate_pitch": 6.0,
+            "max_rate_yaw": 4.0,
+            "motor_tau_s": 0.035,
         },
         "policy": {"hidden_size": hidden_size, "num_layers": settings.policy_num_layers, "expansion_factor": 1},
         "torch": {"network": "MLP", "encoder": "DefaultEncoder", "decoder": "DefaultDecoder"},

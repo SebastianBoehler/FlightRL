@@ -45,6 +45,7 @@ Budget note:
 - Add IMU bias/noise, optical-flow noise, range noise, latency, and packet loss.
 - Make domain randomization operate on measured hardware parameters.
 - Use the optional MuJoCo backend as a physics-reference lane for rigid-body/contact checks, then port only validated fast-path effects into the native C/Ocean env for sweep-scale training.
+- Treat MuJoCo model and solver settings as sweepable sim-to-real hyperparameters once the MuJoCo lane is active. Candidate knobs include timestep/substeps, solver iterations/tolerances, contact parameters, actuator gains/limits, damping/friction, body inertias, drag approximations, and sensor noise. The goal is not to overfit MuJoCo, but to find parameter regions where policies remain stable before porting the useful ranges into the fast native env.
 
 ### Phase 3: Train Stabilization And Command Following
 

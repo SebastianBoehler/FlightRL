@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from flightrl import _binding
+from flightrl.sixdof.physics import LEGACY_PHYSICS
 
 
 def native_step(
@@ -14,14 +15,21 @@ def native_step(
     actions: np.ndarray,
     dt: float,
     room_bounds: np.ndarray | None = None,
+    thrust_state: np.ndarray | None = None,
+    physics_params: np.ndarray | None = None,
 ) -> None:
+    num_envs = position.shape[0]
+    resolved_thrust = thrust_state if thrust_state is not None else np.ones(num_envs, dtype=np.float32)
+    resolved_physics = physics_params if physics_params is not None else np.repeat(LEGACY_PHYSICS.as_array()[None, :], num_envs, axis=0)
     _binding.sixdof_step(
         _float32(position),
         _float32(velocity),
         _float32(quaternion),
         _float32(body_rates),
         _float32(ranges_m),
+        _float32(resolved_thrust),
         _float32(actions),
+        _float32(resolved_physics),
         _float32(room_bounds if room_bounds is not None else DEFAULT_ROOM_BOUNDS),
         float(dt),
     )
@@ -35,6 +43,8 @@ def native_step_env(env, actions: np.ndarray) -> None:
             _float32(env.quaternion),
             _float32(env.body_rates),
             _float32(env.ranges_m),
+            _float32(env.thrust_state),
+            _float32(env.physics_params),
             _float32(env.target_position),
             _float32(env.target_yaw),
             _float32(env.previous_action),
@@ -54,6 +64,8 @@ def native_step_env(env, actions: np.ndarray) -> None:
         _float32(env.quaternion),
         _float32(env.body_rates),
         _float32(env.ranges_m),
+        _float32(env.thrust_state),
+        _float32(env.physics_params),
         _float32(env.target_position),
         _float32(env.target_yaw),
         _float32(env.previous_action),

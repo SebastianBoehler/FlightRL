@@ -42,6 +42,7 @@ The implementation follows the current Ocean pattern:
 - `docs/crazyflie_bringup.md`: Crazyflie 2.1 Brushless setup, dry-run checks, demo flight, and telemetry logging.
 - `docs/crazyflie_6dof_training.md`: simulation-only 6-DoF Crazyflie training, replay, and room visualization track.
 - `docs/sim_to_real_roadmap.md`: indoor-first hardware, VLA, and sim-to-real roadmap.
+- `docs/pufferlib_crazyflie_env.md`: upstream-readiness notes for contributing the native 6-DoF env to PufferLib.
 
 ## Build
 
@@ -210,7 +211,14 @@ Native 6-DoF stepping benchmark:
 
 ```bash
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
+python scripts/benchmark_sixdof_native.py \
+  --num-envs 1024 \
+  --steps 1000 \
+  --physics-profile crazyflie_brushless \
+  --domain-randomization crazyflie_training
 ```
+
+The native 6-DoF env supports per-environment physics rows for mass, gravity, linear drag, body-rate response, thrust scale, max body rates, and motor thrust lag. Use the `crazyflie_brushless` profile plus `crazyflie_training` randomization to keep fast C/Ocean training while sweeping plausible sim-to-real parameters.
 
 Optional MuJoCo backend benchmark:
 

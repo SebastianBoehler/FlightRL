@@ -9,7 +9,7 @@ static float rnd(uint32_t *rng, float lo, float hi) {
 }
 
 uint32_t flightrl_sixdof_reset_one(
-    float *p, float *v, float *q, float *rates, float *ranges, float *target, float *target_yaw, float *prev,
+    float *p, float *v, float *q, float *rates, float *ranges, float *thrust_state, const float *physics, float *target, float *target_yaw, float *prev,
     int *step_count, float *obs, float *reward, unsigned char *terminal, unsigned char *truncation, const float *room, uint32_t rng
 ) {
     const float *r = room_or_default(room);
@@ -30,9 +30,10 @@ uint32_t flightrl_sixdof_reset_one(
     for (int i = 0; i < 4; ++i) {
         prev[i] = 0.0f;
     }
+    *thrust_state = 1.0f;
     *step_count = 0;
     update_ranges(p, q, ranges, r);
-    assemble_one(p, v, q, rates, ranges, target, *target_yaw, prev, 0, 0, 0, 0.0f, obs, reward, terminal, truncation, r);
+    assemble_one(p, v, q, rates, ranges, target, *target_yaw, prev, 0, 0, 0, 0.0f, physics, obs, reward, terminal, truncation, r);
     *reward = 0.0f;
     *terminal = 0;
     *truncation = 0;
@@ -40,7 +41,7 @@ uint32_t flightrl_sixdof_reset_one(
 }
 
 void flightrl_sixdof_step_env_context_batch(
-    float *position, float *velocity, float *quaternion, float *body_rates, float *ranges, float *target_position, float *target_yaw,
+    float *position, float *velocity, float *quaternion, float *body_rates, float *ranges, float *thrust_state, const float *physics, float *target_position, float *target_yaw,
     float *previous_action, int *step_count, const float *actions, float *observations, float *rewards, unsigned char *terminals,
     unsigned char *truncations, const float *room, const int *task_ids, int reward_mode, const float *previous_error, int num_envs, float dt
 ) {
@@ -49,11 +50,14 @@ void flightrl_sixdof_step_env_context_batch(
         for (int i = 0; i < 4; ++i) {
             action[i] = clampf(actions[env * 4 + i], -1.0f, 1.0f);
         }
-        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6, action, room, dt);
+        const float *phys = physics + env * SIXDOF_PHYSICS_DIM;
+        step_one(position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6,
+            thrust_state + env, action, phys, room, dt);
         step_count[env] += 1;
         assemble_one(
             position + env * 3, velocity + env * 3, quaternion + env * 4, body_rates + env * 3, ranges + env * 6,
             target_position + env * 3, target_yaw[env], action, step_count[env], task_ids[env], reward_mode, previous_error[env],
+            phys,
             observations + env * SIXDOF_OBS_DIM, rewards + env, terminals + env, truncations + env, room
         );
     }

@@ -3,13 +3,17 @@
 
 #include <stdint.h>
 
+#define SIXDOF_PHYSICS_DIM 9
+
 void flightrl_sixdof_step_batch(
     float *position,
     float *velocity,
     float *quaternion,
     float *body_rates,
     float *ranges,
+    float *thrust_state,
     const float *actions,
+    const float *physics,
     const float *room,
     int num_envs,
     float dt
@@ -21,6 +25,8 @@ void flightrl_sixdof_step_env_batch(
     float *quaternion,
     float *body_rates,
     float *ranges,
+    float *thrust_state,
+    const float *physics,
     float *target_position,
     float *target_yaw,
     float *previous_action,
@@ -41,6 +47,8 @@ void flightrl_sixdof_step_env_context_batch(
     float *quaternion,
     float *body_rates,
     float *ranges,
+    float *thrust_state,
+    const float *physics,
     float *target_position,
     float *target_yaw,
     float *previous_action,
@@ -64,6 +72,8 @@ uint32_t flightrl_sixdof_reset_one(
     float *quaternion,
     float *body_rates,
     float *ranges,
+    float *thrust_state,
+    const float *physics,
     float *target_position,
     float *target_yaw,
     float *previous_action,

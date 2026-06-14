@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .physics import sample_physics
+
 
 def native_reset_one(env, idx: int, rng: np.uint32) -> np.uint32:
     def rnd(lo: float, hi: float) -> float:
@@ -17,6 +19,8 @@ def native_reset_one(env, idx: int, rng: np.uint32) -> np.uint32:
     env.quaternion[idx] = [np.cos(0.5 * yaw), 0.0, 0.0, np.sin(0.5 * yaw)]
     env.target_position[idx] = [rnd(-1.0, 1.0), rnd(-1.0, 1.0), rnd(0.45, 0.9)]
     env.target_yaw[idx] = rnd(-np.pi, np.pi)
+    env.physics_params[idx] = sample_physics(env.physics_profile, env.domain_randomization, np.random.default_rng(int(rng)), 1)[0]
+    env.thrust_state[idx] = 1.0
     env.previous_action[idx] = 0.0
     env.step_count[idx] = 0
     env.rewards[idx] = 0.0
