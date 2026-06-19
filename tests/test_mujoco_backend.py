@@ -54,3 +54,32 @@ def test_mujoco_benchmark_writes_report(tmp_path: Path) -> None:
         assert report["results"][0]["num_envs"] == 1
         assert report["results"][0]["mujoco_sps"] > 0.0
     assert output.with_suffix(".md").exists()
+
+
+def test_mujoco_checkpoint_evaluator_writes_report(tmp_path: Path) -> None:
+    output = tmp_path / "mujoco_eval.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "evaluate_mujoco_sixdof_checkpoint.py"),
+            "--teacher",
+            "--task",
+            "obstacle_avoidance",
+            "--steps",
+            "2",
+            "--num-envs",
+            "1",
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads(output.read_text())
+    assert report["status"] in {"ok", "missing_mujoco"}
+    if report["status"] == "ok":
+        assert report["backend"] == "mujoco"
+        assert "metrics" in report
+    assert output.with_suffix(".md").exists()

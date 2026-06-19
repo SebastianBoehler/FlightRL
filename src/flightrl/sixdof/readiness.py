@@ -107,3 +107,44 @@ def format_optional(value: float | None) -> str:
 
 def format_task_gates(per_task: dict[str, dict]) -> str:
     return "; ".join(f"{task}={','.join(gate['failures']) or 'pass'}" for task, gate in per_task.items())
+
+
+def render_markdown(report: dict) -> str:
+    lines = [
+        "# 6-DoF Readiness Report",
+        "",
+        "| scope | tasks | label | ready | failures | latency us | completed | pos err m | clearance p01 m |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for record in report["records"]:
+        latency = record["edge_latency"].get("per_sample_us")
+        lines.append(
+            f"| {record['task']} | {', '.join(record['tasks'])} | {record['label']} | {record['ready']} | {', '.join(record['failures']) or 'none'} | "
+            f"{format_optional(latency)} | {record['sim']['mean_completed_fraction']:.4f} | "
+            f"{record['sim']['mean_position_error_m']:.4f} | {record['sim']['clearance_p01_m']:.4f} |"
+        )
+    room = report["global_evidence"]["room"]
+    native = report["global_evidence"]["native_parity"]
+    profile = report["global_evidence"]["profile_matrix"]
+    replay = report["global_evidence"]["replay_comparison"]
+    if any(record["sim"].get("per_task_gate") for record in report["records"]):
+        lines.extend(["", "## Per-Task Gates", ""])
+        for record in report["records"]:
+            gates = record["sim"].get("per_task_gate", {})
+            if gates:
+                lines.append(f"- `{record['label']}`: {format_task_gates(gates)}")
+    lines.extend(
+        [
+            "",
+            f"Room ready: `{room['mapping_ready']}`; points=`{room.get('point_count')}`; warnings=`{', '.join(room.get('warnings', [])) or 'none'}`.",
+            f"Native parity: `{native['passed']}`; worst_state_rmse=`{native.get('worst_state_rmse')}`; worst_range_rmse=`{native.get('worst_range_rmse')}`.",
+            f"Profile matrix: present=`{profile['present']}`; profiles=`{', '.join(profile.get('profiles', [])) or 'none'}`.",
+            f"Replay comparison: `{replay['passed']}`; present=`{replay.get('present')}`; worst_state_rmse=`{replay.get('worst_state_rmse')}`; worst_range_rmse_mm=`{replay.get('worst_range_rmse_mm')}`.",
+            f"Residual sweep: present=`{report['global_evidence']['residual_sweep']['present']}`; best=`{(report['global_evidence']['residual_sweep'].get('best') or {}).get('name')}`.",
+            f"Training throughput: present=`{report['global_evidence']['training_throughput']['present']}`; best_total_sps=`{(report['global_evidence']['training_throughput'].get('best_total_sps') or {}).get('total_sps')}`.",
+            f"Puffer export: present=`{report['global_evidence']['puffer_export']['present']}`; passed=`{report['global_evidence']['puffer_export'].get('passed')}`; env=`{report['global_evidence']['puffer_export'].get('env_name')}`.",
+            "",
+            report["safety"],
+        ]
+    )
+    return "\n".join(lines)

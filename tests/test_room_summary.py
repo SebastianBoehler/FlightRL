@@ -83,6 +83,18 @@ def test_estimate_room_bounds_uses_horizontal_points_and_floor_hits() -> None:
     assert estimate["horizontal_point_count"] == len(rows) * 4
 
 
+def test_estimate_room_bounds_clamps_noisy_floor_to_physical_floor() -> None:
+    rows = sample_rows(count=4, dt=1.0, x_step=0.1)
+    for row in rows:
+        row["stateEstimate.z"] = "0.02"
+        row["range.zrange"] = "90"
+
+    estimate = estimate_room_bounds(points_from_rows(rows), trajectory_from_rows(rows), padding_m=0.05, floor_m=0.0)
+
+    assert estimate["z_min"] == 0.0
+    assert estimate["down_point_count"] == len(rows)
+
+
 def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     log = tmp_path / "room.csv"
     log.write_text(csv_text(sample_rows(count=4, dt=1.0, x_step=0.1)))

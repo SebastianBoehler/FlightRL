@@ -66,14 +66,17 @@ def test_collect_rollout_teacher_residual_executes_teacher_and_trains_zero_resid
 def test_collect_rollout_supports_progress_reward() -> None:
     env_progress = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
     env_clearance = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
+    env_live = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
     env_base = SixDofCrazyflieEnv(num_envs=4, seed=7, reset_profile="position_yaw_easy")
     model = SixDofActorCritic(input_dim=28, hidden_size=16)
     shaped = collect_rollout(env_progress, model, horizon=2, action_std=0.2, reward_mode="progress")
     clearance = collect_rollout(env_clearance, model, horizon=2, action_std=0.2, reward_mode="progress_clearance")
+    live_clearance = collect_rollout(env_live, model, horizon=2, action_std=0.2, reward_mode="live_clearance")
     raw = collect_rollout(env_base, model, horizon=2, action_std=0.2, reward_mode="env")
     assert shaped["rewards"].shape == raw["rewards"].shape
     assert not np.allclose(shaped["rewards"], raw["rewards"])
     assert not np.allclose(clearance["rewards"], shaped["rewards"])
+    assert not np.allclose(live_clearance["rewards"], clearance["rewards"])
 
 
 def test_yaw_clearance_reward_penalizes_true_angle_error() -> None:
@@ -91,6 +94,20 @@ def test_yaw_clearance_reward_penalizes_true_angle_error() -> None:
 
     assert yaw_clearance[0] == clearance[0]
     assert yaw_clearance[1] < clearance[1] - 1.0
+
+
+def test_live_clearance_reward_penalizes_close_obstacles_more() -> None:
+    env = SixDofCrazyflieEnv(num_envs=2, seed=9, reset_profile="position_yaw_easy")
+    env.ranges_m[:, :4] = np.asarray([[0.2, 2.0, 2.0, 2.0], [0.8, 2.0, 2.0, 2.0]], dtype=np.float32)
+    previous_error = np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)
+    actions = np.zeros((2, 4), dtype=np.float32)
+    done = np.zeros(2, dtype=bool)
+
+    clearance = rollout_reward(env, np.zeros(2, dtype=np.float32), done, previous_error, actions, "progress_clearance")
+    live_clearance = rollout_reward(env, np.zeros(2, dtype=np.float32), done, previous_error, actions, "live_clearance")
+
+    assert live_clearance[0] < clearance[0]
+    assert live_clearance[1] > clearance[1]
 
 
 def test_circle_progress_reward_uses_orbit_error_not_center_error() -> None:

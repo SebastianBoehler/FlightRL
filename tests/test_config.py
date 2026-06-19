@@ -26,6 +26,13 @@ def test_motor_quad_config_changes_action_dim_and_observation_dim() -> None:
     assert config.observation_dim > 0
 
 
+def test_hover_command_config_matches_live_command_shape() -> None:
+    config = load_config(ROOT / "configs" / "tasks" / "crazyflie_hover_command.toml")
+    assert config.environment.action_mode == "hover_command"
+    assert config.action_dim == 4
+    assert config.observation_dim > 0
+
+
 def test_vision_sensor_placeholder_fails_fast() -> None:
     with pytest.raises(NotImplementedError):
         load_config(

@@ -63,6 +63,30 @@ def test_native_progress_reward_matches_python_reward() -> None:
     np.testing.assert_allclose(native_reward, expected, rtol=1e-5, atol=1e-5)
 
 
+def test_native_live_clearance_reward_matches_python_reward() -> None:
+    py_env = SixDofCrazyflieEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=False)
+    native_env = SixDofCrazyflieEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=True)
+    actions = np.zeros((8, 4), dtype=np.float32)
+    task_indices = np.zeros(8, dtype=np.int32)
+    previous_error = position_error_for_task_indices(py_env, ("obstacle_avoidance",), task_indices)
+
+    _, py_base, py_terminal, py_truncation, _ = py_env.step(actions)
+    expected = rollout_reward(
+        py_env,
+        py_base,
+        py_terminal | py_truncation,
+        previous_error,
+        actions,
+        "live_clearance",
+        tasks=("obstacle_avoidance",),
+        task_indices=task_indices,
+    )
+    native_env.set_native_context(task_indices=task_indices, tasks=("obstacle_avoidance",), reward_mode="live_clearance", previous_error=previous_error)
+    _, native_reward, *_ = native_env.step(actions)
+
+    np.testing.assert_allclose(native_reward, expected, rtol=1e-5, atol=1e-5)
+
+
 def test_collect_rollout_uses_preallocated_buffers() -> None:
     env = SixDofCrazyflieEnv(num_envs=4, seed=13, reset_profile="position_yaw_easy", use_native_step=True)
     model = SixDofActorCritic(input_dim=28, hidden_size=16)

@@ -19,6 +19,7 @@ enum FlightActionMode {
     FLIGHT_ACTION_STABILIZED = 0,
     FLIGHT_ACTION_MOTOR_PAIR = 1,
     FLIGHT_ACTION_MOTOR_QUAD = 2,
+    FLIGHT_ACTION_HOVER_COMMAND = 3,
 };
 
 enum FlightRotorIndex {

@@ -26,6 +26,7 @@
 #define SIXDOF_REWARD_PROGRESS 1
 #define SIXDOF_REWARD_PROGRESS_CLEARANCE 2
 #define SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE 3
+#define SIXDOF_REWARD_LIVE_CLEARANCE 4
 
 static const float DEFAULT_ROOM[7] = {
     SIXDOF_ROOM_X_MIN, SIXDOF_ROOM_X_MAX, SIXDOF_ROOM_Y_MIN, SIXDOF_ROOM_Y_MAX, SIXDOF_ROOM_Z_MIN, SIXDOF_ROOM_Z_MAX, 4.0f
@@ -196,13 +197,14 @@ static void assemble_one(
     *reward = 1.0f - norm3(pos_error) - 0.15f * norm3(v) - 0.1f * fabsf(yaw_error) - 1.5f * clearance_penalty - 0.02f * action_norm;
     *terminal = in_room(p, room) ? 0 : 1;
     *truncation = step_count >= 800 ? 1 : 0;
-    if (reward_mode >= SIXDOF_REWARD_PROGRESS && reward_mode <= SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE) {
-        float threshold = reward_mode == SIXDOF_REWARD_PROGRESS ? 0.25f : 0.45f;
-        float clearance_weight = reward_mode == SIXDOF_REWARD_PROGRESS ? 1.0f : 2.5f;
+    if (reward_mode >= SIXDOF_REWARD_PROGRESS && reward_mode <= SIXDOF_REWARD_LIVE_CLEARANCE) {
+        float threshold = reward_mode == SIXDOF_REWARD_PROGRESS ? 0.25f : (reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 0.65f : 0.45f);
+        float clearance_weight = reward_mode == SIXDOF_REWARD_PROGRESS ? 1.0f : (reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 5.0f : 2.5f);
         float yaw_weight = reward_mode == SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE ? 0.6f : 0.1f;
         float progress_clearance = fmaxf(0.0f, threshold - min_clearance);
+        float clearance_bonus = reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 0.15f * fminf(min_clearance, threshold) : 0.0f;
         *reward = 0.2f + 3.0f * (previous_error - current_error) - 0.05f * current_error - 0.02f * norm3(v) -
-            yaw_weight * fabsf(yaw_error) - clearance_weight * progress_clearance - 0.01f * action_norm -
+            yaw_weight * fabsf(yaw_error) - clearance_weight * progress_clearance + clearance_bonus - 0.01f * action_norm -
             ((*terminal || *truncation) ? 1.0f : 0.0f);
     }
     obs[0] = pos_error[0] / 2.0f;

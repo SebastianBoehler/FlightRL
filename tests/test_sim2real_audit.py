@@ -75,6 +75,18 @@ def test_audit_consumes_sensor_noise_and_latency_evidence(tmp_path) -> None:
     assert report["hardware_latency"]["passed"] is True
 
 
+def test_audit_blocks_empty_deployment_readiness(tmp_path) -> None:
+    config = write_config(tmp_path, "crazyflie_measured.toml", measured=True)
+    deployment = tmp_path / "deployment_readiness.json"
+    deployment.write_text(json.dumps({"summary": {"total": 0, "ready": 0, "blocked": 0}}))
+
+    report = build_audit(hardware_config=config, deployment_readiness=deployment)
+
+    assert report["deployment_readiness"]["passed"] is False
+    assert report["deployment_readiness"]["failures"] == ["no_candidates"]
+    assert "deployment_readiness_blocked" in report["blocking_items"]
+
+
 def test_render_markdown_contains_blockers(tmp_path) -> None:
     report = build_audit(hardware_config=write_config(tmp_path, "manufacturer_placeholder.toml", measured=False))
     markdown = render_markdown(report)

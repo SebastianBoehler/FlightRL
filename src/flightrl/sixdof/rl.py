@@ -17,7 +17,7 @@ from .tasks import append_task_encoding
 from .yaw import yaw_error_for_task_indices
 
 
-REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance")
+REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance", "live_clearance")
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +199,19 @@ def rollout_reward(
         return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.1, tasks=tasks, task_indices=task_indices)
     if mode == "progress_yaw_clearance":
         return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.6, tasks=tasks, task_indices=task_indices)
+    if mode == "live_clearance":
+        return shaped_progress_reward(
+            env,
+            done,
+            previous_error,
+            actions,
+            clearance_threshold=0.65,
+            clearance_weight=5.0,
+            yaw_weight=0.1,
+            clearance_bonus_weight=0.15,
+            tasks=tasks,
+            task_indices=task_indices,
+        )
     raise ValueError(f"unknown PPO reward mode {mode!r}")
 
 
@@ -213,14 +226,17 @@ def shaped_progress_reward(
     yaw_weight: float,
     tasks: tuple[str, ...] | None,
     task_indices: np.ndarray | None,
+    clearance_bonus_weight: float = 0.0,
 ) -> np.ndarray:
     current_error = position_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else position_error(env)
     progress = previous_error - current_error
     speed = np.linalg.norm(env.velocity, axis=1)
     yaw_error = yaw_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion)))
-    clearance_penalty = np.maximum(0.0, clearance_threshold - np.min(env.ranges_m[:, :4], axis=1))
+    min_clearance = np.min(env.ranges_m[:, :4], axis=1)
+    clearance_penalty = np.maximum(0.0, clearance_threshold - min_clearance)
+    clearance_bonus = clearance_bonus_weight * np.minimum(min_clearance, clearance_threshold)
     control = np.linalg.norm(actions, axis=1)
-    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - yaw_weight * yaw_error - clearance_weight * clearance_penalty - 0.01 * control
+    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - yaw_weight * yaw_error - clearance_weight * clearance_penalty + clearance_bonus - 0.01 * control
     reward -= done.astype(np.float32)
     return reward.astype(np.float32)
 

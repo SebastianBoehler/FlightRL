@@ -45,6 +45,21 @@ def test_export_puffer4_assets_writes_binding_and_ini(tmp_path: Path) -> None:
 
     for filename in PUFFER4_NATIVE_FILES:
         assert (result.env_dir / filename).exists()
+    assert (result.env_dir / "native_sixdof_step.inc").exists()
+
+
+def test_export_puffer4_assets_supports_hover_command_shape(tmp_path: Path) -> None:
+    pufferlib_root = tmp_path / "PufferLib-4.0"
+    config = load_config(ROOT / "configs" / "tasks" / "crazyflie_hover_command.toml")
+    result = export_puffer4_assets(config, pufferlib_root, settings=Puffer4ExportSettings(env_name="flightrl_hover_command"))
+    binding_text = (result.env_dir / "binding.c").read_text()
+    ini_text = result.config_path.read_text()
+
+    assert config.action_dim == 4
+    assert "#define NUM_ATNS 4" in binding_text
+    assert "action_mode = 3" in ini_text
+    assert "max_velocity = 0.45" in ini_text
+    assert "env_name = flightrl_hover_command" in ini_text
 
 
 def test_export_puffer4_assets_respects_overrides(tmp_path: Path) -> None:

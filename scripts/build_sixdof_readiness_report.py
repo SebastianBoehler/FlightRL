@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from flightrl.sixdof.readiness import compact_puffer_export, compact_residual_sweep, compact_training_throughput, format_optional, format_task_gates, puffer_export_failures, read_json, summary, training_throughput_failures
+from flightrl.sixdof.readiness import compact_puffer_export, compact_residual_sweep, compact_training_throughput, puffer_export_failures, read_json, render_markdown, summary, training_throughput_failures
 
 
 def main() -> None:
@@ -57,7 +57,18 @@ def build_report(args: argparse.Namespace) -> dict:
         "training_throughput": compact_training_throughput(throughput),
         "puffer_export": compact_puffer_export(puffer),
     }
-    records = [evaluate_record(record, global_evidence, args.max_latency_us, args.require_training_throughput, args.min_training_total_sps, args.require_puffer_export) for record in readiness_candidates(matrix)]
+    records = [
+        evaluate_record(
+            record,
+            global_evidence,
+            args.max_latency_us,
+            args.require_training_throughput,
+            args.min_training_total_sps,
+            args.require_puffer_export,
+            require_checkpoint_file=True,
+        )
+        for record in readiness_candidates(matrix)
+    ]
     return {
         "matrix": args.matrix,
         "room_report": args.room_report,
@@ -85,9 +96,21 @@ def build_report(args: argparse.Namespace) -> dict:
     }
 
 
-def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, max_latency_us: float, require_training_throughput: bool = False, min_training_total_sps: float = 0.0, require_puffer_export: bool = False) -> dict:
+def evaluate_record(
+    task_and_record: tuple[str, dict],
+    global_evidence: dict,
+    max_latency_us: float,
+    require_training_throughput: bool = False,
+    min_training_total_sps: float = 0.0,
+    require_puffer_export: bool = False,
+    require_checkpoint_file: bool = False,
+) -> dict:
     task, record = task_and_record
     failures = []
+    checkpoint = record["checkpoint"]
+    checkpoint_exists = Path(checkpoint).exists()
+    if require_checkpoint_file and not checkpoint_exists:
+        failures.append("checkpoint_missing")
     if not record.get("passed", False):
         failures.append("sim_gate")
     parity = record.get("edge_parity", {})
@@ -118,7 +141,8 @@ def evaluate_record(task_and_record: tuple[str, dict], global_evidence: dict, ma
     return {
         "task": task,
         "label": record["label"],
-        "checkpoint": record["checkpoint"],
+        "checkpoint": checkpoint,
+        "checkpoint_exists": checkpoint_exists,
         "tasks": record.get("tasks", [task]),
         "ready": not failures,
         "failures": failures,
@@ -252,47 +276,6 @@ def native_mismatch_count(report: dict) -> int:
             for profile in report.get("profiles", [])
         )
     )
-
-
-def render_markdown(report: dict) -> str:
-    lines = [
-        "# 6-DoF Readiness Report",
-        "",
-        "| scope | tasks | label | ready | failures | latency us | completed | pos err m | clearance p01 m |",
-        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |",
-    ]
-    for record in report["records"]:
-        latency = record["edge_latency"].get("per_sample_us")
-        lines.append(
-            f"| {record['task']} | {', '.join(record['tasks'])} | {record['label']} | {record['ready']} | {', '.join(record['failures']) or 'none'} | "
-            f"{format_optional(latency)} | {record['sim']['mean_completed_fraction']:.4f} | "
-            f"{record['sim']['mean_position_error_m']:.4f} | {record['sim']['clearance_p01_m']:.4f} |"
-        )
-    room = report["global_evidence"]["room"]
-    native = report["global_evidence"]["native_parity"]
-    profile = report["global_evidence"]["profile_matrix"]
-    replay = report["global_evidence"]["replay_comparison"]
-    if any(record["sim"].get("per_task_gate") for record in report["records"]):
-        lines.extend(["", "## Per-Task Gates", ""])
-        for record in report["records"]:
-            gates = record["sim"].get("per_task_gate", {})
-            if gates:
-                lines.append(f"- `{record['label']}`: {format_task_gates(gates)}")
-    lines.extend(
-        [
-            "",
-            f"Room ready: `{room['mapping_ready']}`; points=`{room.get('point_count')}`; warnings=`{', '.join(room.get('warnings', [])) or 'none'}`.",
-            f"Native parity: `{native['passed']}`; worst_state_rmse=`{native.get('worst_state_rmse')}`; worst_range_rmse=`{native.get('worst_range_rmse')}`.",
-            f"Profile matrix: present=`{profile['present']}`; profiles=`{', '.join(profile.get('profiles', [])) or 'none'}`.",
-            f"Replay comparison: `{replay['passed']}`; present=`{replay.get('present')}`; worst_state_rmse=`{replay.get('worst_state_rmse')}`; worst_range_rmse_mm=`{replay.get('worst_range_rmse_mm')}`.",
-            f"Residual sweep: present=`{report['global_evidence']['residual_sweep']['present']}`; best=`{(report['global_evidence']['residual_sweep'].get('best') or {}).get('name')}`.",
-            f"Training throughput: present=`{report['global_evidence']['training_throughput']['present']}`; best_total_sps=`{(report['global_evidence']['training_throughput'].get('best_total_sps') or {}).get('total_sps')}`.",
-            f"Puffer export: present=`{report['global_evidence']['puffer_export']['present']}`; passed=`{report['global_evidence']['puffer_export'].get('passed')}`; env=`{report['global_evidence']['puffer_export'].get('env_name')}`.",
-            "",
-            report["safety"],
-        ]
-    )
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

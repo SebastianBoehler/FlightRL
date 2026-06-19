@@ -29,7 +29,7 @@ DEFAULT_FIXED_TARGET = (0.0, 2.0)
 DEFAULT_SPAWN_BOUNDS = (-3.0, 3.0, 1.0, 4.0)
 DEFAULT_TARGET_BOUNDS = (-4.0, 4.0, 1.0, 6.0)
 DEFAULT_FIXED_WAYPOINTS = [(0.0, 2.0)] * MAX_WAYPOINTS
-ACTION_DIMS = {"stabilized_planar": 2, "motor_pair": 2, "motor_quad": 4}
+ACTION_DIMS = {"stabilized_planar": 2, "motor_pair": 2, "motor_quad": 4, "hover_command": 4}
 
 
 @dataclass(slots=True)

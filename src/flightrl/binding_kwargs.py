@@ -13,6 +13,7 @@ ACTION_MAP = {
     "stabilized_planar": 0,
     "motor_pair": 1,
     "motor_quad": 2,
+    "hover_command": 3,
 }
 
 RESET_MAP = {

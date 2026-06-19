@@ -46,6 +46,7 @@ class MuJoCoCrazyflieEnv:
         self.room = room or BoxRoom()
         self.rng = np.random.default_rng(seed)
         self.control = control or MuJoCoControlParams()
+        self.gravity = float(self.control.gravity)
         self.max_rate = np.asarray(self.control.max_rate_rad_s, dtype=np.float32)
 
         self.model = load_crazyflie_model(self.dt)

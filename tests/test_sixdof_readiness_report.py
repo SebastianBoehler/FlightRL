@@ -24,11 +24,15 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
     throughput = tmp_path / "throughput.json"
     puffer = tmp_path / "puffer.json"
     output = tmp_path / "readiness.json"
+    candidate_checkpoint = tmp_path / "candidate.pt"
+    multitask_checkpoint = tmp_path / "multi.pt"
+    candidate_checkpoint.write_bytes(b"checkpoint")
+    multitask_checkpoint.write_bytes(b"checkpoint")
     matrix.write_text(
         json.dumps(
             {
-                "best_by_task": {"obstacle_avoidance": candidate_record()},
-                "best_multitask": candidate_record(label="multi", tasks=["position_yaw", "obstacle_avoidance"], latency=None),
+                "best_by_task": {"obstacle_avoidance": candidate_record(checkpoint=str(candidate_checkpoint))},
+                "best_multitask": candidate_record(label="multi", checkpoint=str(multitask_checkpoint), tasks=["position_yaw", "obstacle_avoidance"], latency=None),
             }
         )
     )
@@ -68,6 +72,7 @@ def test_readiness_report_cli_promotes_complete_candidate(tmp_path: Path) -> Non
 
     report = json.loads(output.read_text())
     assert report["records"][0]["ready"] is True
+    assert report["records"][0]["checkpoint_exists"] is True
     assert report["global_evidence"]["replay_comparison"]["passed"] is True
     assert report["global_evidence"]["residual_sweep"]["best"]["name"] == "scale005"
     assert report["global_evidence"]["training_throughput"]["best_total_sps"]["total_sps"] == 123456.0
@@ -92,6 +97,20 @@ def test_readiness_report_surfaces_missing_evidence() -> None:
 
     assert record["ready"] is False
     assert {"sim_gate", "edge_parity", "edge_latency_missing", "room_map", "native_parity", "replay_comparison_missing"}.issubset(record["failures"])
+
+
+def test_readiness_report_blocks_missing_checkpoint_when_required() -> None:
+    evidence = {
+        "room": {"present": True, "mapping_ready": True},
+        "native_parity": {"present": True, "passed": True},
+        "replay_comparison": {"present": False, "required": False, "passed": True},
+    }
+
+    record = READINESS.evaluate_record(("obstacle_avoidance", candidate_record(checkpoint="missing.pt")), evidence, 50.0, require_checkpoint_file=True)
+
+    assert record["ready"] is False
+    assert record["checkpoint_exists"] is False
+    assert "checkpoint_missing" in record["failures"]
 
 
 def test_readiness_report_blocks_failed_profile_matrix() -> None:
@@ -171,10 +190,10 @@ def test_readiness_candidates_include_multitask_after_single_tasks() -> None:
     assert [key for key, _ in READINESS.readiness_candidates(matrix)] == ["position_yaw", "multitask"]
 
 
-def candidate_record(*, label: str = "candidate", passed: bool = True, parity: bool = True, latency: float | None = 9.0, tasks: list[str] | None = None) -> dict:
+def candidate_record(*, label: str = "candidate", checkpoint: str = "candidate.pt", passed: bool = True, parity: bool = True, latency: float | None = 9.0, tasks: list[str] | None = None) -> dict:
     return {
         "label": label,
-        "checkpoint": "candidate.pt",
+        "checkpoint": checkpoint,
         "tasks": tasks or ["obstacle_avoidance"],
         "passed": passed,
         "failures": [] if passed else ["position_error"],

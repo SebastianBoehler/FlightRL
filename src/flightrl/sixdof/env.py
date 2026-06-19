@@ -28,7 +28,7 @@ from .physics import (
 OBSERVATION_DIM = 28
 ACTION_DIM = 4
 TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "attitude": 2, "circle": 3}
-REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3}
+REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3, "live_clearance": 4}
 
 
 @dataclass(slots=True)

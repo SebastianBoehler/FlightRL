@@ -100,6 +100,29 @@ def test_motor_quad_mode_uses_four_actions_and_changes_pitch() -> None:
     assert abs(pitch_after - pitch_before) > 1e-5
 
 
+def test_hover_command_mode_uses_live_command_shape() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "crazyflie_hover_command.toml",
+        overrides={"environment": {"num_envs": 1, "reset_mode": "deterministic"}, "task": {"fixed_start": [0.0, 0.35], "target_bounds": [-0.2, 0.2, 0.35, 0.65]}},
+    )
+    assert config.action_dim == 4
+    env = make_env(config, seed=17)
+    env.reset(seed=17)
+    action = np.array([[1.0, 0.5, -0.5, 1.0]], dtype=np.float32)
+    before = env.snapshot(0)
+    for _ in range(12):
+        env.step(action)
+    after = env.snapshot(0)
+    env.close()
+
+    assert after["command_0"] == 1.0
+    assert after["command_1"] == 0.5
+    assert after["command_2"] == -0.5
+    assert after["command_3"] == 1.0
+    assert after["x"] > before["x"]
+    assert after["z"] > before["z"]
+
+
 def test_wind_changes_trajectory_deterministically() -> None:
     overrides = {
         "environment": {"num_envs": 1},

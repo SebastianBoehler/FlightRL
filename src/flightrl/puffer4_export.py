@@ -20,7 +20,9 @@ PUFFER4_NATIVE_FILES = (
     "native_reward.c",
     "native_rng.h",
     "native_sixdof.c",
+    "native_sixdof_context.inc",
     "native_sixdof.h",
+    "native_sixdof_step.inc",
     "native_tasks.c",
     "native_termination.c",
     "native_types.h",
@@ -237,6 +239,7 @@ def export_puffer4_assets(
     env_dir = root / "ocean" / resolved_settings.env_name
     config_path = root / "config" / f"{resolved_settings.env_name}.ini"
     env_dir.mkdir(parents=True, exist_ok=True)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
 
     native_dir = Path(__file__).resolve().parent / "native"
     for filename in PUFFER4_NATIVE_FILES:

@@ -20,6 +20,9 @@ class ResetProfile:
     target_z_offset_abs: float | None = None
     target_yaw_offset_abs: float | None = None
     target_radius_range: tuple[float, float] | None = None
+    near_wall_probability: float = 0.0
+    near_wall_clearance_range: tuple[float, float] | None = None
+    near_wall_yaw_jitter_rad: float = 0.0
 
 
 RESET_PROFILES = {
@@ -29,6 +32,20 @@ RESET_PROFILES = {
     "position_yaw_wide": ResetProfile("position_yaw_wide", 0.75, 0.9, (0.38, 0.9), (0.4, 0.95), 0.07, 0.70, 0.18, 1.60),
     "position_yaw_recovery": ResetProfile("position_yaw_recovery", 0.75, 0.9, (0.35, 0.9), (0.4, 0.95), 0.16, 0.85, 0.25, 1.80),
     "position_yaw_hard": ResetProfile("position_yaw_hard", 0.8, 1.0, (0.35, 0.9), (0.4, 0.95), 0.08, 1.00, 0.25, float(np.pi)),
+    "obstacle_close_live": ResetProfile(
+        "obstacle_close_live",
+        0.75,
+        0.75,
+        (0.44, 0.58),
+        (0.45, 0.60),
+        0.04,
+        target_xy_offset_abs=0.45,
+        target_z_offset_abs=0.08,
+        target_yaw_offset_abs=0.45,
+        near_wall_probability=0.65,
+        near_wall_clearance_range=(0.08, 0.62),
+        near_wall_yaw_jitter_rad=0.10,
+    ),
     "circle_easy": ResetProfile("circle_easy", 0.6, 0.6, (0.5, 0.8), (0.55, 0.75), 0.04, target_yaw_offset_abs=0.20, target_radius_range=(0.65, 0.85)),
     "circle_recovery": ResetProfile("circle_recovery", 0.9, 0.8, (0.4, 0.9), (0.5, 0.85), 0.10, target_yaw_offset_abs=0.55, target_radius_range=(0.45, 1.05)),
 }
@@ -58,12 +75,50 @@ def sample_reset(
     position[:, 2] = clip_axis(position[:, 2], room.z_min, room.z_max, margin=0.25)
 
     yaw = rng.uniform(-np.pi, np.pi, count).astype(np.float32)
+    position, yaw = sample_near_wall_starts(profile, rng, position, yaw, room)
     roll = rng.normal(0.0, profile.attitude_std, count).astype(np.float32)
     pitch = rng.normal(0.0, profile.attitude_std, count).astype(np.float32)
     target = sample_target(profile, rng, position, room)
     yaw = sample_initial_yaw(profile, rng, position, target, yaw).astype(np.float32)
     target_yaw = sample_target_yaw(profile, rng, yaw).astype(np.float32)
     return position, roll, pitch, yaw, target, target_yaw
+
+
+def sample_near_wall_starts(
+    profile: ResetProfile,
+    rng: np.random.Generator,
+    position: np.ndarray,
+    yaw: np.ndarray,
+    room: BoxRoom,
+) -> tuple[np.ndarray, np.ndarray]:
+    if profile.near_wall_clearance_range is None or profile.near_wall_probability <= 0.0:
+        return position, yaw
+    mask = rng.random(len(position)) < profile.near_wall_probability
+    if not np.any(mask):
+        return position, yaw
+    indices = np.flatnonzero(mask)
+    sides = rng.integers(0, 4, len(indices))
+    clearance = rng.uniform(*profile.near_wall_clearance_range, len(indices))
+    jitter = rng.uniform(-profile.near_wall_yaw_jitter_rad, profile.near_wall_yaw_jitter_rad, len(indices))
+    for side in range(4):
+        side_mask = sides == side
+        if not np.any(side_mask):
+            continue
+        selected = indices[side_mask]
+        selected_clearance = clearance[side_mask]
+        if side == 0:
+            position[selected, 0] = room.x_max - selected_clearance
+            yaw[selected] = 0.0 + jitter[side_mask]
+        elif side == 1:
+            position[selected, 0] = room.x_min + selected_clearance
+            yaw[selected] = 0.0 + jitter[side_mask]
+        elif side == 2:
+            position[selected, 1] = room.y_max - selected_clearance
+            yaw[selected] = 0.0 + jitter[side_mask]
+        else:
+            position[selected, 1] = room.y_min + selected_clearance
+            yaw[selected] = 0.0 + jitter[side_mask]
+    return position.astype(np.float32), wrap_angle(yaw)
 
 
 def sample_target(profile: ResetProfile, rng: np.random.Generator, position: np.ndarray, room: BoxRoom) -> np.ndarray:

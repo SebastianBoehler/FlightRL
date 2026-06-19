@@ -143,6 +143,36 @@ def test_hold_live_policy_exits_before_cflib_when_checkpoint_unapproved(tmp_path
     assert "cflib" not in result.stderr.lower()
 
 
+def test_target_conditioned_live_policy_exits_before_cflib_when_checkpoint_unapproved(tmp_path) -> None:
+    checkpoint = tmp_path / "policy.pt"
+    import torch
+
+    from flightrl.hardware.target_conditioned_policy import TargetConditionedPolicy
+
+    torch.save({"state_dict": TargetConditionedPolicy(hidden_size=8).state_dict(), "hidden_size": 8}, checkpoint)
+    manifest = write_manifest(tmp_path, checkpoint, hardware_approved=False)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/crazyflie_target_conditioned_policy.py",
+            "--checkpoint",
+            str(checkpoint),
+            "--approval-manifest",
+            str(manifest),
+            "--confirm-flight",
+            "--duration-s",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "hardware approval blocked" in result.stderr
+    assert "cflib" not in result.stderr.lower()
+
+
 def write_manifest(
     tmp_path,
     checkpoint,

@@ -130,8 +130,14 @@ def summarize_deployment(path: Path | None) -> dict[str, Any]:
         return {"present": False, "passed": False, "failures": ["missing"]}
     data = _read_json(path)
     summary = data.get("summary", {})
+    total = int(summary.get("total", 0) or 0)
     blocked = int(summary.get("blocked", 0) or 0)
-    return {"present": True, "path": str(path), "passed": blocked == 0, "summary": summary}
+    failures = []
+    if total <= 0:
+        failures.append("no_candidates")
+    if blocked:
+        failures.append("blocked_candidates")
+    return {"present": True, "path": str(path), "passed": not failures, "failures": failures, "summary": summary}
 
 
 def summarize_training_stack(deployment_readiness: Path | None) -> dict[str, Any]:
