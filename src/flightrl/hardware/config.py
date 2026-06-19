@@ -13,12 +13,20 @@ DEFAULT_LOG_VARIABLES = (
     "stabilizer.roll",
     "stabilizer.pitch",
     "stabilizer.yaw",
+    "stabilizer.thrust",
     "stateEstimate.x",
     "stateEstimate.y",
     "stateEstimate.z",
     "stateEstimate.vx",
     "stateEstimate.vy",
     "stateEstimate.vz",
+    "stateEstimate.roll",
+    "stateEstimate.pitch",
+    "stateEstimate.yaw",
+    "stateEstimate.qx",
+    "stateEstimate.qy",
+    "stateEstimate.qz",
+    "stateEstimate.qw",
     "acc.x",
     "acc.y",
     "acc.z",
@@ -26,12 +34,93 @@ DEFAULT_LOG_VARIABLES = (
     "gyro.y",
     "gyro.z",
     "pm.vbat",
+    "pm.vbatMV",
+    "pm.batteryLevel",
+    "pm.state",
+    "pm.chargeCurrent",
+    "pm.extVbat",
+    "pm.extVbatMV",
+    "pm.extCurr",
+    "radio.rssi",
+    "radio.isConnected",
+    "radio.numRxUc",
+    "radio.numRxBc",
+    "supervisor.info",
+    "sys.canfly",
+    "sys.isFlying",
+    "sys.isTumbled",
     "range.front",
     "range.back",
     "range.left",
     "range.right",
     "range.up",
+    "range.zrange",
+    "controller.cmd_thrust",
+    "controller.cmd_roll",
+    "controller.cmd_pitch",
+    "controller.cmd_yaw",
+    "controller.actuatorThrust",
+    "ctrltarget.x",
+    "ctrltarget.y",
+    "ctrltarget.z",
+    "ctrltarget.vx",
+    "ctrltarget.vy",
+    "ctrltarget.vz",
+    "ctrltarget.roll",
+    "ctrltarget.pitch",
+    "ctrltarget.yaw",
+    "ctrltarget.thrust",
+    "motor.m1",
+    "motor.m2",
+    "motor.m3",
+    "motor.m4",
+    "motor.m1req",
+    "motor.m2req",
+    "motor.m3req",
+    "motor.m4req",
+    "rpm.m1",
+    "rpm.m2",
+    "rpm.m3",
+    "rpm.m4",
+    "health.motorPass",
+    "health.batteryPass",
+    "health.batterySag",
+    "health.motorTestCount",
+    "kalman.varX",
+    "kalman.varY",
+    "kalman.varZ",
+    "kalman.rtFinal",
 )
+
+DEFAULT_LOG_VARIABLE_TYPES = {
+    "pm.vbatMV": "uint16_t",
+    "pm.batteryLevel": "uint8_t",
+    "pm.state": "int8_t",
+    "pm.extVbatMV": "uint16_t",
+    "radio.rssi": "uint8_t",
+    "radio.isConnected": "uint8_t",
+    "radio.numRxUc": "uint16_t",
+    "radio.numRxBc": "uint16_t",
+    "supervisor.info": "uint16_t",
+    "sys.canfly": "uint8_t",
+    "sys.isFlying": "uint8_t",
+    "sys.isTumbled": "uint8_t",
+    "motor.m1": "uint16_t",
+    "motor.m2": "uint16_t",
+    "motor.m3": "uint16_t",
+    "motor.m4": "uint16_t",
+    "motor.m1req": "int32_t",
+    "motor.m2req": "int32_t",
+    "motor.m3req": "int32_t",
+    "motor.m4req": "int32_t",
+    "rpm.m1": "uint16_t",
+    "rpm.m2": "uint16_t",
+    "rpm.m3": "uint16_t",
+    "rpm.m4": "uint16_t",
+    "health.motorPass": "uint8_t",
+    "health.batteryPass": "uint8_t",
+    "health.motorTestCount": "uint16_t",
+}
 
 
 @dataclass(slots=True)
@@ -62,7 +151,7 @@ class CrazyflieLoggingConfig:
     period_ms: int = 50
     output_dir: str = "artifacts/crazyflie_logs"
     variables: tuple[str, ...] = DEFAULT_LOG_VARIABLES
-    variable_types: dict[str, str] = field(default_factory=dict)
+    variable_types: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_LOG_VARIABLE_TYPES))
 
 
 @dataclass(slots=True)
@@ -110,8 +199,10 @@ def _load_logging(raw: dict[str, Any]) -> CrazyflieLoggingConfig:
     data = dict(raw)
     if "variables" in data:
         data["variables"] = tuple(str(value) for value in data["variables"])
+    variable_types = dict(DEFAULT_LOG_VARIABLE_TYPES)
     if "variable_types" in data:
-        data["variable_types"] = {str(key): str(value) for key, value in data["variable_types"].items()}
+        variable_types.update({str(key): str(value) for key, value in data["variable_types"].items()})
+    data["variable_types"] = variable_types
     return CrazyflieLoggingConfig(**data)
 
 

@@ -9,9 +9,9 @@ from time import sleep, time
 from flightrl.hardware.calibration_flight import CALIBRATION_LOG_VARIABLES, build_calibration_sequence, command_row, sequence_duration_s
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
-from flightrl.hardware.motion import arm_crazyflie_for_flight, disarm_crazyflie_after_flight, install_legacy_hover_warning_filter
+from flightrl.hardware.motion import arm_crazyflie_for_flight, disarm_crazyflie_after_flight, install_legacy_hover_warning_filter, reset_crazyflie_estimator
 from flightrl.hardware.preflight import require_supervisor_allows_flight
-from flightrl.hardware.telemetry import build_log_configs
+from flightrl.hardware.telemetry import build_log_configs, with_available_log_variables, with_extra_log_variables
 
 
 def main() -> None:
@@ -48,22 +48,23 @@ def main() -> None:
 
 
 def run_live(args, sequence) -> list[dict[str, float | str]]:
-    config = load_hardware_config(args.hardware_config)
-    config.logging.variables = CALIBRATION_LOG_VARIABLES
+    config = with_extra_log_variables(load_hardware_config(args.hardware_config), CALIBRATION_LOG_VARIABLES)
     modules = require_cflib()
     install_legacy_hover_warning_filter()
     rows: list[dict[str, float | str]] = []
     latest: dict[str, float] = {}
     with sync_crazyflie_context(config, modules) as scf:
+        log_config = with_available_log_variables(scf, config)
         commander = scf.cf.commander
         motion = modules.motion_commander_cls(scf, default_height=args.height_m)
         airborne = False
         try:
             require_supervisor_allows_flight(scf, modules, config)
+            reset_crazyflie_estimator(scf.cf)
             arm_crazyflie_for_flight(scf.cf)
             motion.take_off(height=args.height_m, velocity=config.safety.velocity_m_s)
             airborne = True
-            with modules.sync_logger_cls(scf, build_log_configs(modules, config)) as logger:
+            with modules.sync_logger_cls(scf, build_log_configs(modules, log_config)) as logger:
                 for command in sequence:
                     deadline = time() + command.duration_s
                     motion.start_linear_motion(command.vx_m_s, command.vy_m_s, command.vz_m_s, rate_yaw=command.yawrate_deg_s)

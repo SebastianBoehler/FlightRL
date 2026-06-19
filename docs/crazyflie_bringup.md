@@ -70,6 +70,17 @@ python scripts/crazyflie_log.py --duration-s 10
 
 CSV columns start with `host_time_s` and `crazyflie_time_ms`, followed by configured cflib log variables. These logs are intended for later parameter fitting and sim-to-real replay checks.
 
+By default, FlightRL asks for a broad replay profile instead of a narrow control-only profile. The default includes:
+
+- state estimate: position, velocity, attitude, quaternion, and Kalman variance
+- sensors: accelerometer, gyroscope, multi-ranger, and z-ranger
+- power and link state: battery voltage/current fields, battery level/state, radio counters, supervisor/sys flags
+- controller and actuator state: controller commands, control targets, motor commands, RPM, and basic health flags
+
+The request is filtered against the connected Crazyflie's log Table of Contents before live logging starts. This keeps one config usable across firmware/deck differences while still capturing every default field the drone actually exposes.
+
+This is still CRTP/radio telemetry, not an unlimited data bus. The Crazyflie log protocol limits one log packet to roughly one small block of packed values, and cflib exposes a finite number of blocks/operations. FlightRL therefore keeps the default profile under the practical 16-block budget and splits it into multiple blocks. If we need raw, high-rate system-identification traces, use a Bitcraze micro-SD card deck: that path logs firmware variables locally at much higher rates and is better suited for dense IMU/motor-side data than live radio streaming.
+
 ## Ranger Hold Policy
 
 The current learned hardware policy runs above the Crazyflie firmware stabilizer. It emits bounded velocity, vertical velocity, and yaw-rate setpoints; it does not command motors directly.

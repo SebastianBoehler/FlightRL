@@ -190,7 +190,7 @@ def estimate_room_bounds(
 
     down_points = [point.z_m for point in points if point.sensor == "range.zrange"]
     up_points = [point.z_m for point in points if point.sensor == "range.up"]
-    z_min = quantile_bounds(down_points, lower_quantile, upper_quantile, padding_m)[0] if down_points else floor_m
+    z_min = max(quantile_bounds(down_points, lower_quantile, upper_quantile, padding_m)[0], floor_m) if down_points else floor_m
     if not down_points:
         warnings.append("floor_from_default")
     z_source = up_points or [point.z_m for point in points]
@@ -204,6 +204,9 @@ def estimate_room_bounds(
         {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max, "z_min": z_min, "z_max": z_max},
         min_span_m=0.1,
     )
+    if bounds["z_min"] < floor_m:
+        bounds["z_max"] += floor_m - bounds["z_min"]
+        bounds["z_min"] = floor_m
     return {
         **bounds,
         "width_m": bounds["x_max"] - bounds["x_min"],

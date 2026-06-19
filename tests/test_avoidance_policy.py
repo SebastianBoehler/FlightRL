@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 from flightrl.hardware.avoidance_policy import (
     AvoidanceCommand,
     RangerAvoidancePolicy,
     RangerReading,
     command_row,
+    command_from_model,
+    min_horizontal_range_m,
     normalize_reading,
     reactive_clearance_command,
+    smooth_command,
     teacher_command,
     vertical_velocity_from_height_error,
 )
@@ -37,6 +41,21 @@ def test_policy_forward_shape_matches_hover_command() -> None:
     output = model(np.asarray([observation], dtype=np.float32))
 
     assert output.shape == (1, 4)
+
+
+def test_command_from_model_uses_configurable_speed_clip() -> None:
+    model = RangerAvoidancePolicy(hidden_size=8)
+    for parameter in model.parameters():
+        parameter.data.zero_()
+    model.net[-1].bias.data = torch.tensor([2.0, -2.0, 90.0, 0.5])
+    reading = RangerReading(front_m=1.0, back_m=1.0, left_m=1.0, right_m=1.0, up_m=2.0, zrange_m=0.5)
+
+    command = command_from_model(model, reading, max_speed_m_s=1.1, max_yawrate_deg_s=30.0)
+
+    assert np.isclose(command.vx_m_s, 1.1)
+    assert np.isclose(command.vy_m_s, -1.1)
+    assert np.isclose(command.yawrate_deg_s, 30.0)
+    assert np.isclose(command.zdistance_m, 0.5)
 
 
 def test_command_row_serializes_slots_dataclass() -> None:
@@ -75,3 +94,28 @@ def test_reactive_hard_clearance_dominates_opposite_sensor() -> None:
     command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=0.20, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
 
     assert command.vx_m_s == -0.25
+
+
+def test_min_horizontal_range_ignores_vertical_sensors() -> None:
+    reading = RangerReading(front_m=0.4, back_m=1.0, left_m=0.3, right_m=0.8, up_m=0.05, zrange_m=0.02)
+
+    assert min_horizontal_range_m(reading) == 0.3
+
+
+def test_smooth_command_limits_step_size() -> None:
+    previous = AvoidanceCommand(vx_m_s=0.0, vy_m_s=0.0, yawrate_deg_s=0.0, zdistance_m=0.5)
+    target = AvoidanceCommand(vx_m_s=-0.25, vy_m_s=0.2, yawrate_deg_s=30.0, zdistance_m=0.7)
+
+    command = smooth_command(
+        target,
+        previous,
+        alpha=1.0,
+        max_speed_step_m_s=0.03,
+        max_yawrate_step_deg_s=6.0,
+        max_zdistance_step_m=0.04,
+    )
+
+    assert command.vx_m_s == -0.03
+    assert command.vy_m_s == 0.03
+    assert command.yawrate_deg_s == 6.0
+    assert command.zdistance_m == 0.54

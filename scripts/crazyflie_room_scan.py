@@ -15,7 +15,7 @@ from flightrl.hardware.motion import (
     install_legacy_hover_warning_filter,
 )
 from flightrl.hardware.preflight import require_supervisor_allows_flight
-from flightrl.hardware.telemetry import build_log_configs
+from flightrl.hardware.telemetry import build_log_configs, with_available_log_variables, with_extra_log_variables
 
 
 SCAN_LOG_VARIABLES = (
@@ -78,13 +78,13 @@ def main() -> None:
 
 
 def run_live(args) -> list[dict[str, float | str]]:
-    config = load_hardware_config(args.hardware_config)
-    config.logging.variables = SCAN_LOG_VARIABLES
+    config = with_extra_log_variables(load_hardware_config(args.hardware_config), SCAN_LOG_VARIABLES)
     modules = require_cflib()
     install_legacy_hover_warning_filter()
     latest: dict[str, float] = {}
     rows: list[dict[str, float | str]] = []
     with sync_crazyflie_context(config, modules) as scf:
+        log_config = with_available_log_variables(scf, config)
         commander = scf.cf.commander
         motion = modules.motion_commander_cls(scf, default_height=args.height_m)
         airborne = False
@@ -96,7 +96,7 @@ def run_live(args) -> list[dict[str, float | str]]:
             motion.stop()
             print(f"room scan started: duration_s={args.duration_s:.1f}, height_m={args.height_m:.2f}", flush=True)
             deadline = time() + args.duration_s
-            with modules.sync_logger_cls(scf, build_log_configs(modules, config)) as logger:
+            with modules.sync_logger_cls(scf, build_log_configs(modules, log_config)) as logger:
                 if not wait_until_airborne(logger, latest, rows, args):
                     print(
                         "room scan abort: Crazyflie did not reach min airborne height "

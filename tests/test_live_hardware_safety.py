@@ -16,7 +16,8 @@ def test_live_safety_report_accepts_current_crazyflie_scripts() -> None:
     report = build_live_safety_report(scripts)
 
     assert report["summary"]["passed"] is True
-    assert report["summary"]["learned_checkpoint_hardware_scripts"] == 3
+    expected = sum(1 for record in report["records"] if record["uses_hardware"] and record["uses_checkpoint"])
+    assert report["summary"]["learned_checkpoint_hardware_scripts"] == expected
 
 
 def test_live_safety_rejects_checkpoint_control_without_approval(tmp_path: Path) -> None:

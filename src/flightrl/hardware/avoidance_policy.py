@@ -118,11 +118,49 @@ def reactive_clearance_command(
     return command.clipped(max_speed=max_speed_m_s)
 
 
-def command_from_model(model: RangerAvoidancePolicy, reading: RangerReading) -> AvoidanceCommand:
+def min_horizontal_range_m(reading: RangerReading) -> float:
+    return min(reading.front_m, reading.back_m, reading.left_m, reading.right_m)
+
+
+def command_from_model(
+    model: RangerAvoidancePolicy,
+    reading: RangerReading,
+    *,
+    max_speed_m_s: float = 0.25,
+    max_yawrate_deg_s: float = 45.0,
+) -> AvoidanceCommand:
     obs = normalize_reading(reading)[None, :]
     with torch.no_grad():
         raw = model(obs).squeeze(0).cpu().numpy()
-    return AvoidanceCommand(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3])).clipped()
+    return AvoidanceCommand(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3])).clipped(
+        max_speed=max_speed_m_s,
+        max_yawrate=max_yawrate_deg_s,
+    )
+
+
+def smooth_command(
+    command: AvoidanceCommand,
+    previous: AvoidanceCommand,
+    *,
+    alpha: float = 0.35,
+    max_speed_step_m_s: float = 0.03,
+    max_yawrate_step_deg_s: float = 6.0,
+    max_zdistance_step_m: float = 0.04,
+) -> AvoidanceCommand:
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError("alpha must be in [0, 1]")
+    blended = AvoidanceCommand(
+        vx_m_s=_blend(previous.vx_m_s, command.vx_m_s, alpha),
+        vy_m_s=_blend(previous.vy_m_s, command.vy_m_s, alpha),
+        yawrate_deg_s=_blend(previous.yawrate_deg_s, command.yawrate_deg_s, alpha),
+        zdistance_m=_blend(previous.zdistance_m, command.zdistance_m, alpha),
+    )
+    return AvoidanceCommand(
+        vx_m_s=_slew(previous.vx_m_s, blended.vx_m_s, max_speed_step_m_s),
+        vy_m_s=_slew(previous.vy_m_s, blended.vy_m_s, max_speed_step_m_s),
+        yawrate_deg_s=_slew(previous.yawrate_deg_s, blended.yawrate_deg_s, max_yawrate_step_deg_s),
+        zdistance_m=_slew(previous.zdistance_m, blended.zdistance_m, max_zdistance_step_m),
+    )
 
 
 def command_array(command: AvoidanceCommand) -> np.ndarray:
@@ -182,6 +220,16 @@ def _axis_clearance_pressure(positive_side_m: float, negative_side_m: float, cle
         clearance_m,
         hard_clearance_m,
     )
+
+
+def _blend(previous: float, target: float, alpha: float) -> float:
+    return float(previous + alpha * (target - previous))
+
+
+def _slew(previous: float, target: float, max_step: float) -> float:
+    if max_step < 0.0:
+        raise ValueError("max_step must be non-negative")
+    return float(previous + np.clip(target - previous, -max_step, max_step))
 
 
 def _range_m(values: Mapping[str, float], key: str) -> float:

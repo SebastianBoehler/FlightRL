@@ -18,27 +18,6 @@ expect_multiranger = true
 [logging]
 period_ms = 50
 output_dir = "artifacts/crazyflie_logs"
-variables = [
-  "stabilizer.roll",
-  "stabilizer.pitch",
-  "stabilizer.yaw",
-  "stateEstimate.x",
-  "stateEstimate.y",
-  "stateEstimate.z",
-  "stateEstimate.vx",
-  "stateEstimate.vy",
-  "stateEstimate.vz",
-  "acc.x",
-  "acc.y",
-  "acc.z",
-  "gyro.x",
-  "gyro.y",
-  "gyro.z",
-  "pm.vbat",
-  "range.front",
-  "range.back",
-  "range.left",
-  "range.right",
-  "range.up",
-  "range.zrange",
-]
+# variables intentionally omitted: FlightRL uses the comprehensive default
+# profile from flightrl.hardware.config and filters unsupported entries
+# against the connected Crazyflie log TOC.

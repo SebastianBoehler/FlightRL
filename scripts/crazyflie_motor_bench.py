@@ -10,6 +10,7 @@ from cflib.crazyflie.syncLogger import SyncLogger
 
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
+from flightrl.hardware.motion import arm_crazyflie_for_flight, disarm_crazyflie_after_flight
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +39,20 @@ def main(argv: list[str] | None = None) -> int:
     rows = run_bench(config, args.powers, args.motors)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["motor", "power", "rpm", "motor_output", "motor_requested", "vbat"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "motor",
+                "power",
+                "rpm",
+                "motor_rpm",
+                "motor_output",
+                "motor_requested",
+                "vbat",
+                "supervisor_info",
+                "motor_pass",
+            ],
+        )
         writer.writeheader()
         writer.writerows(rows)
     print(f"wrote {len(rows)} rows to {args.output}")
@@ -52,6 +66,7 @@ def run_bench(config, powers: list[int], motors: list[int]) -> list[dict[str, ob
         cf = scf.cf
         try:
             _zero_all(cf)
+            arm_crazyflie_for_flight(cf)
             _set_param(cf, "motorPowerSet.enable", 1)
             for motor in motors:
                 rows.extend(_run_motor(cf, scf, motor, powers))
@@ -59,13 +74,25 @@ def run_bench(config, powers: list[int], motors: list[int]) -> list[dict[str, ob
             _zero_all(cf)
             cf.commander.send_stop_setpoint()
             cf.commander.send_notify_setpoint_stop()
+            disarm_crazyflie_after_flight(cf)
     return rows
 
 
 def _run_motor(cf, scf, motor: int, powers: list[int]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     logconf = LogConfig(name=f"Motor{motor}", period_in_ms=20)
-    variables = _available_variables(cf, [f"rpm.m{motor}", f"motor.m{motor}", f"motor.m{motor}req", "pm.vbat"])
+    variables = _available_variables(
+        cf,
+        [
+            f"rpm.m{motor}",
+            f"motor.m{motor}_rpm",
+            f"motor.m{motor}",
+            f"motor.m{motor}req",
+            "pm.vbat",
+            "supervisor.info",
+            "health.motorPass",
+        ],
+    )
     if not variables:
         raise RuntimeError("no motor bench log variables are available in the Crazyflie TOC")
     print(f"m{motor}: logging {variables}")
@@ -73,15 +100,20 @@ def _run_motor(cf, scf, motor: int, powers: list[int]) -> list[dict[str, object]
         logconf.add_variable(variable)
     with SyncLogger(scf, logconf) as logger:
         for power in powers:
+            arm_crazyflie_for_flight(cf)
             _set_param(cf, f"motorPowerSet.m{motor}", power)
             latest = _collect_latest(logger, 0.45)
+            rpm = latest.get(f"rpm.m{motor}") or latest.get(f"motor.m{motor}_rpm", "")
             row = {
                 "motor": motor,
                 "power": power,
-                "rpm": latest.get(f"rpm.m{motor}", ""),
+                "rpm": rpm,
+                "motor_rpm": latest.get(f"motor.m{motor}_rpm", ""),
                 "motor_output": latest.get(f"motor.m{motor}", ""),
                 "motor_requested": latest.get(f"motor.m{motor}req", ""),
                 "vbat": latest.get("pm.vbat", ""),
+                "supervisor_info": latest.get("supervisor.info", ""),
+                "motor_pass": latest.get("health.motorPass", ""),
             }
             rows.append(row)
             print(row)

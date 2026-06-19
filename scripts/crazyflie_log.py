@@ -7,6 +7,7 @@ from pathlib import Path
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.errors import HardwareError
+from flightrl.hardware.motion import reset_crazyflie_estimator
 from flightrl.hardware.telemetry import default_log_path, write_sync_log
 
 
@@ -32,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         modules = require_cflib()
         with sync_crazyflie_context(config, modules) as scf:
+            reset_crazyflie_estimator(scf.cf)
             count = write_sync_log(scf, modules, config, output, args.duration_s)
         print(f"wrote {count} telemetry samples to {output}")
         return 0

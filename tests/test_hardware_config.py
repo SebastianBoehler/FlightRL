@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from flightrl.hardware.config import load_hardware_config
+from flightrl.hardware.config import DEFAULT_LOG_VARIABLES, load_hardware_config
 from flightrl.hardware.errors import HardwareConfigError
 
 
@@ -19,6 +19,20 @@ def test_load_crazyflie_hardware_config() -> None:
     assert config.safety.requires_manual_confirm is True
     assert config.decks.expect_flow_deck is True
     assert config.decks.expect_multiranger is True
+
+
+def test_default_hardware_config_uses_comprehensive_log_profile() -> None:
+    config = load_hardware_config(ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless.toml")
+
+    assert config.logging.variables == DEFAULT_LOG_VARIABLES
+    assert len(config.logging.variables) <= 80
+    assert "stateEstimate.qw" in config.logging.variables
+    assert "controller.cmd_thrust" in config.logging.variables
+    assert "motor.m1req" in config.logging.variables
+    assert "rpm.m3" in config.logging.variables
+    assert "kalman.varZ" in config.logging.variables
+    assert config.logging.variable_types["rpm.m3"] == "uint16_t"
+    assert config.logging.variable_types["motor.m1req"] == "int32_t"
 
 
 def test_load_detailed_hardware_config_keeps_log_variable_types() -> None:

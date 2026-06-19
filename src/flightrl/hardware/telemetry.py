@@ -63,8 +63,9 @@ def build_log_configs(modules, config: CrazyflieHardwareConfig):
 
 
 def write_sync_log(scf, modules, config: CrazyflieHardwareConfig, output_path: str | Path, duration_s: float) -> int:
-    variables = available_log_variables(scf, tuple(config.logging.variables))
-    log_configs = build_log_configs(modules, _with_log_variables(config, variables))
+    log_config = with_available_log_variables(scf, config)
+    variables = tuple(log_config.logging.variables)
+    log_configs = build_log_configs(modules, log_config)
     deadline = time() + duration_s
     latest: dict[str, object] = {}
     count = 0
@@ -90,6 +91,18 @@ def available_log_variables(scf, variables: Sequence[str]) -> tuple[str, ...]:
         if group in toc and name in toc[group]:
             available.append(variable)
     return tuple(available)
+
+
+def with_extra_log_variables(config: CrazyflieHardwareConfig, variables: Sequence[str]):
+    return _with_log_variables(config, _unique((*tuple(config.logging.variables), *tuple(variables))))
+
+
+def with_available_log_variables(scf, config: CrazyflieHardwareConfig):
+    return _with_log_variables(config, available_log_variables(scf, tuple(config.logging.variables)))
+
+
+def _unique(values: Sequence[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))
 
 
 def _with_log_variables(config: CrazyflieHardwareConfig, variables: tuple[str, ...]):

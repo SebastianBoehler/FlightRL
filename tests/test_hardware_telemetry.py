@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from flightrl.hardware.telemetry import TelemetryCsvWriter, TelemetrySample, available_log_variables, build_log_configs, write_sync_log
+from flightrl.hardware.telemetry import (
+    TelemetryCsvWriter,
+    TelemetrySample,
+    available_log_variables,
+    build_log_configs,
+    with_available_log_variables,
+    with_extra_log_variables,
+    write_sync_log,
+)
 
 
 def test_telemetry_csv_writes_replay_friendly_rows(tmp_path) -> None:
@@ -62,6 +70,28 @@ def test_available_log_variables_filters_against_crazyflie_toc() -> None:
     variables = available_log_variables(scf, ("motor.m1", "motor.m2", "badname"))
 
     assert variables == ("motor.m1",)
+
+
+def test_extra_and_available_log_variables_keep_order_and_filter() -> None:
+    config = SimpleNamespace(logging=SimpleNamespace(variables=("stateEstimate.x", "pm.vbat"), period_ms=50))
+    extended = with_extra_log_variables(config, ("pm.vbat", "motor.m1", "rpm.m1"))
+    scf = SimpleNamespace(
+        cf=SimpleNamespace(
+            log=SimpleNamespace(
+                toc=SimpleNamespace(
+                    toc={
+                        "stateEstimate": {"x": object()},
+                        "motor": {"m1": object()},
+                    }
+                )
+            )
+        )
+    )
+
+    filtered = with_available_log_variables(scf, extended)
+
+    assert extended.logging.variables == ("stateEstimate.x", "pm.vbat", "motor.m1", "rpm.m1")
+    assert filtered.logging.variables == ("stateEstimate.x", "motor.m1")
 
 
 class FakeLogConfig:

@@ -22,7 +22,7 @@ from flightrl.hardware.motion import (
     install_legacy_hover_warning_filter,
 )
 from flightrl.hardware.preflight import require_supervisor_allows_flight
-from flightrl.hardware.telemetry import build_log_configs
+from flightrl.hardware.telemetry import build_log_configs, with_available_log_variables, with_extra_log_variables
 from flightrl.sim2real.hardware_approval import HardwareApprovalError, require_hardware_approved
 
 
@@ -96,14 +96,14 @@ def dry_run_row(model: RangerHoldPolicy, args) -> dict[str, float]:
 
 
 def run_live(model: RangerHoldPolicy, args) -> list[dict[str, float]]:
-    config = load_hardware_config(args.hardware_config)
-    config.logging.variables = HOLD_LOG_VARIABLES
+    config = with_extra_log_variables(load_hardware_config(args.hardware_config), HOLD_LOG_VARIABLES)
     modules = require_cflib()
     install_legacy_hover_warning_filter()
     latest: dict[str, float] = {}
     rows: list[dict[str, float]] = []
     target = target_tuple(args) if args.target is not None else None
     with sync_crazyflie_context(config, modules) as scf:
+        log_config = with_available_log_variables(scf, config)
         commander = scf.cf.commander
         motion = modules.motion_commander_cls(scf, default_height=args.height_m)
         airborne = False
@@ -116,7 +116,7 @@ def run_live(model: RangerHoldPolicy, args) -> list[dict[str, float]]:
             deadline = time() + args.duration_s
             if target is not None:
                 print(f"hold policy loop started: duration_s={args.duration_s:.1f}, target={target}", flush=True)
-            with modules.sync_logger_cls(scf, build_log_configs(modules, config)) as logger:
+            with modules.sync_logger_cls(scf, build_log_configs(modules, log_config)) as logger:
                 while time() < deadline:
                     _timestamp, values, _conf = next(logger)
                     latest.update({key: float(value) for key, value in values.items()})

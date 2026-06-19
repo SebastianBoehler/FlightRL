@@ -110,21 +110,32 @@ def disarm_after_flight(supervisor: SupervisorLike, *, sleep: Callable[[float], 
 
 def arm_crazyflie_for_flight(cf: CrazyflieArmLike, *, sleep: Callable[[float], None] = default_sleep) -> None:
     arm_for_flight(cf.supervisor, sleep=sleep)
-    if _system_arm_state(cf.param) is False:
+    if _has_param(cf.param, "system.arm") and _system_arm_state(cf.param) is False:
         cf.param.set_value("system.arm", "1")
         sleep(0.5)
-    if _system_arm_state(cf.param) is False:
+    if _has_param(cf.param, "system.arm") and _system_arm_state(cf.param) is False:
         raise HardwareSafetyError("Crazyflie did not arm; system.arm stayed 0")
 
 
 def disarm_crazyflie_after_flight(cf: CrazyflieArmLike, *, sleep: Callable[[float], None] = default_sleep) -> None:
     try:
         try:
-            cf.param.set_value("system.arm", "0")
+            if _has_param(cf.param, "system.arm"):
+                cf.param.set_value("system.arm", "0")
         except Exception:
             pass
     finally:
         disarm_after_flight(cf.supervisor, sleep=sleep)
+
+
+def reset_crazyflie_estimator(cf: CrazyflieArmLike, *, sleep: Callable[[float], None] = default_sleep) -> bool:
+    if not _has_param(cf.param, "kalman.resetEstimation"):
+        return False
+    cf.param.set_value("kalman.resetEstimation", "1")
+    sleep(0.1)
+    cf.param.set_value("kalman.resetEstimation", "0")
+    sleep(2.0)
+    return True
 
 
 def send_hover_setpoint_compat(
@@ -158,3 +169,11 @@ def _system_arm_state(param: ParamLike) -> bool | None:
     except Exception:
         return None
     return str(value).strip().lower() in {"1", "true"}
+
+
+def _has_param(param: ParamLike, complete_name: str) -> bool:
+    toc = getattr(getattr(param, "toc", None), "toc", None)
+    if not isinstance(toc, dict):
+        return True
+    group, _, name = complete_name.partition(".")
+    return bool(group and name and group in toc and name in toc[group])

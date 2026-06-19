@@ -6,7 +6,7 @@ from typing import Mapping
 
 from .config import CrazyflieHardwareConfig
 from .errors import HardwareSafetyError
-from .telemetry import build_log_configs
+from .telemetry import available_log_variables, build_log_configs
 
 
 SUPERVISOR_INFO_FLAGS = (
@@ -76,18 +76,25 @@ def inspect_log_variables(scf, config: CrazyflieHardwareConfig) -> PreflightRepo
             warnings=("log variable TOC could not be read through this cflib object",),
         )
 
-    missing: list[str] = []
-    for variable in config.logging.variables:
-        group, _, name = variable.partition(".")
-        if not group or not name or group not in toc or name not in toc[group]:
-            missing.append(variable)
-    if missing:
+    available = available_log_variables(scf, config.logging.variables)
+    missing = tuple(variable for variable in config.logging.variables if variable not in available)
+    details = {
+        "available_groups": ",".join(sorted(toc.keys())),
+        "log_variables_requested": str(len(config.logging.variables)),
+        "log_variables_available": str(len(available)),
+        "log_variables_missing": str(len(missing)),
+    }
+    if not available:
         return PreflightReport(
             ok=False,
-            details={"available_groups": ",".join(sorted(toc.keys()))},
-            warnings=tuple(f"log variable missing from TOC: {name}" for name in missing),
+            details=details,
+            warnings=("no configured log variables were found in the Crazyflie TOC",),
         )
-    return PreflightReport(ok=True, details={"log_variables": str(len(config.logging.variables))})
+    return PreflightReport(
+        ok=True,
+        details=details,
+        warnings=tuple(f"optional log variable missing from TOC: {name}" for name in missing),
+    )
 
 
 def decode_supervisor_info(value: int) -> tuple[str, ...]:

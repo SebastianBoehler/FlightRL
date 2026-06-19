@@ -15,7 +15,7 @@ from flightrl.hardware.policy_observation import (
     initial_policy_state,
     update_previous_action,
 )
-from flightrl.hardware.telemetry import build_log_configs
+from flightrl.hardware.telemetry import build_log_configs, with_available_log_variables, with_extra_log_variables
 from flightrl.policy import create_policy_for_checkpoint
 from flightrl.sim2real.hardware_approval import hardware_approval_status
 from flightrl.training import create_env_and_policy
@@ -58,21 +58,21 @@ def _run_dry(config, policy, target, approval):
         logits, _value, _state = policy.forward_eval(torch.from_numpy(obs).view(1, -1))
     action = logits.mean.squeeze(0).numpy()
     update_previous_action(state, action)
-    return [{"host_time_s": time(), "action_0": float(action[0]), "action_1": float(action[1]), **approval_columns(approval)}]
+    return [{"host_time_s": time(), **action_columns(action), **approval_columns(approval)}]
 
 
 def _run_live(config, policy, args, approval):
     from flightrl.hardware.config import load_hardware_config
 
-    hardware_config = load_hardware_config(args.hardware_config)
-    hardware_config.logging.variables = POLICY_LOG_VARIABLES
+    hardware_config = with_extra_log_variables(load_hardware_config(args.hardware_config), POLICY_LOG_VARIABLES)
     modules = require_cflib()
     state = initial_policy_state(config)
     latest: dict[str, float] = {}
     rows = []
     deadline = time() + args.duration_s
     with sync_crazyflie_context(hardware_config, modules) as scf:
-        with modules.sync_logger_cls(scf, build_log_configs(modules, hardware_config)) as logger:
+        log_config = with_available_log_variables(scf, hardware_config)
+        with modules.sync_logger_cls(scf, build_log_configs(modules, log_config)) as logger:
             while time() < deadline:
                 _timestamp, values, _conf = next(logger)
                 latest.update({key: float(value) for key, value in values.items()})
@@ -81,8 +81,12 @@ def _run_live(config, policy, args, approval):
                     logits, _value, _state = policy.forward_eval(torch.from_numpy(obs).view(1, -1))
                 action = logits.mean.squeeze(0).numpy()
                 update_previous_action(state, action)
-                rows.append({"host_time_s": time(), "action_0": float(action[0]), "action_1": float(action[1]), **latest, **approval_columns(approval)})
+                rows.append({"host_time_s": time(), **action_columns(action), **latest, **approval_columns(approval)})
     return rows
+
+
+def action_columns(action) -> dict[str, float]:
+    return {f"action_{idx}": float(value) for idx, value in enumerate(action)}
 
 
 def approval_columns(approval: dict) -> dict[str, str | bool]:
