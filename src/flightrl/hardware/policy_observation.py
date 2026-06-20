@@ -7,6 +7,8 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from flightrl.config import FlightConfig
+from flightrl.hardware.avoidance_ttc import time_to_collision_s
+from flightrl.hardware.ttc_policy import ttc_urgency
 
 
 POLICY_LOG_VARIABLES = (
@@ -66,6 +68,8 @@ def build_policy_observation(
 
     values = [
         *(_range_values(telemetry) if config.sensors.include_range_sensor else []),
+        *(_range_rate_values(telemetry) if config.sensors.include_range_rate_sensor else []),
+        *(_ttc_values(telemetry) if config.sensors.include_ttc_sensor else []),
         _safe_div(x, dyn.x_limit),
         _safe_div(y, dyn.x_limit),
         _safe_div(z, dyn.z_limit),
@@ -131,6 +135,28 @@ def _range_values(telemetry: Mapping[str, float]) -> list[float]:
         _range_norm(telemetry, "range.right"),
         _range_norm(telemetry, "range.up"),
     ]
+
+
+def _range_rate_values(telemetry: Mapping[str, float]) -> list[float]:
+    return [
+        _rate_norm(telemetry, "range_rate_front_m_s"),
+        _rate_norm(telemetry, "range_rate_back_m_s"),
+        _rate_norm(telemetry, "range_rate_left_m_s"),
+        _rate_norm(telemetry, "range_rate_right_m_s"),
+        _rate_norm(telemetry, "range_rate_up_m_s"),
+        _rate_norm(telemetry, "range_rate_zrange_m_s"),
+    ]
+
+
+def _ttc_values(telemetry: Mapping[str, float]) -> list[float]:
+    ranges = [_get(telemetry, key) / 1000.0 for key in ("range.front", "range.back", "range.left", "range.right")]
+    rates = [_get(telemetry, key) for key in ("range_rate_front_m_s", "range_rate_back_m_s", "range_rate_left_m_s", "range_rate_right_m_s")]
+    min_ttc = min(time_to_collision_s(distance, rate) for distance, rate in zip(ranges, rates, strict=True))
+    return [float(np.clip(min(ranges) / 4.0, 0.0, 1.0)), ttc_urgency(min_ttc, 0.7)]
+
+
+def _rate_norm(telemetry: Mapping[str, float], key: str) -> float:
+    return float(np.clip(_get(telemetry, key) / 4.0, -1.0, 1.0))
 
 
 def _battery_norm(vbat: float) -> float:

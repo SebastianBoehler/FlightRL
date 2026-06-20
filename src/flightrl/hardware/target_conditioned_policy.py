@@ -54,15 +54,30 @@ def command_from_target_model(
     observation = target_observation(reading, target)[None, :]
     with torch.no_grad():
         raw = model(observation).squeeze(0).cpu().numpy()
-    return AvoidanceCommand(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3])).clipped(
-        max_speed=max_speed_m_s,
-        max_yawrate=max_yawrate_deg_s,
+    command = AvoidanceCommand(
+        *clip_horizontal_norm(float(raw[0]), float(raw[1]), max_speed_m_s),
+        float(raw[2]),
+        float(raw[3]),
     )
+    return command.clipped(max_speed=max_speed_m_s, max_yawrate=max_yawrate_deg_s)
 
 
 def load_target_policy(path: str | Path) -> TargetConditionedPolicy:
     checkpoint = torch.load(path, map_location="cpu")
-    model = TargetConditionedPolicy(hidden_size=int(checkpoint.get("hidden_size", 96)))
-    model.load_state_dict(checkpoint["state_dict"])
+    state = checkpoint["state_dict"]
+    hidden_size = int(checkpoint.get("hidden_size") or state["net.0.weight"].shape[0])
+    if state["net.0.weight"].shape[0] != hidden_size:
+        hidden_size = int(state["net.0.weight"].shape[0])
+    model = TargetConditionedPolicy(hidden_size=hidden_size)
+    model.load_state_dict(state)
     model.eval()
     return model
+
+
+def clip_horizontal_norm(vx_m_s: float, vy_m_s: float, max_speed_m_s: float) -> tuple[float, float]:
+    vector = np.asarray([vx_m_s, vy_m_s], dtype=np.float64)
+    norm = float(np.linalg.norm(vector))
+    if norm <= max_speed_m_s or norm <= 1e-9:
+        return float(vector[0]), float(vector[1])
+    scaled = vector * (max_speed_m_s / norm)
+    return float(scaled[0]), float(scaled[1])

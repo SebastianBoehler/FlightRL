@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from flightrl.hardware.avoidance_policy import RangerReading, command_array, reading_from_telemetry, sample_readings
 from flightrl.hardware.target_direction import TargetDirectionConfig, target_direction_command
 from flightrl.hardware.target_conditioned_policy import TargetConditionedPolicy, TargetSpec, load_target_policy, target_observation
+from flightrl.tracking import add_wandb_args, args_config, init_wandb, log_artifacts, log_metrics
 
 
 def main() -> None:
@@ -36,11 +37,13 @@ def main() -> None:
     parser.add_argument("--clearance-m", type=float, default=1.30)
     parser.add_argument("--hard-clearance-m", type=float, default=0.10)
     parser.add_argument("--target-height-m", type=float, default=0.50)
+    parser.add_argument("--relabel-with-teacher", action="store_true")
+    add_wandb_args(parser, default_project="FlightRL")
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
-    train_x, train_y = load_examples(args.input)
+    train_x, train_y = load_examples(args.input, args)
     if args.synthetic_samples:
         synthetic_x, synthetic_y = synthetic_examples(args, rng)
         train_x = torch.cat([train_x, synthetic_x], dim=0)
@@ -49,10 +52,11 @@ def main() -> None:
         close_x, close_y = synthetic_close_examples(args, rng)
         train_x = torch.cat([train_x, close_x], dim=0)
         train_y = torch.cat([train_y, close_y], dim=0)
-    val_x, val_y = load_examples(args.val_input) if args.val_input else (train_x, train_y)
+    val_x, val_y = load_examples(args.val_input, args) if args.val_input else (train_x, train_y)
     model = load_target_policy(args.init_checkpoint) if args.init_checkpoint else TargetConditionedPolicy(hidden_size=args.hidden_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    history, best_state = train(model, optimizer, train_x, train_y, val_x, val_y, args)
+    run = init_wandb(args, args_config(args, {"train_samples": int(train_x.shape[0]), "val_samples": int(val_x.shape[0])}))
+    history, best_state = train(model, optimizer, train_x, train_y, val_x, val_y, args, run)
     model.load_state_dict(best_state)
     report = build_report(args, history, train_x, val_x)
 
@@ -61,7 +65,7 @@ def main() -> None:
     torch.save(
         {
             "state_dict": model.state_dict(),
-            "hidden_size": args.hidden_size,
+            "hidden_size": model_hidden_size(model),
             "trainer": "target_conditioned_log_imitation",
             "source_logs": args.input,
             "validation_logs": args.val_input,
@@ -71,12 +75,16 @@ def main() -> None:
         checkpoint,
     )
     write_report(report, Path(args.report))
+    log_metrics(run, {f"final/{key}": value for key, value in report["metrics"].items()})
+    log_artifacts(run, name=Path(args.checkpoint).stem, paths=[args.checkpoint, args.report], artifact_type="model")
+    if run is not None:
+        run.finish()
     print(f"checkpoint={checkpoint}")
     print(f"report={args.report}")
     print(f"best_val_loss={report['metrics']['best_val_loss']:.6f}")
 
 
-def load_examples(specs: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+def load_examples(specs: list[str], args) -> tuple[torch.Tensor, torch.Tensor]:
     observations = []
     targets = []
     for spec in specs:
@@ -85,11 +93,27 @@ def load_examples(specs: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
             if not has_required_columns(row):
                 continue
             telemetry = {key: float(value) for key, value in row.items() if numeric(value)}
-            observations.append(target_observation(reading_from_telemetry(telemetry), target))
-            targets.append([float(row["vx_m_s"]), float(row["vy_m_s"]), float(row["yawrate_deg_s"]), float(row["zdistance_m"])])
+            reading = reading_from_telemetry(telemetry)
+            observations.append(target_observation(reading, target))
+            if args.relabel_with_teacher:
+                command = target_direction_command(
+                    reading,
+                    TargetDirectionConfig(
+                        direction_deg=target.direction_deg,
+                        target_speed_m_s=target.speed_m_s,
+                        clearance_m=args.clearance_m,
+                        hard_clearance_m=args.hard_clearance_m,
+                        target_height_m=args.target_height_m,
+                        avoidance_speed_m_s=args.synthetic_max_speed_m_s,
+                        max_speed_m_s=args.synthetic_max_speed_m_s,
+                    ),
+                )
+                targets.append(command_array(command))
+            else:
+                targets.append([float(row["vx_m_s"]), float(row["vy_m_s"]), float(row["yawrate_deg_s"]), float(row["zdistance_m"])])
     if not observations:
         raise SystemExit("no usable target-direction command rows found")
-    return torch.from_numpy(np.stack(observations)), torch.tensor(targets, dtype=torch.float32)
+    return torch.from_numpy(np.stack(observations)), torch.from_numpy(np.asarray(targets, dtype=np.float32))
 
 
 def synthetic_examples(args, rng: np.random.Generator) -> tuple[torch.Tensor, torch.Tensor]:
@@ -139,7 +163,7 @@ def parse_input_spec(spec: str) -> tuple[Path, TargetSpec]:
     return Path(pieces[0]), TargetSpec(direction_deg=float(pieces[1]), speed_m_s=float(pieces[2]))
 
 
-def train(model, optimizer, train_x, train_y, val_x, val_y, args) -> tuple[list[dict[str, float]], dict]:
+def train(model, optimizer, train_x, train_y, val_x, val_y, args, run=None) -> tuple[list[dict[str, float]], dict]:
     history = []
     best_loss = float("inf")
     best_state = deepcopy(model.state_dict())
@@ -159,6 +183,7 @@ def train(model, optimizer, train_x, train_y, val_x, val_y, args) -> tuple[list[
             val_loss = float(F.mse_loss(model(val_x), val_y))
         entry = {"epoch": epoch, "train_loss": float(np.mean(losses)), "val_loss": val_loss}
         history.append(entry)
+        log_metrics(run, {"train/loss": entry["train_loss"], "val/loss": val_loss}, step=epoch)
         if val_loss < best_loss:
             best_loss = val_loss
             best_state = deepcopy(model.state_dict())
@@ -183,6 +208,10 @@ def build_report(args, history, train_x, val_x) -> dict:
 def write_report(report: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+
+def model_hidden_size(model: TargetConditionedPolicy) -> int:
+    return int(model.net[0].out_features)
 
 
 def has_required_columns(row: dict[str, str]) -> bool:

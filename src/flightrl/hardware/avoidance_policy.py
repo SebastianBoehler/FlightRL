@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .avoidance_ttc import min_horizontal_ttc_s, ttc_escape_pressure
+
 
 RANGER_KEYS = ("front", "back", "left", "right", "up", "zrange")
 
@@ -100,13 +102,24 @@ def teacher_command(
 def reactive_clearance_command(
     reading: RangerReading,
     *,
+    range_rate_m_s: RangerReading | None = None,
     clearance_m: float = 0.45,
     hard_clearance_m: float = 0.10,
     target_height_m: float = 0.45,
     max_speed_m_s: float = 0.25,
+    ttc_horizon_s: float = 0.0,
+    ttc_hard_s: float = 0.12,
+    ttc_gain: float = 1.0,
 ) -> AvoidanceCommand:
     vx_pressure = _axis_clearance_pressure(reading.back_m, reading.front_m, clearance_m, hard_clearance_m)
     vy_pressure = _axis_clearance_pressure(reading.right_m, reading.left_m, clearance_m, hard_clearance_m)
+    escape_vx, escape_vy = _open_space_escape_pressure(reading, clearance_m, hard_clearance_m)
+    vx_pressure += escape_vx
+    vy_pressure += escape_vy
+    if range_rate_m_s is not None and ttc_horizon_s > ttc_hard_s:
+        ttc_vx, ttc_vy = ttc_escape_pressure(reading, range_rate_m_s, ttc_horizon_s, ttc_hard_s)
+        vx_pressure += ttc_gain * ttc_vx
+        vy_pressure += ttc_gain * ttc_vy
     bottom_pressure = _clearance_pressure(reading.zrange_m, 0.35, hard_clearance_m)
     top_pressure = _clearance_pressure(reading.up_m, clearance_m, hard_clearance_m)
     command = AvoidanceCommand(
@@ -115,7 +128,7 @@ def reactive_clearance_command(
         yawrate_deg_s=0.0,
         zdistance_m=target_height_m + 0.30 * bottom_pressure - 0.25 * top_pressure,
     )
-    return command.clipped(max_speed=max_speed_m_s)
+    return _clip_horizontal_norm(command, max_speed_m_s).clipped(max_speed=max_speed_m_s)
 
 
 def min_horizontal_range_m(reading: RangerReading) -> float:
@@ -136,6 +149,10 @@ def command_from_model(
         max_speed=max_speed_m_s,
         max_yawrate=max_yawrate_deg_s,
     )
+
+
+def clip_horizontal_norm(command: AvoidanceCommand, *, max_speed: float, max_yawrate: float = 45.0) -> AvoidanceCommand:
+    return _clip_horizontal_norm(command, max_speed).clipped(max_speed=max_speed, max_yawrate=max_yawrate)
 
 
 def smooth_command(
@@ -220,6 +237,31 @@ def _axis_clearance_pressure(positive_side_m: float, negative_side_m: float, cle
         clearance_m,
         hard_clearance_m,
     )
+
+
+def _open_space_escape_pressure(reading: RangerReading, clearance_m: float, hard_clearance_m: float) -> tuple[float, float]:
+    front_pressure = _clearance_pressure(reading.front_m, clearance_m, hard_clearance_m)
+    back_pressure = _clearance_pressure(reading.back_m, clearance_m, hard_clearance_m)
+    left_pressure = _clearance_pressure(reading.left_m, clearance_m, hard_clearance_m)
+    right_pressure = _clearance_pressure(reading.right_m, clearance_m, hard_clearance_m)
+    front_back_confinement = min(front_pressure, back_pressure)
+    left_right_confinement = min(left_pressure, right_pressure)
+    open_x = _open_space_delta(reading.front_m, reading.back_m, clearance_m)
+    open_y = _open_space_delta(reading.left_m, reading.right_m, clearance_m)
+    return left_right_confinement * open_x, front_back_confinement * open_y
+
+
+def _open_space_delta(positive_direction_m: float, negative_direction_m: float, clearance_m: float) -> float:
+    return float(np.clip((positive_direction_m - negative_direction_m) / clearance_m, -1.0, 1.0))
+
+
+def _clip_horizontal_norm(command: AvoidanceCommand, max_speed_m_s: float) -> AvoidanceCommand:
+    vector = np.asarray([command.vx_m_s, command.vy_m_s], dtype=np.float64)
+    norm = float(np.linalg.norm(vector))
+    if norm <= max_speed_m_s or norm <= 1e-9:
+        return command
+    scaled = vector * (max_speed_m_s / norm)
+    return AvoidanceCommand(float(scaled[0]), float(scaled[1]), command.yawrate_deg_s, command.zdistance_m)
 
 
 def _blend(previous: float, target: float, alpha: float) -> float:

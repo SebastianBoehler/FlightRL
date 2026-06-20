@@ -16,8 +16,10 @@ from .observation_schema import (
     NOISY_STATE_DIM,
     OBSERVATION_FLAG_BITS,
     POSITION_DIM,
+    RANGE_RATE_SENSOR_DIM,
     RANGE_SENSOR_DIM,
     TARGET_VECTOR_DIM,
+    TTC_SENSOR_DIM,
     VELOCITY_DIM,
     VISION_SENSOR_DIM,
 )
@@ -76,6 +78,8 @@ class SensorConfig:
     include_range_sensor: bool = False
     include_vision_sensor: bool = False
     include_crazyflie_telemetry: bool = False
+    include_range_rate_sensor: bool = False
+    include_ttc_sensor: bool = False
     state_noise_std: float = 0.01
     imu_noise_std: float = 0.02
 
@@ -214,6 +218,8 @@ class FlightConfig:
         dims += NOISY_STATE_DIM if self.sensors.include_noisy_state else 0
         dims += IMU_DIM if self.sensors.include_imu else 0
         dims += RANGE_SENSOR_DIM if self.sensors.include_range_sensor else 0
+        dims += RANGE_RATE_SENSOR_DIM if self.sensors.include_range_rate_sensor else 0
+        dims += TTC_SENSOR_DIM if self.sensors.include_ttc_sensor else 0
         dims += VISION_SENSOR_DIM if self.sensors.include_vision_sensor else 0
         if self.sensors.include_crazyflie_telemetry:
             dims += CRAZYFLIE_TELEMETRY_BASE_DIM + self.action_dim

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 from flightrl.hardware.avoidance_policy import RangerAvoidancePolicy, normalize_reading, reading_from_telemetry
 from flightrl.hardware.avoidance_shadow import load_ranger_policy
+from flightrl.tracking import add_wandb_args, args_config, init_wandb, log_artifacts, log_metrics
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
     parser.add_argument("--hidden-size", type=int, default=96)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--seed", type=int, default=17)
+    add_wandb_args(parser, default_project="FlightRL")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -33,7 +35,8 @@ def main() -> None:
     val_x, val_y = load_examples([Path(path) for path in args.val_input]) if args.val_input else (train_x, train_y)
     model = load_ranger_policy(args.init_checkpoint) if args.init_checkpoint else RangerAvoidancePolicy(hidden_size=args.hidden_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    history, best_state = train(model, optimizer, train_x, train_y, val_x, val_y, args)
+    run = init_wandb(args, args_config(args, {"train_samples": int(train_x.shape[0]), "val_samples": int(val_x.shape[0])}))
+    history, best_state = train(model, optimizer, train_x, train_y, val_x, val_y, args, run)
     model.load_state_dict(best_state)
     report = build_report(args, history, train_x, val_x)
 
@@ -52,6 +55,10 @@ def main() -> None:
         output,
     )
     write_report(report, Path(args.report))
+    log_metrics(run, {f"final/{key}": value for key, value in report["metrics"].items()})
+    log_artifacts(run, name=Path(args.checkpoint).stem, paths=[args.checkpoint, args.report, Path(args.report).with_suffix(".md")], artifact_type="model")
+    if run is not None:
+        run.finish()
     print(f"checkpoint={output}")
     print(f"report={args.report}")
     print(f"val_loss={report['metrics']['val_loss']:.6f}")
@@ -74,7 +81,7 @@ def load_examples(paths: list[Path]) -> tuple[torch.Tensor, torch.Tensor]:
     return torch.from_numpy(np.stack(observations)), torch.tensor(targets, dtype=torch.float32)
 
 
-def train(model, optimizer, train_x, train_y, val_x, val_y, args) -> tuple[list[dict[str, float]], dict]:
+def train(model, optimizer, train_x, train_y, val_x, val_y, args, run=None) -> tuple[list[dict[str, float]], dict]:
     history = []
     best_val_loss = float("inf")
     best_state = deepcopy(model.state_dict())
@@ -95,6 +102,7 @@ def train(model, optimizer, train_x, train_y, val_x, val_y, args) -> tuple[list[
             val_loss = float(F.mse_loss(model(val_x), val_y))
         entry = {"epoch": epoch, "train_loss": float(np.mean(losses)), "val_loss": val_loss}
         history.append(entry)
+        log_metrics(run, {"train/loss": entry["train_loss"], "val/loss": val_loss}, step=epoch)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_state = deepcopy(model.state_dict())

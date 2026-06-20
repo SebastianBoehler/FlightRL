@@ -7,6 +7,7 @@ from flightrl.hardware.target_direction import (
     TargetDirectionConfig,
     cruise_vector,
     keepout_pressure,
+    target_path_pressure,
     target_direction_command,
 )
 
@@ -38,6 +39,49 @@ def test_target_direction_clips_combined_vector_norm() -> None:
     )
 
     assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.500001
+
+
+def test_target_direction_uses_ttc_pressure_before_clearance() -> None:
+    command = target_direction_command(
+        RangerReading(front_m=0.9, back_m=3.0, left_m=3.0, right_m=3.0, up_m=2.0, zrange_m=0.5),
+        TargetDirectionConfig(
+            direction_deg=0.0,
+            target_speed_m_s=0.2,
+            avoidance_speed_m_s=0.8,
+            max_speed_m_s=0.8,
+            clearance_m=0.35,
+            ttc_horizon_s=0.8,
+            ttc_hard_s=0.15,
+        ),
+        range_rate_m_s=RangerReading(front_m=-1.8, back_m=0.0, left_m=0.0, right_m=0.0, up_m=0.0, zrange_m=0.0),
+    )
+
+    assert command.vx_m_s < 0.0
+
+
+def test_target_path_pressure_blocks_cruise_into_obstacle() -> None:
+    pressure = target_path_pressure(
+        RangerReading(front_m=0.20, back_m=3.0, left_m=3.0, right_m=3.0, up_m=2.0, zrange_m=0.5),
+        0.0,
+        clearance_m=0.45,
+        hard_clearance_m=0.08,
+    )
+
+    assert pressure > 0.7
+
+
+def test_target_path_ttc_blocks_cruise_before_clearance() -> None:
+    pressure = target_path_pressure(
+        RangerReading(front_m=0.8, back_m=3.0, left_m=3.0, right_m=3.0, up_m=2.0, zrange_m=0.5),
+        0.0,
+        clearance_m=0.45,
+        hard_clearance_m=0.08,
+        range_rate_m_s=RangerReading(front_m=-1.6, back_m=0.0, left_m=0.0, right_m=0.0, up_m=0.0, zrange_m=0.0),
+        ttc_horizon_s=0.8,
+        ttc_hard_s=0.15,
+    )
+
+    assert pressure > 0.6
 
 
 def test_keepout_pressure_is_zero_outside_clearance() -> None:

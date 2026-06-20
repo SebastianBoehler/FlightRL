@@ -7,9 +7,11 @@ from flightrl.hardware.avoidance_policy import (
     AvoidanceCommand,
     RangerAvoidancePolicy,
     RangerReading,
+    clip_horizontal_norm,
     command_row,
     command_from_model,
     min_horizontal_range_m,
+    min_horizontal_ttc_s,
     normalize_reading,
     reactive_clearance_command,
     smooth_command,
@@ -58,6 +60,13 @@ def test_command_from_model_uses_configurable_speed_clip() -> None:
     assert np.isclose(command.zdistance_m, 0.5)
 
 
+def test_clip_horizontal_norm_limits_vector_speed() -> None:
+    command = clip_horizontal_norm(AvoidanceCommand(0.8, 0.8, 90.0, 0.5), max_speed=0.8, max_yawrate=45.0)
+
+    assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.800001
+    assert command.yawrate_deg_s == 45.0
+
+
 def test_command_row_serializes_slots_dataclass() -> None:
     row = command_row(AvoidanceCommand(vx_m_s=0.1, vy_m_s=-0.2, yawrate_deg_s=3.0, zdistance_m=0.45))
 
@@ -90,10 +99,44 @@ def test_vertical_velocity_uses_height_error() -> None:
     assert vz > 0.0
 
 
-def test_reactive_hard_clearance_dominates_opposite_sensor() -> None:
-    command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=0.20, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
+def test_reactive_single_hard_clearance_dominates_opposite_sensor() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
 
     assert command.vx_m_s == -0.25
+    assert abs(command.vy_m_s) < 1e-6
+
+
+def test_reactive_front_back_pinch_escapes_toward_open_side() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=0.20, left_m=2.0, right_m=0.6, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s < 0.0
+    assert command.vy_m_s > 0.15
+    assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.250001
+
+
+def test_reactive_left_right_pinch_escapes_toward_open_side() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=2.0, back_m=0.6, left_m=0.08, right_m=0.20, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s > 0.15
+    assert command.vy_m_s < 0.0
+    assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.250001
+
+
+def test_reactive_corner_escape_is_diagonal() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=0.12, back_m=2.0, left_m=2.0, right_m=0.12, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s < -0.1
+    assert command.vy_m_s > 0.1
+
+
+def test_reactive_ttc_anticipates_fast_front_closure() -> None:
+    reading = RangerReading(front_m=0.8, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45)
+    rate = RangerReading(front_m=-2.0, back_m=0.0, left_m=0.0, right_m=0.0, up_m=0.0, zrange_m=0.0)
+
+    command = reactive_clearance_command(reading, range_rate_m_s=rate, ttc_horizon_s=0.7, ttc_hard_s=0.15, max_speed_m_s=0.5)
+
+    assert command.vx_m_s < -0.1
+    assert min_horizontal_ttc_s(reading, rate) == 0.4
 
 
 def test_min_horizontal_range_ignores_vertical_sensors() -> None:

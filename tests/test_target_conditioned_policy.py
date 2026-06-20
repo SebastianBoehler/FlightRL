@@ -32,8 +32,9 @@ def test_target_model_command_clips_speed() -> None:
 
     command = command_from_target_model(model, RangerReading(1.0, 1.0, 1.0, 1.0, 2.0, 0.5), TargetSpec(0.0, 0.2), max_speed_m_s=0.7)
 
-    assert command.vx_m_s == 0.7
-    assert command.vy_m_s == -0.7
+    assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.700001
+    assert command.vx_m_s > 0.0
+    assert command.vy_m_s < 0.0
 
 
 def test_target_conditioned_train_and_eval_cli(tmp_path: Path) -> None:
@@ -65,6 +66,7 @@ def test_target_conditioned_train_and_eval_cli(tmp_path: Path) -> None:
             "8",
             "--synthetic-close-samples",
             "4",
+            "--no-wandb",
         ],
         cwd=ROOT,
         check=True,

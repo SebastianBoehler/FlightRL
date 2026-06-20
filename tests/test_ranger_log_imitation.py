@@ -35,6 +35,7 @@ def test_ranger_log_imitation_training_writes_checkpoint_and_report(tmp_path: Pa
             "2",
             "--hidden-size",
             "8",
+            "--no-wandb",
         ],
         cwd=ROOT,
         check=True,

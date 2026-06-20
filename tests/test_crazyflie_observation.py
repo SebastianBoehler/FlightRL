@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from flightrl import load_config, make_env
-from flightrl.observation_schema import CRAZYFLIE_TELEMETRY_BASE_DIM, RANGE_SENSOR_DIM
+from flightrl.observation_schema import CRAZYFLIE_TELEMETRY_BASE_DIM, RANGE_RATE_SENSOR_DIM, RANGE_SENSOR_DIM, TTC_SENSOR_DIM
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,3 +47,12 @@ def test_range_sensor_can_be_enabled_without_placeholder_failure() -> None:
     )
 
     assert config.observation_dim > RANGE_SENSOR_DIM
+
+
+def test_ttc_range_rate_observation_shape_tracks_schema() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "crazyflie_hover.toml",
+        overrides={"sensors": {"include_range_rate_sensor": True, "include_ttc_sensor": True}},
+    )
+
+    assert config.observation_dim == CRAZYFLIE_TELEMETRY_BASE_DIM + RANGE_SENSOR_DIM + RANGE_RATE_SENSOR_DIM + TTC_SENSOR_DIM + config.action_dim
