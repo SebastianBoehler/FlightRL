@@ -126,7 +126,21 @@ def validate(files: dict, config: dict, args: argparse.Namespace) -> list[dict]:
         ),
         check("task_id_present", "task_id" in config.get("env", {})),
         check("reward_mode_present", "reward_mode" in config.get("env", {})),
-        check("reset_profile_knobs_present", all(key in config.get("env", {}) for key in ("near_wall_probability", "target_xy_offset_abs", "target_yaw_offset_abs"))),
+        check(
+            "reset_profile_knobs_present",
+            all(
+                key in config.get("env", {})
+                for key in (
+                    "near_wall_probability",
+                    "reset_z_min",
+                    "reset_z_max",
+                    "target_z_min",
+                    "target_z_max",
+                    "target_xy_offset_abs",
+                    "target_yaw_offset_abs",
+                )
+            ),
+        ),
     ]
     return checks
 

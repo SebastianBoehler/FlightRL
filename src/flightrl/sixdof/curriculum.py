@@ -23,6 +23,7 @@ class ResetProfile:
     near_wall_probability: float = 0.0
     near_wall_clearance_range: tuple[float, float] | None = None
     near_wall_yaw_jitter_rad: float = 0.0
+    z_margin: float = 0.25
 
 
 RESET_PROFILES = {
@@ -45,6 +46,21 @@ RESET_PROFILES = {
         near_wall_probability=0.65,
         near_wall_clearance_range=(0.08, 0.62),
         near_wall_yaw_jitter_rad=0.10,
+    ),
+    "obstacle_vertical_live": ResetProfile(
+        "obstacle_vertical_live",
+        0.75,
+        0.75,
+        (0.12, 2.38),
+        (0.28, 2.18),
+        0.04,
+        target_xy_offset_abs=0.35,
+        target_z_offset_abs=0.18,
+        target_yaw_offset_abs=0.45,
+        near_wall_probability=0.35,
+        near_wall_clearance_range=(0.12, 0.75),
+        near_wall_yaw_jitter_rad=0.10,
+        z_margin=0.08,
     ),
     "circle_easy": ResetProfile("circle_easy", 0.6, 0.6, (0.5, 0.8), (0.55, 0.75), 0.04, target_yaw_offset_abs=0.20, target_radius_range=(0.65, 0.85)),
     "circle_recovery": ResetProfile("circle_recovery", 0.9, 0.8, (0.4, 0.9), (0.5, 0.85), 0.10, target_yaw_offset_abs=0.55, target_radius_range=(0.45, 1.05)),
@@ -72,7 +88,7 @@ def sample_reset(
     position[:, 2] = rng.uniform(*profile.z_range, count)
     position[:, 0] = clip_axis(position[:, 0], room.x_min, room.x_max, margin=0.25)
     position[:, 1] = clip_axis(position[:, 1], room.y_min, room.y_max, margin=0.25)
-    position[:, 2] = clip_axis(position[:, 2], room.z_min, room.z_max, margin=0.25)
+    position[:, 2] = clip_axis(position[:, 2], room.z_min, room.z_max, margin=profile.z_margin)
 
     yaw = rng.uniform(-np.pi, np.pi, count).astype(np.float32)
     position, yaw = sample_near_wall_starts(profile, rng, position, yaw, room)

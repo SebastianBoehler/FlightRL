@@ -46,12 +46,16 @@ def position_yaw_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
 def obstacle_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
     error = env.target_position - env.position
     desired_acc = 1.5 * error - 1.0 * env.velocity
-    clearance = 0.55
+    horizontal_clearance = 0.55
+    bottom_clearance = 0.35
+    top_clearance = 0.45
     body_push = np.zeros_like(env.position)
-    body_push[:, 0] += np.maximum(0.0, clearance - env.ranges_m[:, 1])
-    body_push[:, 0] -= np.maximum(0.0, clearance - env.ranges_m[:, 0])
-    body_push[:, 1] += np.maximum(0.0, clearance - env.ranges_m[:, 3])
-    body_push[:, 1] -= np.maximum(0.0, clearance - env.ranges_m[:, 2])
+    body_push[:, 0] += np.maximum(0.0, horizontal_clearance - env.ranges_m[:, 1])
+    body_push[:, 0] -= np.maximum(0.0, horizontal_clearance - env.ranges_m[:, 0])
+    body_push[:, 1] += np.maximum(0.0, horizontal_clearance - env.ranges_m[:, 3])
+    body_push[:, 1] -= np.maximum(0.0, horizontal_clearance - env.ranges_m[:, 2])
+    body_push[:, 2] += np.maximum(0.0, bottom_clearance - env.ranges_m[:, 5])
+    body_push[:, 2] -= np.maximum(0.0, top_clearance - env.ranges_m[:, 4])
     rotation = quat_to_matrix(env.quaternion)
     desired_acc += np.einsum("nij,nj->ni", rotation, 5.0 * body_push, optimize=True)
     yaw_rate = 1.2 * wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion))

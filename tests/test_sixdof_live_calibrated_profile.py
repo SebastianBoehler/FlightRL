@@ -23,6 +23,16 @@ def test_obstacle_close_live_profile_samples_close_ranges() -> None:
     assert np.all(env.position[:, 2] >= 0.25)
 
 
+def test_obstacle_vertical_live_profile_samples_top_and_bottom_ranges() -> None:
+    env = SixDofCrazyflieEnv(num_envs=2048, seed=43, task="obstacle_avoidance", reset_profile="obstacle_vertical_live")
+    env.reset(seed=43)
+
+    assert np.quantile(env.ranges_m[:, 5], 0.10) < 0.35
+    assert np.quantile(env.ranges_m[:, 4], 0.10) < 0.45
+    assert np.all(env.position[:, 2] >= 0.12)
+    assert np.all(env.position[:, 2] <= env.room.z_max - 0.12)
+
+
 def test_summarize_sixdof_reset_profile_script(tmp_path: Path) -> None:
     output = tmp_path / "profile.json"
 

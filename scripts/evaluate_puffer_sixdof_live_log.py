@@ -76,6 +76,9 @@ def build_report(args, policy, pairs: list[tuple[np.ndarray, np.ndarray, dict[st
         "close_lt_18cm": [pair for pair in pairs if min_range(pair[2]) < 0.18],
         "close_lt_32cm": [pair for pair in pairs if min_range(pair[2]) < 0.32],
         "urgent_ttc_lt_35": [pair for pair in pairs if value(pair[2], "min_horizontal_ttc_s") < 0.35],
+        "top_lt_45cm": [pair for pair in pairs if top_range(pair[2]) < 0.45],
+        "bottom_lt_25cm": [pair for pair in pairs if bottom_range(pair[2]) < 0.25],
+        "vertical_lt_35cm": [pair for pair in pairs if min(top_range(pair[2]), bottom_range(pair[2])) < 0.35],
     }
     return {
         "checkpoint": args.checkpoint,
@@ -103,9 +106,12 @@ def group_metrics(group: list[tuple[np.ndarray, np.ndarray, dict[str, float]]]) 
         "action_abs_mean": float(np.mean(np.abs(actions))),
         "action_abs_max": float(np.max(np.abs(actions))),
         "saturation_fraction": float(np.mean(np.abs(actions) > 0.95)),
+        "min_top_range_m": float(min(top_range(item[2]) for item in group)),
+        "min_bottom_range_m": float(min(bottom_range(item[2]) for item in group)),
         "sign_agreement": {
             "roll_rate": sign_agreement(actions[:, 1], teachers[:, 1]),
             "pitch_rate": sign_agreement(actions[:, 2], teachers[:, 2]),
+            "thrust": sign_agreement(actions[:, 0], teachers[:, 0]),
         },
     }
 
@@ -113,8 +119,22 @@ def group_metrics(group: list[tuple[np.ndarray, np.ndarray, dict[str, float]]]) 
 def min_range(row: dict[str, float]) -> float:
     if "min_horizontal_range_m" in row:
         return value(row, "min_horizontal_range_m")
-    values = [value(row, key) / 1000.0 for key in ("range.front", "range.back", "range.left", "range.right")]
-    return min(4.0 if item >= 32.0 else item for item in values)
+    return min(live_range_m(row, key) for key in ("range.front", "range.back", "range.left", "range.right"))
+
+
+def top_range(row: dict[str, float]) -> float:
+    return live_range_m(row, "range.up")
+
+
+def bottom_range(row: dict[str, float]) -> float:
+    return live_range_m(row, "range.zrange")
+
+
+def live_range_m(row: dict[str, float], key: str) -> float:
+    raw = value(row, key)
+    if raw <= 0.0 or not np.isfinite(raw):
+        return 4.0
+    return 4.0 if raw >= 32000.0 else raw / 1000.0
 
 
 def sign_agreement(actual: np.ndarray, expected: np.ndarray) -> float:
@@ -142,8 +162,8 @@ def write_csv(path: str | Path, rows: list[dict[str, float]]) -> None:
 
 def render_markdown(report: dict[str, Any]) -> str:
     lines = ["# Puffer Live Shadow Report", "", f"- Samples: `{report['samples']}`", ""]
-    lines.append("| group | samples | l2 p95 | action max | roll sign | pitch sign |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| group | samples | l2 p95 | action max | thrust sign | roll sign | pitch sign |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     for name, metrics in report["groups"].items():
         if not metrics.get("samples"):
             lines.append(f"| {name} | 0 | n/a | n/a | n/a | n/a |")
@@ -151,7 +171,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         signs = metrics["sign_agreement"]
         lines.append(
             f"| {name} | {metrics['samples']} | {metrics['l2_p95']:.4f} | "
-            f"{metrics['action_abs_max']:.4f} | {signs['roll_rate']:.3f} | {signs['pitch_rate']:.3f} |"
+            f"{metrics['action_abs_max']:.4f} | {signs['thrust']:.3f} | {signs['roll_rate']:.3f} | {signs['pitch_rate']:.3f} |"
         )
     return "\n".join(lines)
 

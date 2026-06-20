@@ -78,6 +78,12 @@ def test_safety_abort_detects_tumble_and_uncontrolled_attitude() -> None:
     assert safety_abort_reason({"stateEstimate.z": 0.95}, target_height_m=0.5).startswith("height_error_gt_35cm")
 
 
+def test_safety_abort_can_disable_target_relative_height_guard() -> None:
+    assert safety_abort_reason({"stateEstimate.z": 0.95}, target_height_m=0.5, height_error_abort_m=0.0) is None
+    assert safety_abort_reason({"stateEstimate.z": 1.25}, target_height_m=0.5, height_error_abort_m=0.0).startswith("state_height_above_max")
+    assert safety_abort_reason({"stateEstimate.z": 0.05}, target_height_m=0.5, height_error_abort_m=0.0).startswith("state_height_below_min")
+
+
 def test_ttc_controller_uses_range_rate_input() -> None:
     from flightrl.hardware.avoidance_live import build_control_command
 

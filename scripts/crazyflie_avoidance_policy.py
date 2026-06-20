@@ -14,6 +14,7 @@ from flightrl.hardware.avoidance_policy import (
     min_horizontal_range_m,
     min_horizontal_ttc_s,
     reading_from_telemetry,
+    vertical_velocity_from_clearance,
     vertical_velocity_from_height_error,
 )
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
@@ -95,6 +96,10 @@ def main() -> None:
     parser.add_argument("--close-escape-min-speed-m-s", type=float, default=0.0)
     parser.add_argument("--close-escape-brake-gain", type=float, default=0.0)
     parser.add_argument("--close-escape-brake-max-m-s", type=float, default=0.0)
+    parser.add_argument("--height-error-abort-m", type=float, default=0.35, help="Target-relative height abort. Set 0 to disable for vertical-clearance experiments.")
+    parser.add_argument("--min-state-height-m", type=float, default=0.10)
+    parser.add_argument("--max-state-height-m", type=float, default=1.20)
+    parser.add_argument("--vertical-controller", choices=("height", "clearance"), default="height")
     parser.add_argument("--lock-height", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--confirm-flight", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -183,7 +188,13 @@ def run_live(model, shadow_model: RangerAvoidancePolicy | None, target_shadow_mo
                     now_s = time()
                     latest.update({key: float(value) for key, value in values.items()})
                     reading = reading_from_telemetry(latest)
-                    abort_reason = safety_abort_reason(latest, target_height_m=args.height_m)
+                    abort_reason = safety_abort_reason(
+                        latest,
+                        target_height_m=args.height_m,
+                        height_error_abort_m=args.height_error_abort_m,
+                        min_state_height_m=args.min_state_height_m,
+                        max_state_height_m=args.max_state_height_m,
+                    )
                     if abort_reason is not None:
                         print(f"policy loop stopping: safety abort {abort_reason}", flush=True)
                         if abort_reason == "tumbled":
@@ -240,11 +251,20 @@ def run_live(model, shadow_model: RangerAvoidancePolicy | None, target_shadow_mo
                         max_yawrate=config.safety.turn_rate_deg_s,
                     )
                     previous_command = smoothed_command
-                    vz_m_s = vertical_velocity_from_height_error(
-                        smoothed_command,
-                        reading,
-                        max_vertical_speed_m_s=args.max_vertical_speed_m_s,
-                    )
+                    if args.vertical_controller == "clearance":
+                        vz_m_s = vertical_velocity_from_clearance(
+                            reading,
+                            top_clearance_m=args.clearance_m,
+                            bottom_clearance_m=0.35,
+                            hard_clearance_m=args.hard_clearance_m,
+                            max_vertical_speed_m_s=args.max_vertical_speed_m_s,
+                        )
+                    else:
+                        vz_m_s = vertical_velocity_from_height_error(
+                            smoothed_command,
+                            reading,
+                            max_vertical_speed_m_s=args.max_vertical_speed_m_s,
+                        )
                     motion.start_linear_motion(
                         smoothed_command.vx_m_s,
                         smoothed_command.vy_m_s,

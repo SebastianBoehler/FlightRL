@@ -54,6 +54,26 @@ def test_identity_body_rays_point_along_body_axes() -> None:
     assert np.allclose(rays[0, 5], [0.0, 0.0, -1.0])
 
 
+def test_obstacle_teacher_responds_to_vertical_clearance() -> None:
+    env = SixDofCrazyflieEnv(num_envs=1, seed=6, task="obstacle_avoidance")
+    env.position[:] = np.asarray([[0.0, 0.0, 0.5]], dtype=np.float32)
+    env.target_position[:] = env.position
+    env.velocity[:] = 0.0
+    env.body_rates[:] = 0.0
+    env.quaternion[:] = np.asarray([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+    env.ranges_m[:] = np.asarray([[2.0, 2.0, 2.0, 2.0, 2.0, 0.5]], dtype=np.float32)
+    open_action = teacher_actions(env, task="obstacle_avoidance")[0]
+
+    env.ranges_m[0, 5] = 0.16
+    bottom_action = teacher_actions(env, task="obstacle_avoidance")[0]
+    env.ranges_m[0, 5] = 0.5
+    env.ranges_m[0, 4] = 0.18
+    top_action = teacher_actions(env, task="obstacle_avoidance")[0]
+
+    assert bottom_action[0] > open_action[0]
+    assert top_action[0] < open_action[0]
+
+
 def test_ranger_map_projects_rows_to_points() -> None:
     rows = [
         {

@@ -114,10 +114,13 @@ def test_export_sixdof_puffer4_assets_writes_native_ocean_env(tmp_path: Path) ->
     assert "task_id = 0" in ini_text
     assert "reward_mode = 0" in ini_text
     assert "near_wall_probability = 0" in ini_text
+    assert "reset_z_min = 0.35" in ini_text
+    assert "reset_z_max = 0.9" in ini_text
     assert 'dict_get(kwargs, "room_x_min")' in binding_text
     assert 'dict_get(kwargs, "range_noise_std_m")' in binding_text
     assert 'dict_get(kwargs, "task_id")' in binding_text
     assert 'dict_get(kwargs, "near_wall_probability")' in binding_text
+    assert 'dict_get(kwargs, "reset_z_min")' in binding_text
     assert "apply_observation_profile" in binding_text
     assert "apply_reset_profile" in binding_text
     for filename in SIXDOF_NATIVE_FILES:
@@ -136,6 +139,8 @@ def test_export_sixdof_puffer4_assets_supports_task_reward_mode(tmp_path: Path) 
     assert "task_id = 1" in ini_text
     assert "reward_mode = 4" in ini_text
     assert "near_wall_probability = 0.65" in ini_text
+    assert "reset_z_min = 0.44" in ini_text
+    assert "target_z_max = 0.6" in ini_text
     assert "target_xy_offset_abs = 0.45" in ini_text
     assert "task_position_error" in binding_text
     assert "flightrl_sixdof_step_env_context_batch" in binding_text
@@ -184,6 +189,7 @@ def test_sixdof_puffer_export_report_cli_writes_evidence(tmp_path: Path) -> None
     assert report["config"]["env"]["task_id"] == "0"
     assert report["config"]["env"]["reward_mode"] == "0"
     assert report["config"]["env"]["near_wall_probability"] == "0"
+    assert report["config"]["env"]["reset_z_min"] == "0.35"
     assert report["files"]["binding.c"]["required_tokens"]["#define OBS_SIZE 28"]
     assert output.with_suffix(".md").exists()
 

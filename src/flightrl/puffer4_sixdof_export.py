@@ -71,6 +71,10 @@ typedef struct {
 	    float near_wall_min_clearance_m;
 	    float near_wall_max_clearance_m;
 	    float near_wall_yaw_jitter_rad;
+	    float reset_z_min;
+	    float reset_z_max;
+	    float target_z_min;
+	    float target_z_max;
 	    float target_xy_offset_abs;
 	    float target_z_offset_abs;
 	    float target_yaw_offset_abs;
@@ -121,6 +125,10 @@ void my_init(Env* env, Dict* kwargs) {
 	    env->near_wall_min_clearance_m = (float)dict_get(kwargs, "near_wall_min_clearance_m")->value;
 	    env->near_wall_max_clearance_m = (float)dict_get(kwargs, "near_wall_max_clearance_m")->value;
 	    env->near_wall_yaw_jitter_rad = (float)dict_get(kwargs, "near_wall_yaw_jitter_rad")->value;
+	    env->reset_z_min = (float)dict_get(kwargs, "reset_z_min")->value;
+	    env->reset_z_max = (float)dict_get(kwargs, "reset_z_max")->value;
+	    env->target_z_min = (float)dict_get(kwargs, "target_z_min")->value;
+	    env->target_z_max = (float)dict_get(kwargs, "target_z_max")->value;
 	    env->target_xy_offset_abs = (float)dict_get(kwargs, "target_xy_offset_abs")->value;
 	    env->target_z_offset_abs = (float)dict_get(kwargs, "target_z_offset_abs")->value;
 	    env->target_yaw_offset_abs = (float)dict_get(kwargs, "target_yaw_offset_abs")->value;
@@ -215,12 +223,15 @@ void my_log(Log* log, Dict* out) {
 	        env->quaternion[2] = 0.0f;
 	        env->quaternion[3] = sinf(0.5f * yaw);
 	    }
+	    env->position[2] = clampf(rnd(&env->rng, env->reset_z_min, env->reset_z_max), env->room[4] + 0.12f, env->room[5] - 0.12f);
 	    if (env->target_xy_offset_abs >= 0.0f) {
 	        env->target_position[0] = clampf(env->position[0] + rnd(&env->rng, -env->target_xy_offset_abs, env->target_xy_offset_abs), env->room[0] + 0.25f, env->room[1] - 0.25f);
 	        env->target_position[1] = clampf(env->position[1] + rnd(&env->rng, -env->target_xy_offset_abs, env->target_xy_offset_abs), env->room[2] + 0.25f, env->room[3] - 0.25f);
 	    }
 	    if (env->target_z_offset_abs >= 0.0f) {
 	        env->target_position[2] = clampf(env->position[2] + rnd(&env->rng, -env->target_z_offset_abs, env->target_z_offset_abs), env->room[4] + 0.35f, env->room[5] - 0.25f);
+	    } else {
+	        env->target_position[2] = clampf(rnd(&env->rng, env->target_z_min, env->target_z_max), env->room[4] + 0.35f, env->room[5] - 0.25f);
 	    }
 	    if (env->target_yaw_offset_abs >= 0.0f) {
 	        env->target_yaw = wrap_angle(yaw_from_quat(env->quaternion) + rnd(&env->rng, -env->target_yaw_offset_abs, env->target_yaw_offset_abs));

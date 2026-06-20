@@ -203,6 +203,19 @@ def vertical_velocity_from_height_error(
     return float(np.clip(gain * (command.zdistance_m - reading.zrange_m), -max_vertical_speed_m_s, max_vertical_speed_m_s))
 
 
+def vertical_velocity_from_clearance(
+    reading: RangerReading,
+    *,
+    top_clearance_m: float = 0.45,
+    bottom_clearance_m: float = 0.35,
+    hard_clearance_m: float = 0.10,
+    max_vertical_speed_m_s: float = 0.18,
+) -> float:
+    bottom_pressure = _clearance_pressure(reading.zrange_m, bottom_clearance_m, hard_clearance_m)
+    top_pressure = _clearance_pressure(reading.up_m, top_clearance_m, hard_clearance_m)
+    return float(np.clip(max_vertical_speed_m_s * (bottom_pressure - top_pressure), -max_vertical_speed_m_s, max_vertical_speed_m_s))
+
+
 def sample_readings(count: int, rng: np.random.Generator) -> list[RangerReading]:
     samples = []
     for _ in range(count):

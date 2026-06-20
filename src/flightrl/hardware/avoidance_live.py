@@ -152,7 +152,14 @@ def has_range_update(values: dict) -> bool:
     return any(key.startswith("range.") for key in values)
 
 
-def safety_abort_reason(telemetry: dict[str, float], *, target_height_m: float) -> str | None:
+def safety_abort_reason(
+    telemetry: dict[str, float],
+    *,
+    target_height_m: float,
+    height_error_abort_m: float = 0.35,
+    min_state_height_m: float = 0.10,
+    max_state_height_m: float = 1.20,
+) -> str | None:
     if _value(telemetry, "sys.isTumbled") > 0.5:
         return "tumbled"
     roll = abs(_value(telemetry, "stateEstimate.roll"))
@@ -165,8 +172,12 @@ def safety_abort_reason(telemetry: dict[str, float], *, target_height_m: float) 
     if gyro > 500.0:
         return f"gyro_gt_500dps:{gyro:.1f}"
     z = _value(telemetry, "stateEstimate.z", default=target_height_m)
-    if abs(z - target_height_m) > 0.35:
-        return f"height_error_gt_35cm:{z - target_height_m:.2f}"
+    if z < min_state_height_m:
+        return f"state_height_below_min:{z:.2f}"
+    if z > max_state_height_m:
+        return f"state_height_above_max:{z:.2f}"
+    if height_error_abort_m > 0.0 and abs(z - target_height_m) > height_error_abort_m:
+        return f"height_error_gt_{int(height_error_abort_m * 100)}cm:{z - target_height_m:.2f}"
     return None
 
 

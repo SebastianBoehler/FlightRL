@@ -16,6 +16,7 @@ from flightrl.hardware.avoidance_policy import (
     reactive_clearance_command,
     smooth_command,
     teacher_command,
+    vertical_velocity_from_clearance,
     vertical_velocity_from_height_error,
 )
 
@@ -97,6 +98,16 @@ def test_vertical_velocity_uses_height_error() -> None:
 
     assert command.zdistance_m > 0.45
     assert vz > 0.0
+
+
+def test_vertical_clearance_velocity_reacts_without_height_target() -> None:
+    open_reading = RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.5)
+    top_close = RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=0.2, zrange_m=0.5)
+    bottom_close = RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.2)
+
+    assert vertical_velocity_from_clearance(open_reading) == 0.0
+    assert vertical_velocity_from_clearance(top_close) < 0.0
+    assert vertical_velocity_from_clearance(bottom_close) > 0.0
 
 
 def test_reactive_single_hard_clearance_dominates_opposite_sensor() -> None:
