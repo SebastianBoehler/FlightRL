@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--reset-profile", default=None)
+    parser.add_argument("--sensor-profile", default=None)
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
@@ -34,7 +35,16 @@ def main() -> None:
     if args.teacher:
         checkpoint_path = None
         tasks = parse_task_spec(args.task or "position_yaw")
-        metrics = evaluate_teacher(tasks, seed=args.seed, steps=args.steps, num_envs=args.num_envs, use_native_step=args.native_step, reset_profile=args.reset_profile, metric_start_step=args.metric_start_step)
+        metrics = evaluate_teacher(
+            tasks,
+            seed=args.seed,
+            steps=args.steps,
+            num_envs=args.num_envs,
+            use_native_step=args.native_step,
+            reset_profile=args.reset_profile,
+            sensor_profile=args.sensor_profile,
+            metric_start_step=args.metric_start_step,
+        )
     else:
         if args.checkpoint is None:
             raise SystemExit("--checkpoint is required unless --teacher is set")
@@ -50,6 +60,7 @@ def main() -> None:
             use_native_step=args.native_step,
             eval_tasks=tasks,
             reset_profile=args.reset_profile,
+            sensor_profile=args.sensor_profile,
             metric_start_step=args.metric_start_step,
         )
     gate = gate_status(
@@ -69,6 +80,7 @@ def main() -> None:
         "num_envs": args.num_envs,
         "native_step": args.native_step,
         "reset_profile": args.reset_profile or "broad",
+        "sensor_profile": args.sensor_profile,
         "thresholds": {
             "min_clearance_m": args.min_clearance_m,
             "min_completed_fraction": args.min_completed_fraction,

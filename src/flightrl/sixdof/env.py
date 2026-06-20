@@ -10,19 +10,16 @@ from .geometry import BoxRoom, body_rays_world, normalize_quat
 from .motor_rpm import MotorRpmParams, step_motor_rpm
 from .native_reset import native_reset_one
 from .physics import (
-    GRAVITY,
-    LINEAR_DRAG,
-    MASS,
     MAX_RATE_PITCH,
     MAX_RATE_ROLL,
     MAX_RATE_YAW,
-    RATE_TAU,
     SixDofDomainRandomization,
     SixDofPhysicsProfile,
     resolve_domain_randomization,
     resolve_physics_profile,
     sample_physics,
 )
+from .sensor_model import SixDofSensorProfile, noisy_values, observed_ranges, resolve_sensor_profile
 
 
 OBSERVATION_DIM = 28
@@ -55,31 +52,32 @@ class SixDofCrazyflieEnv:
         action_mode: str = "body_rate",
         physics_profile: str | SixDofPhysicsProfile | None = None,
         domain_randomization: str | SixDofDomainRandomization | None = None,
+        sensor_profile: str | SixDofSensorProfile | None = None,
     ) -> None:
         self.num_envs = int(num_envs)
         self.dt = float(dt)
         self.task = task
-        self.action_mode = validate_action_mode(action_mode)
+        if action_mode not in {"body_rate", "motor_rpm"}:
+            raise ValueError(f"unknown 6-DoF action mode {action_mode!r}")
+        self.action_mode = action_mode
         self.hardware_action_interface = "sim_only_motor_rpm" if self.action_mode == "motor_rpm" else "firmware_setpoint"
         self.use_native_step = bool(use_native_step)
         self.reset_profile = resolve_reset_profile(reset_profile)
         self.physics_profile = resolve_physics_profile(physics_profile)
         self.domain_randomization = resolve_domain_randomization(domain_randomization)
+        self.sensor_profile = resolve_sensor_profile(sensor_profile)
         self.room = room or BoxRoom()
-        self.room_bounds = room_bounds_array(self.room)
+        self.room_bounds = np.asarray([self.room.x_min, self.room.x_max, self.room.y_min, self.room.y_max, self.room.z_min, self.room.z_max, self.room.max_range_m], dtype=np.float32)
         self.rng = np.random.default_rng(seed)
-        profile_params = self.physics_profile.as_array()
-        self.mass = float(profile_params[MASS])
-        self.gravity = float(profile_params[GRAVITY])
-        self.drag = float(profile_params[LINEAR_DRAG])
-        self.rate_tau = float(profile_params[RATE_TAU])
-        self.max_rate = profile_params[[MAX_RATE_ROLL, MAX_RATE_PITCH, MAX_RATE_YAW]]
+        self.mass, self.gravity, self.drag = self.physics_profile.mass_kg, self.physics_profile.gravity_m_s2, self.physics_profile.linear_drag
+        self.max_rate = np.asarray(self.physics_profile.max_rate_rad_s, dtype=np.float32)
         self.position = np.zeros((self.num_envs, 3), dtype=np.float32)
         self.velocity = np.zeros_like(self.position)
         self.quaternion = np.zeros((self.num_envs, 4), dtype=np.float32)
         self.body_rates = np.zeros_like(self.position)
         self.physics_params = np.repeat(self.physics_profile.as_array()[None, :], self.num_envs, axis=0).astype(np.float32)
         self.thrust_state = np.ones(self.num_envs, dtype=np.float32)
+        self.command_state = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.previous_action = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.motor_params = MotorRpmParams()
         self.motor_hover_rpm = self.motor_params.hover_rpm
@@ -116,20 +114,23 @@ class SixDofCrazyflieEnv:
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
+        executed = self._executed_action(clipped)
         if self.use_native_step and self.action_mode != "motor_rpm":
             from .native import native_step_env
 
-            native_step_env(self, clipped)
+            native_step_env(self, executed)
+            if self.sensor_profile.observation_enabled:
+                self.observations[:] = self.observation()
             return self.observations, self.rewards, self.terminals, self.truncations, []
         elif self.action_mode == "motor_rpm":
-            step_motor_rpm(self, clipped)
+            step_motor_rpm(self, executed)
         else:
-            self._python_step(clipped)
+            self._python_step(executed)
         self.step_count += 1
-        reward = self._reward(clipped)
+        reward = self._reward(executed)
         terminated = ~self.room.contains(self.position)
         truncated = self.step_count >= 800
-        self.previous_action[:] = clipped
+        self.previous_action[:] = executed
         self.observations[:] = self.observation()
         self.rewards[:] = reward
         self.terminals[:] = terminated.astype(np.uint8)
@@ -140,19 +141,23 @@ class SixDofCrazyflieEnv:
         step_body_rate(self, clipped)
 
     def observation(self) -> np.ndarray:
-        pos_error = self.target_position - self.position
+        position = noisy_values(self.position, self.sensor_profile.state_noise_std_m, self.rng)
+        velocity = noisy_values(self.velocity, self.sensor_profile.velocity_noise_std_m_s, self.rng)
+        body_rates = noisy_values(self.body_rates, self.sensor_profile.body_rate_noise_std_rad_s, self.rng)
+        ranges = observed_ranges(self.ranges_m, max_range_m=self.room.max_range_m, profile=self.sensor_profile, rng=self.rng)
+        pos_error = self.target_position - position
         yaw = quat_to_yaw(self.quaternion)
         yaw_error = wrap_angle(self.observation_target_yaw() - yaw)
         obs = np.concatenate(
             [
                 pos_error / np.asarray([2.0, 2.0, 1.5], dtype=np.float32),
-                self.velocity / 3.0,
+                velocity / 3.0,
                 self.quaternion,
-                self.body_rates / self.physics_params[:, [MAX_RATE_ROLL, MAX_RATE_PITCH, MAX_RATE_YAW]],
+                body_rates / self.physics_params[:, [MAX_RATE_ROLL, MAX_RATE_PITCH, MAX_RATE_YAW]],
                 self.target_position / np.asarray([2.0, 2.0, 2.5], dtype=np.float32),
                 np.sin(yaw_error)[:, None],
                 np.cos(yaw_error)[:, None],
-                self.ranges_m / self.room.max_range_m,
+                ranges / self.room.max_range_m,
                 self.previous_action,
             ],
             axis=1,
@@ -219,6 +224,7 @@ class SixDofCrazyflieEnv:
         self.quaternion[mask] = euler_to_quat(roll, pitch, yaw)
         self.physics_params[mask] = sample_physics(self.physics_profile, self.domain_randomization, self.rng, count)
         self.thrust_state[mask] = 1.0
+        self.command_state[mask] = 0.0
         self.target_position[mask] = target
         self.target_yaw[mask] = target_yaw
         self.previous_action[mask] = 0.0
@@ -227,6 +233,14 @@ class SixDofCrazyflieEnv:
         self.rewards[mask] = 0.0
         self.terminals[mask] = 0
         self.truncations[mask] = 0
+
+    def _executed_action(self, clipped: np.ndarray) -> np.ndarray:
+        alpha = self.sensor_profile.action_alpha(self.dt)
+        if alpha >= 1.0:
+            self.command_state[:] = clipped
+        else:
+            self.command_state += alpha * (clipped - self.command_state)
+        return self.command_state.astype(np.float32)
 
     def _update_ranges(self) -> None:
         rays = body_rays_world(self.quaternion)
@@ -281,16 +295,3 @@ def quat_to_yaw(quaternions: np.ndarray) -> np.ndarray:
 
 def wrap_angle(angle: np.ndarray) -> np.ndarray:
     return ((angle + np.pi) % (2.0 * np.pi) - np.pi).astype(np.float32)
-
-
-def room_bounds_array(room: BoxRoom) -> np.ndarray:
-    return np.asarray(
-        [room.x_min, room.x_max, room.y_min, room.y_max, room.z_min, room.z_max, room.max_range_m],
-        dtype=np.float32,
-    )
-
-
-def validate_action_mode(value: str) -> str:
-    if value not in {"body_rate", "motor_rpm"}:
-        raise ValueError(f"unknown 6-DoF action mode {value!r}")
-    return value

@@ -14,6 +14,7 @@ from flightrl.sixdof.dataset import parse_task_probabilities, task_probability_v
 from flightrl.sixdof.observation import OBSERVATION_MODES, observation_dim
 from flightrl.sixdof.rl import REWARD_MODES, PpoConfig, SixDofActorCritic, collect_rollout, load_actor_checkpoint, ppo_update
 from flightrl.sixdof.tasks import parse_task_spec, task_observation_dim
+from flightrl.tracking import add_wandb_args, args_config, init_wandb, log_artifacts, log_metrics
 
 
 def main() -> None:
@@ -45,6 +46,8 @@ def main() -> None:
     parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
     parser.add_argument("--seed", type=int, default=919)
     parser.add_argument("--native-step", action="store_true")
+    parser.add_argument("--sensor-profile", default=None)
+    add_wandb_args(parser, default_project="FlightRL")
     args = parser.parse_args()
     init_checkpoint = torch.load(args.init_checkpoint, map_location="cpu") if args.init_checkpoint else None
     args.policy_tasks = resolve_policy_tasks(args, init_checkpoint)
@@ -62,6 +65,7 @@ def main() -> None:
         task=args.task,
         use_native_step=args.native_step,
         reset_profile=args.reset_profile,
+        sensor_profile=args.sensor_profile,
     )
     config = PpoConfig(
         hidden_size=args.hidden_size,
@@ -78,6 +82,7 @@ def main() -> None:
         load_actor_checkpoint(model, init_checkpoint)
     reference_actor = frozen_actor(model) if args.reference_coef > 0.0 else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
+    run = init_wandb(args, args_config(args, {"input_dim": input_dim, "policy_tasks": list(args.policy_tasks)}))
 
     best = None
     history = []
@@ -103,7 +108,9 @@ def main() -> None:
             candidate = payload(model, args, metrics, score, update)
             if best is None or candidate["selection_score"] > best["selection_score"]:
                 best = candidate
-            history.append({"update": update, "mean_reward": metrics["mean_reward"], "selection_score": score, **losses})
+            entry = {"update": update, "mean_reward": metrics["mean_reward"], "selection_score": score, **losses}
+            history.append(entry)
+            log_metrics(run, wandb_metrics(metrics, losses, score), step=update)
             print(
                 f"update={update} reward={metrics['mean_reward']:.3f} pos_err={metrics['mean_position_error_m']:.3f} "
                 f"yaw={metrics.get('mean_yaw_error_rad', 0.0):.3f} completed={metrics['mean_completed_fraction']:.3f} "
@@ -117,6 +124,7 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(best, output)
     output.with_suffix(".report.json").write_text(json.dumps(report(best, args), indent=2, sort_keys=True) + "\n")
+    log_artifacts(run, name=output.stem, paths=[output, output.with_suffix(".report.json")], artifact_type="model")
     print(f"checkpoint={output}")
     print(f"report={output.with_suffix('.report.json')}")
 
@@ -132,6 +140,7 @@ def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
             use_native_step=args.native_step,
             eval_tasks=parse_task_spec(args.task),
             reset_profile=args.eval_reset_profile,
+            sensor_profile=args.sensor_profile,
         )
     return evaluate_policy(
         model.actor,
@@ -142,6 +151,7 @@ def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
         use_native_step=args.native_step,
         eval_tasks=parse_task_spec(args.task),
         reset_profile=args.eval_reset_profile,
+        sensor_profile=args.sensor_profile,
         observation_mode=args.observation_mode,
     )
 
@@ -156,6 +166,13 @@ def score_metrics(metrics: dict) -> float:
         - metrics.get("yaw_error_p95_rad", 0.0)
         - metrics.get("action_saturation_fraction", 0.0)
     )
+
+
+def wandb_metrics(metrics: dict, losses: dict, score: float) -> dict[str, float]:
+    logged = {"selection_score": float(score)}
+    logged.update({f"train/{key}": float(value) for key, value in losses.items()})
+    logged.update({f"eval/{key}": float(value) for key, value in metrics.items() if isinstance(value, int | float)})
+    return logged
 
 
 def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, score: float, update: int) -> dict:
@@ -177,6 +194,7 @@ def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, s
         "residual_scale": args.residual_scale,
         "reset_profile": args.reset_profile,
         "eval_reset_profile": args.eval_reset_profile,
+        "sensor_profile": args.sensor_profile,
         "imitation_coef": args.imitation_coef,
         "reference_coef": args.reference_coef,
         "reward_mode": args.reward_mode,
@@ -202,6 +220,7 @@ def report(checkpoint: dict, args: argparse.Namespace) -> dict:
         "history": checkpoint["history"],
         "controller": args.controller,
         "residual_scale": args.residual_scale,
+        "sensor_profile": args.sensor_profile,
         "thresholds": {
             "max_yaw_error_rad": args.max_yaw_error_rad,
             "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,

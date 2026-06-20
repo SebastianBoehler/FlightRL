@@ -19,6 +19,10 @@ def main() -> None:
     parser.add_argument("--build-mode", choices=tuple(BUILD_MODE_FLAGS), default="cpu")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--train-seed", type=int, default=42)
+    parser.add_argument("--sim-profile", default=None)
+    parser.add_argument("--task", default="position_yaw")
+    parser.add_argument("--reward-mode", default="env")
+    parser.add_argument("--reset-profile", default="broad")
     parser.add_argument("puffer_args", nargs=argparse.REMAINDER, help="Arguments forwarded after optional --")
     args = parser.parse_args()
 
@@ -32,6 +36,10 @@ def main() -> None:
             policy_hidden_size=args.policy_hidden_size,
             policy_num_layers=args.policy_num_layers,
             train_seed=args.train_seed,
+            sim_profile=args.sim_profile,
+            task=args.task,
+            reward_mode=args.reward_mode,
+            reset_profile=args.reset_profile,
         ),
         build_mode=args.build_mode,
         no_build=args.no_build,

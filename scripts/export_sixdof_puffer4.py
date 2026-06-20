@@ -16,6 +16,10 @@ def main() -> None:
     parser.add_argument("--policy-hidden-size", type=int, default=None)
     parser.add_argument("--policy-num-layers", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--sim-profile", default=None)
+    parser.add_argument("--task", default="position_yaw")
+    parser.add_argument("--reward-mode", default="env")
+    parser.add_argument("--reset-profile", default="broad")
     args = parser.parse_args()
 
     result = export_sixdof_puffer4_assets(
@@ -28,6 +32,10 @@ def main() -> None:
             policy_hidden_size=args.policy_hidden_size,
             policy_num_layers=args.policy_num_layers,
             train_seed=args.seed,
+            sim_profile=args.sim_profile,
+            task=args.task,
+            reward_mode=args.reward_mode,
+            reset_profile=args.reset_profile,
         ),
     )
     print(f"env_dir={result.env_dir}")

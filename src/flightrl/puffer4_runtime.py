@@ -16,6 +16,7 @@ BUILD_MODE_FLAGS = {
     "float": ["--float"],
     "cpu": ["--cpu"],
 }
+WANDB_ENV_FILE = Path(".secrets/wandb.env")
 
 
 def resolve_pufferlib_root(pufferlib_root: str | Path | None = None) -> Path:
@@ -39,6 +40,7 @@ def normalize_puffer_args(puffer_args: Sequence[str], build_mode: str) -> list[s
 
 def puffer_subprocess_env(build_mode: str, puffer_args: Sequence[str]) -> dict[str, str]:
     env = os.environ.copy()
+    load_env_file(env, WANDB_ENV_FILE)
     forwarded = normalize_puffer_args(puffer_args, build_mode)
     if build_mode == "cpu" or "--slowly" in forwarded:
         env.setdefault("OMP_NUM_THREADS", "1")
@@ -50,6 +52,17 @@ def puffer_subprocess_env(build_mode: str, puffer_args: Sequence[str]) -> dict[s
             env.setdefault("CC", str(clang))
             env.setdefault("CXX", str(clangxx))
     return env
+
+
+def load_env_file(env: dict[str, str], path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.removeprefix("export ").split("=", 1)
+        env[key.strip()] = value.strip().strip("\"'")
 
 
 def compiled_puffer_env(root: Path, *, python_executable: str | None = None, build_mode: str = "cpu") -> str | None:

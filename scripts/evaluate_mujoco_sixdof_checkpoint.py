@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--teacher", action="store_true")
     parser.add_argument("--task", default="obstacle_avoidance")
     parser.add_argument("--reset-profile", default="obstacle_close_live")
+    parser.add_argument("--sensor-profile", default=None)
     parser.add_argument("--steps", type=int, default=500)
     parser.add_argument("--num-envs", type=int, default=64)
     parser.add_argument("--seed", type=int, default=301)
@@ -48,7 +49,7 @@ def evaluate(args: argparse.Namespace) -> dict:
     task = parse_task_spec(args.task)[0]
     if task not in tasks:
         raise SystemExit(f"task {task!r} not present in checkpoint tasks {tasks}")
-    env = MuJoCoCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=task, reset_profile=args.reset_profile)
+    env = MuJoCoCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=task, reset_profile=args.reset_profile, sensor_profile=args.sensor_profile)
     obs, _ = env.reset(seed=args.seed)
     controller = load_controller_from_checkpoint(checkpoint) if checkpoint and not args.teacher else None
     observation_mode = str(checkpoint.get("observation_mode", "base")) if checkpoint else "base"
@@ -101,6 +102,7 @@ def evaluate(args: argparse.Namespace) -> dict:
         "steps": args.steps,
         "num_envs": args.num_envs,
         "reset_profile": args.reset_profile,
+        "sensor_profile": args.sensor_profile,
         "gate": gate,
         "metrics": metrics,
         "safety": "MuJoCo validation only; passing this report does not approve live hardware deployment.",

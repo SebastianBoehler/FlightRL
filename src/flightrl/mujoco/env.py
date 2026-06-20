@@ -8,6 +8,7 @@ from flightrl.mujoco.model import load_crazyflie_model, require_mujoco
 from flightrl.sixdof.curriculum import ResetProfile, resolve_reset_profile, sample_reset
 from flightrl.sixdof.env import ACTION_DIM, OBSERVATION_DIM, euler_to_quat, quat_to_yaw, wrap_angle
 from flightrl.sixdof.geometry import BoxRoom, body_rays_world
+from flightrl.sixdof.sensor_model import SixDofSensorProfile, noisy_values, observed_ranges, resolve_sensor_profile
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,12 +38,14 @@ class MuJoCoCrazyflieEnv:
         task: str = "position_yaw",
         reset_profile: str | ResetProfile | None = None,
         control: MuJoCoControlParams | None = None,
+        sensor_profile: str | SixDofSensorProfile | None = None,
     ) -> None:
         self.mujoco = require_mujoco()
         self.num_envs = int(num_envs)
         self.dt = float(dt)
         self.task = task
         self.reset_profile = resolve_reset_profile(reset_profile)
+        self.sensor_profile = resolve_sensor_profile(sensor_profile)
         self.room = room or BoxRoom()
         self.rng = np.random.default_rng(seed)
         self.control = control or MuJoCoControlParams()
@@ -59,6 +62,7 @@ class MuJoCoCrazyflieEnv:
         self.velocity = np.zeros_like(self.position)
         self.quaternion = np.zeros((self.num_envs, 4), dtype=np.float32)
         self.body_rates = np.zeros_like(self.position)
+        self.command_state = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.previous_action = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.target_position = np.zeros_like(self.position)
         self.target_yaw = np.zeros(self.num_envs, dtype=np.float32)
@@ -90,32 +94,37 @@ class MuJoCoCrazyflieEnv:
 
     def step(self, actions: np.ndarray):
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
+        executed = self._executed_action(clipped)
         for idx, data in enumerate(self.data):
-            self._apply_control(data, clipped[idx])
+            self._apply_control(data, executed[idx])
             self.mujoco.mj_step(self.model, data)
         self._sync_state_from_data()
         self._update_ranges()
         self.step_count += 1
-        self.rewards[:] = self._reward(clipped)
+        self.rewards[:] = self._reward(executed)
         self.terminals[:] = (~self.room.contains(self.position)).astype(np.uint8)
         self.truncations[:] = (self.step_count >= 800).astype(np.uint8)
-        self.previous_action[:] = clipped
+        self.previous_action[:] = executed
         self.observations[:] = self.observation()
         return self.observations, self.rewards, self.terminals, self.truncations, []
 
     def observation(self) -> np.ndarray:
-        pos_error = self.target_position - self.position
+        position = noisy_values(self.position, self.sensor_profile.state_noise_std_m, self.rng)
+        velocity = noisy_values(self.velocity, self.sensor_profile.velocity_noise_std_m_s, self.rng)
+        body_rates = noisy_values(self.body_rates, self.sensor_profile.body_rate_noise_std_rad_s, self.rng)
+        ranges = observed_ranges(self.ranges_m, max_range_m=self.room.max_range_m, profile=self.sensor_profile, rng=self.rng)
+        pos_error = self.target_position - position
         yaw_error = wrap_angle(self.target_yaw - quat_to_yaw(self.quaternion))
         obs = np.concatenate(
             [
                 pos_error / np.asarray([2.0, 2.0, 1.5], dtype=np.float32),
-                self.velocity / 3.0,
+                velocity / 3.0,
                 self.quaternion,
-                self.body_rates / self.max_rate,
+                body_rates / self.max_rate,
                 self.target_position / np.asarray([2.0, 2.0, 2.5], dtype=np.float32),
                 np.sin(yaw_error)[:, None],
                 np.cos(yaw_error)[:, None],
-                self.ranges_m / self.room.max_range_m,
+                ranges / self.room.max_range_m,
                 self.previous_action,
             ],
             axis=1,
@@ -146,6 +155,7 @@ class MuJoCoCrazyflieEnv:
             self.target_position[idx] = targets[row]
             self.target_yaw[idx] = target_yaw[row]
             row += 1
+        self.command_state[mask] = 0.0
         self.previous_action[mask] = 0.0
         self.step_count[mask] = 0
         self.rewards[mask] = 0.0
@@ -161,6 +171,14 @@ class MuJoCoCrazyflieEnv:
         torque_body = self.control.rate_kp * (target_rates - current_rates) - self.control.rate_kd * current_rates
         data.xfrc_applied[self.body_id, :3] = rotation[:, 2] * thrust
         data.xfrc_applied[self.body_id, 3:] = rotation @ torque_body
+
+    def _executed_action(self, clipped: np.ndarray) -> np.ndarray:
+        alpha = self.sensor_profile.action_alpha(self.dt)
+        if alpha >= 1.0:
+            self.command_state[:] = clipped
+        else:
+            self.command_state += alpha * (clipped - self.command_state)
+        return self.command_state.astype(np.float32)
 
     def _sync_state_from_data(self) -> None:
         for idx, data in enumerate(self.data):

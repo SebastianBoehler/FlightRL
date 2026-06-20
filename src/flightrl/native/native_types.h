@@ -56,6 +56,8 @@ enum FlightObservationFlags {
     FLIGHT_OBS_RANGE = 1 << 10,
     FLIGHT_OBS_VISION = 1 << 11,
     FLIGHT_OBS_CRAZYFLIE_TELEMETRY = 1 << 12,
+    FLIGHT_OBS_RANGE_RATE = 1 << 13,
+    FLIGHT_OBS_TTC = 1 << 14,
 };
 
 typedef struct {

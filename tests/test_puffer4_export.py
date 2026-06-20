@@ -102,16 +102,43 @@ def test_export_sixdof_puffer4_assets_writes_native_ocean_env(tmp_path: Path) ->
     assert result.env_name == "flightrl_sixdof_test"
     assert "#define OBS_SIZE 28" in binding_text
     assert "#define NUM_ATNS 4" in binding_text
-    assert "flightrl_sixdof_step_env_batch" in binding_text
+    assert "flightrl_sixdof_step_env_context_batch" in binding_text
     assert "native_sixdof.c" in binding_text
     assert "env_name = flightrl_sixdof_test" in ini_text
     assert "total_agents = 2048" in ini_text
     assert "num_buffers = 4" in ini_text
     assert "dt = 0.01" in ini_text
     assert "room_x_min = -2" in ini_text
+    assert "range_noise_std_m = 0" in ini_text
+    assert "action_lag_s = 0" in ini_text
+    assert "task_id = 0" in ini_text
+    assert "reward_mode = 0" in ini_text
+    assert "near_wall_probability = 0" in ini_text
     assert 'dict_get(kwargs, "room_x_min")' in binding_text
+    assert 'dict_get(kwargs, "range_noise_std_m")' in binding_text
+    assert 'dict_get(kwargs, "task_id")' in binding_text
+    assert 'dict_get(kwargs, "near_wall_probability")' in binding_text
+    assert "apply_observation_profile" in binding_text
+    assert "apply_reset_profile" in binding_text
     for filename in SIXDOF_NATIVE_FILES:
         assert (result.env_dir / filename).exists()
+
+
+def test_export_sixdof_puffer4_assets_supports_task_reward_mode(tmp_path: Path) -> None:
+    pufferlib_root = tmp_path / "PufferLib-4.0"
+    result = export_sixdof_puffer4_assets(
+        pufferlib_root,
+        settings=Puffer4ExportSettings(env_name="flightrl_obstacle", task="obstacle_avoidance", reward_mode="live_clearance", reset_profile="obstacle_close_live"),
+    )
+    binding_text = (result.env_dir / "binding.c").read_text()
+    ini_text = result.config_path.read_text()
+
+    assert "task_id = 1" in ini_text
+    assert "reward_mode = 4" in ini_text
+    assert "near_wall_probability = 0.65" in ini_text
+    assert "target_xy_offset_abs = 0.45" in ini_text
+    assert "task_position_error" in binding_text
+    assert "flightrl_sixdof_step_env_context_batch" in binding_text
 
 
 def test_render_sixdof_binding_is_ocean_shaped() -> None:
@@ -154,6 +181,9 @@ def test_sixdof_puffer_export_report_cli_writes_evidence(tmp_path: Path) -> None
     assert report["passed"] is True
     assert report["config"]["vec"]["total_agents"] == "128"
     assert report["config"]["vec"]["num_threads"] == "2"
+    assert report["config"]["env"]["task_id"] == "0"
+    assert report["config"]["env"]["reward_mode"] == "0"
+    assert report["config"]["env"]["near_wall_probability"] == "0"
     assert report["files"]["binding.c"]["required_tokens"]["#define OBS_SIZE 28"]
     assert output.with_suffix(".md").exists()
 
@@ -163,6 +193,18 @@ def test_cpu_puffer_runtime_sets_openmp_guard() -> None:
     env = puffer_subprocess_env("cpu", ())
     assert env["OMP_NUM_THREADS"] == "1"
     assert env["KMP_DUPLICATE_LIB_OK"] == "TRUE"
+
+
+def test_puffer_runtime_loads_project_wandb_env(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".secrets").mkdir()
+    (tmp_path / ".secrets" / "wandb.env").write_text("WANDB_API_KEY=fresh\nWANDB_PROJECT=FlightRL\n")
+    monkeypatch.setenv("WANDB_API_KEY", "stale")
+
+    env = puffer_subprocess_env("cpu", ())
+
+    assert env["WANDB_API_KEY"] == "fresh"
+    assert env["WANDB_PROJECT"] == "FlightRL"
 
 
 def test_no_build_puffer_runtime_rejects_mismatched_compiled_env(monkeypatch, tmp_path: Path) -> None:

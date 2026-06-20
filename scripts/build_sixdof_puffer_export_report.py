@@ -12,9 +12,10 @@ REQUIRED_BINDING_TOKENS = (
     "#define OBS_SIZE 28",
     "#define NUM_ATNS 4",
     '#include "vecenv.h"',
-    "flightrl_sixdof_step_env_batch",
+    "flightrl_sixdof_step_env_context_batch",
     'dict_get(kwargs, "room_x_min")',
     'dict_get(kwargs, "mass_kg")',
+    'dict_get(kwargs, "task_id")',
 )
 
 
@@ -28,6 +29,10 @@ def main() -> None:
     parser.add_argument("--num-threads", type=int, default=8)
     parser.add_argument("--hidden-size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--sim-profile", default=None)
+    parser.add_argument("--task", default="position_yaw")
+    parser.add_argument("--reward-mode", default="env")
+    parser.add_argument("--reset-profile", default="broad")
     args = parser.parse_args()
 
     report = build_report(args)
@@ -49,6 +54,10 @@ def build_report(args: argparse.Namespace) -> dict:
         num_threads=args.num_threads,
         policy_hidden_size=args.hidden_size,
         train_seed=args.seed,
+        sim_profile=args.sim_profile,
+        task=args.task,
+        reward_mode=args.reward_mode,
+        reset_profile=args.reset_profile,
     )
     result = export_sixdof_puffer4_assets(args.pufferlib_root, settings=settings)
     files = inspect_files(result.env_dir, result.config_path)
@@ -111,6 +120,13 @@ def validate(files: dict, config: dict, args: argparse.Namespace) -> list[dict]:
                 )
             ),
         ),
+        check(
+            "sensor_profile_knobs_present",
+            all(key in config.get("env", {}) for key in ("range_noise_std_m", "range_dropout_prob", "action_lag_s")),
+        ),
+        check("task_id_present", "task_id" in config.get("env", {})),
+        check("reward_mode_present", "reward_mode" in config.get("env", {})),
+        check("reset_profile_knobs_present", all(key in config.get("env", {}) for key in ("near_wall_probability", "target_xy_offset_abs", "target_yaw_offset_abs"))),
     ]
     return checks
 

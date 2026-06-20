@@ -55,6 +55,7 @@ def evaluate_checkpoint_policy(
     use_native_step: bool = False,
     eval_tasks: tuple[str, ...] | None = None,
     reset_profile: str | None = None,
+    sensor_profile: str | None = None,
     metric_start_step: int = 0,
 ) -> dict:
     controller = load_controller_from_checkpoint(checkpoint)
@@ -64,7 +65,7 @@ def evaluate_checkpoint_policy(
     selected_tasks = eval_tasks or tasks
     validate_task_subset(selected_tasks, tasks)
     per_task = {
-        task: evaluate_one(action_fn, controller, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, observation_mode, metric_start_step)
+        task: evaluate_one(action_fn, controller, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, sensor_profile, observation_mode, metric_start_step)
         for idx, task in enumerate(selected_tasks)
     }
     return aggregate_task_metrics(per_task)
@@ -80,13 +81,14 @@ def evaluate_policy(
     use_native_step: bool = False,
     eval_tasks: tuple[str, ...] | None = None,
     reset_profile: str | None = None,
+    sensor_profile: str | None = None,
     observation_mode: str = "base",
     metric_start_step: int = 0,
 ) -> dict:
     selected_tasks = eval_tasks or tasks
     validate_task_subset(selected_tasks, tasks)
     per_task = {
-        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, observation_mode, metric_start_step)
+        task: evaluate_one(model_actions, model, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, sensor_profile, observation_mode, metric_start_step)
         for idx, task in enumerate(selected_tasks)
     }
     return aggregate_task_metrics(per_task)
@@ -100,10 +102,11 @@ def evaluate_teacher(
     num_envs: int = 128,
     use_native_step: bool = False,
     reset_profile: str | None = None,
+    sensor_profile: str | None = None,
     metric_start_step: int = 0,
 ) -> dict:
     per_task = {
-        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, "base", metric_start_step)
+        task: evaluate_one(teacher_action, None, tasks, task, seed + idx, steps, num_envs, use_native_step, reset_profile, sensor_profile, "base", metric_start_step)
         for idx, task in enumerate(tasks)
     }
     return aggregate_task_metrics(per_task)
@@ -141,10 +144,11 @@ def evaluate_one(
     num_envs: int,
     use_native_step: bool,
     reset_profile: str | None,
+    sensor_profile: str | None,
     observation_mode: str,
     metric_start_step: int = 0,
 ) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step, reset_profile=reset_profile)
+    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step, reset_profile=reset_profile, sensor_profile=sensor_profile)
     obs, _ = env.reset(seed=seed)
     task_indices = np.full(env.num_envs, tasks.index(task), dtype=np.int64)
     rewards = []

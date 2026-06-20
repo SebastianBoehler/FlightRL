@@ -121,6 +121,15 @@ void flightrl_fill_observation(DronePlanarEnv *env) {
     if (flags & FLIGHT_OBS_RANGE) {
         flightrl_push_range(env, &idx);
     }
+    if (flags & FLIGHT_OBS_RANGE_RATE) {
+        for (int i = 0; i < 6; ++i) {
+            flightrl_push(obs, &idx, 0.0f);
+        }
+    }
+    if (flags & FLIGHT_OBS_TTC) {
+        flightrl_push(obs, &idx, 0.0f);
+        flightrl_push(obs, &idx, 0.0f);
+    }
     if (flags & FLIGHT_OBS_CRAZYFLIE_TELEMETRY) {
         flightrl_push_crazyflie_telemetry(env, &idx, rel_x, rel_z);
     }

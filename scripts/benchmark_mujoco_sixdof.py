@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
-from flightrl.sixdof import SixDofCrazyflieEnv, native_step_env
+from flightrl.sixdof import SixDofCrazyflieEnv
 from flightrl.sixdof.policies import teacher_actions
 
 
@@ -15,6 +15,7 @@ def main() -> None:
     parser.add_argument("--env-counts", type=int, nargs="+", default=[1, 8, 32, 128])
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--sensor-profile", default=None)
     parser.add_argument("--output", default="artifacts/replay/mujoco_sixdof_benchmark.json")
     parser.add_argument("--allow-missing-mujoco", action="store_true")
     args = parser.parse_args()
@@ -30,8 +31,8 @@ def main() -> None:
         print(f"summary={output}")
         return
 
-    results = [benchmark_count(num_envs, args.steps, args.seed) for num_envs in args.env_counts]
-    report = {"status": "ok", "steps": args.steps, "results": results, "best_native": max(results, key=lambda row: row["native_env_sps"])}
+    results = [benchmark_count(num_envs, args.steps, args.seed, args.sensor_profile) for num_envs in args.env_counts]
+    report = {"status": "ok", "steps": args.steps, "sensor_profile": args.sensor_profile, "results": results, "best_native": max(results, key=lambda row: row["native_env_sps"])}
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     output.with_suffix(".md").write_text(render_markdown(report) + "\n")
     print(f"summary={output}")
@@ -43,13 +44,13 @@ def main() -> None:
         )
 
 
-def benchmark_count(num_envs: int, steps: int, seed: int) -> dict[str, float]:
-    py_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=True)
-    mujoco_env = MuJoCoCrazyflieEnv(num_envs=num_envs, seed=seed)
+def benchmark_count(num_envs: int, steps: int, seed: int, sensor_profile: str | None) -> dict[str, float]:
+    py_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=False, sensor_profile=sensor_profile)
+    native_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=True, sensor_profile=sensor_profile)
+    mujoco_env = MuJoCoCrazyflieEnv(num_envs=num_envs, seed=seed, sensor_profile=sensor_profile)
     actions = teacher_actions(py_env, task="position_yaw")
     python_sps = time_loop(lambda: py_env.step(actions), num_envs, steps)
-    native_sps = time_loop(lambda: native_step_env(native_env, actions), num_envs, steps)
+    native_sps = time_loop(lambda: native_env.step(actions), num_envs, steps)
     mujoco_sps = time_loop(lambda: mujoco_env.step(actions), num_envs, steps)
     return {
         "num_envs": num_envs,

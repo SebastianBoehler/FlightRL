@@ -41,3 +41,5 @@ def test_puffer_sixdof_export_includes_realism_knobs() -> None:
     assert env_section["mass_kg"] == 0.036
     assert env_section["linear_drag"] == 0.08
     assert env_section["motor_tau_s"] == 0.035
+    assert env_section["range_noise_std_m"] == 0.0
+    assert env_section["action_lag_s"] == 0.0

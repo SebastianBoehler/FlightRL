@@ -36,6 +36,10 @@ class Puffer4ExportSettings:
     policy_hidden_size: int | None = None
     policy_num_layers: int = 2
     train_seed: int = 42
+    sim_profile: str | None = None
+    task: str = "position_yaw"
+    reward_mode: str = "env"
+    reset_profile: str = "broad"
 
 
 def build_puffer4_sections(
