@@ -20,6 +20,12 @@ artifacts/
 venv/
 env/
 
+# Local secrets
+.env
+.env.*
+.secrets/
+wandb/
+
 # Local tooling
 .DS_Store
 .learnings/
