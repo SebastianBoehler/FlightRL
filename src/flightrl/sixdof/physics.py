@@ -67,6 +67,12 @@ class SixDofDomainRandomization:
 
 LEGACY_PHYSICS = SixDofPhysicsProfile()
 CRAZYFLIE_BRUSHLESS_PHYSICS = SixDofPhysicsProfile(linear_drag=0.08, motor_tau_s=0.035)
+PUFFER_DRONE_PHYSICS = SixDofPhysicsProfile(
+    mass_kg=0.027,
+    linear_drag=0.0,
+    max_rate_rad_s=(20.0, 20.0, 20.0),
+    motor_tau_s=0.150,
+)
 CRAZYFLIE_TRAINING_RANDOMIZATION = SixDofDomainRandomization(
     mass_scale=(0.92, 1.10),
     linear_drag_scale=(0.75, 1.75),
@@ -82,6 +88,8 @@ def resolve_physics_profile(value: str | SixDofPhysicsProfile | None) -> SixDofP
         return LEGACY_PHYSICS
     if value == "crazyflie_brushless":
         return CRAZYFLIE_BRUSHLESS_PHYSICS
+    if value == "puffer_drone":
+        return PUFFER_DRONE_PHYSICS
     if isinstance(value, SixDofPhysicsProfile):
         return value
     raise ValueError(f"unknown 6-DoF physics profile {value!r}")

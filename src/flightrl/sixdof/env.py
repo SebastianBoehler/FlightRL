@@ -7,7 +7,7 @@ import numpy as np
 from .curriculum import ResetProfile, resolve_reset_profile, sample_reset
 from .dynamics import step_body_rate
 from .geometry import BoxRoom, body_rays_world, normalize_quat
-from .motor_rpm import MotorRpmParams, step_motor_rpm
+from .motor_rpm import MotorRpmParams, resolve_motor_rpm_params, step_motor_rpm
 from .native_reset import native_reset_one
 from .physics import (
     MAX_RATE_PITCH,
@@ -51,6 +51,7 @@ class SixDofCrazyflieEnv:
         reset_profile: str | ResetProfile | None = None,
         action_mode: str = "body_rate",
         physics_profile: str | SixDofPhysicsProfile | None = None,
+        motor_rpm_profile: str | MotorRpmParams | None = None,
         domain_randomization: str | SixDofDomainRandomization | None = None,
         sensor_profile: str | SixDofSensorProfile | None = None,
     ) -> None:
@@ -79,7 +80,7 @@ class SixDofCrazyflieEnv:
         self.thrust_state = np.ones(self.num_envs, dtype=np.float32)
         self.command_state = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.previous_action = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
-        self.motor_params = MotorRpmParams()
+        self.motor_params = resolve_motor_rpm_params(motor_rpm_profile or ("puffer_drone" if physics_profile == "puffer_drone" else None))
         self.motor_hover_rpm = self.motor_params.hover_rpm
         self.motor_rpm = np.zeros((self.num_envs, ACTION_DIM), dtype=np.float32)
         self.target_position = np.zeros_like(self.position)
