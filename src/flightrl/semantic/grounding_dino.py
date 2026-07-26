@@ -15,6 +15,8 @@ class GroundingDinoConfig:
     device: str = "cpu"
     threshold: float = 0.25
     autocontrast: bool = True
+    minimum_box_area: float = 0.0005
+    maximum_box_area: float = 0.5
     distractor_labels: tuple[str, ...] = (
         "computer monitor",
         "desk",
@@ -27,6 +29,8 @@ class GroundingDinoConfig:
             raise ValueError("Grounding DINO device must be cpu or mps")
         if not 0.0 < self.threshold < 1.0:
             raise ValueError("Grounding DINO threshold must be in (0, 1)")
+        if not 0.0 < self.minimum_box_area < self.maximum_box_area <= 1.0:
+            raise ValueError("Grounding DINO box area limits are invalid")
 
 
 class GroundingDinoGrounder:
@@ -84,7 +88,11 @@ class GroundingDinoGrounder:
             strict=True,
         ):
             detection = _detection(label, score, box, image.width, image.height)
-            if detection is not None and _matches_target(detection.label, target):
+            if (
+                detection is not None
+                and self.config.minimum_box_area <= detection.box.area <= self.config.maximum_box_area
+                and _matches_target(detection.label, target)
+            ):
                 detections.append(detection)
         return GroundingResult(
             prompt=prompt,
