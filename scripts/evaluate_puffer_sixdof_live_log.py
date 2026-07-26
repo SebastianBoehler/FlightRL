@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from flightrl.hardware.sixdof_live_replay import action_columns, live_env_from_telemetry, value
+from flightrl.hardware.sixdof_live_replay import action_columns, live_env_from_telemetry, target_from_telemetry, value
 from flightrl.sixdof import SixDofCrazyflieEnv, teacher_actions
 from flightrl.sixdof.puffer_policy import load_puffer_sixdof_policy
 
@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--shadow-output")
     parser.add_argument("--task", default="obstacle_avoidance")
+    parser.add_argument("--sensor-profile", default=None)
     parser.add_argument("--target", type=float, nargs=3, default=[0.0, 0.0, 0.50])
     parser.add_argument("--target-yaw-deg", type=float, default=0.0)
     args = parser.parse_args()
@@ -40,9 +41,11 @@ def main() -> None:
 
 def load_rows(path: str | Path) -> list[dict[str, float]]:
     parsed = []
+    latest: dict[str, float] = {}
     with Path(path).open() as handle:
         for row in csv.DictReader(handle):
-            parsed.append({key: parse_float(value) for key, value in row.items()})
+            latest.update({key: parse_float(value) for key, value in row.items() if value != ""})
+            parsed.append(dict(latest))
     return parsed
 
 
@@ -54,14 +57,14 @@ def parse_float(raw: str) -> float:
 
 
 def evaluate_rows(policy, rows: list[dict[str, float]], args) -> tuple[dict[str, Any], list[dict[str, float]]]:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=0, task=args.task)
+    env = SixDofCrazyflieEnv(num_envs=1, seed=0, task=args.task, sensor_profile=args.sensor_profile)
     target = np.asarray(args.target, dtype=np.float32)
     target_yaw = radians(args.target_yaw_deg)
     pairs: list[tuple[np.ndarray, np.ndarray, dict[str, float]]] = []
     shadow_rows = []
     with torch.no_grad():
         for row in rows:
-            live_env_from_telemetry(env, row, target=target, target_yaw=target_yaw)
+            live_env_from_telemetry(env, row, target=target_from_telemetry(row, target), target_yaw=target_yaw)
             obs = env.observation().astype(np.float32)
             teacher = teacher_actions(env, task=args.task)[0]
             action = policy(torch.from_numpy(obs)).cpu().numpy()[0]

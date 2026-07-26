@@ -23,6 +23,16 @@ def test_obstacle_close_live_profile_samples_close_ranges() -> None:
     assert np.all(env.position[:, 2] >= 0.25)
 
 
+def test_obstacle_hover_live_profile_keeps_target_at_start_pose() -> None:
+    env = SixDofCrazyflieEnv(num_envs=1024, seed=44, task="obstacle_avoidance", reset_profile="obstacle_hover_live")
+    env.reset(seed=44)
+    hmin = np.min(env.ranges_m[:, :4], axis=1)
+
+    np.testing.assert_allclose(env.target_position, env.position, rtol=1e-6, atol=1e-6)
+    assert np.quantile(hmin, 0.10) < 0.25
+    assert np.quantile(hmin, 0.50) < 1.2
+
+
 def test_obstacle_vertical_live_profile_samples_top_and_bottom_ranges() -> None:
     env = SixDofCrazyflieEnv(num_envs=2048, seed=43, task="obstacle_avoidance", reset_profile="obstacle_vertical_live")
     env.reset(seed=43)

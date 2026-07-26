@@ -75,6 +75,29 @@ def test_audit_consumes_sensor_noise_and_latency_evidence(tmp_path) -> None:
     assert report["hardware_latency"]["passed"] is True
 
 
+def test_audit_accepts_external_sensor_profile(tmp_path) -> None:
+    config = write_config(tmp_path, "crazyflie_measured.toml", measured=True, include_noisy_state=False)
+    sensor_profile = tmp_path / "sensor_profile.json"
+    sensor_profile.write_text(
+        json.dumps(
+            {
+                "sensor_profile": {
+                    "name": "measured_unit",
+                    "range_noise_std_m": 0.012,
+                    "range_dropout_prob": 0.03,
+                    "action_lag_s": 0.04,
+                }
+            }
+        )
+    )
+
+    report = build_audit(hardware_config=config, sensor_profile=sensor_profile)
+
+    assert report["sensor_profile"]["passed"] is True
+    assert report["sensor_profile"]["range_noise_std_m"] == 0.012
+    assert "sensor_model_incomplete" not in report["blocking_items"]
+
+
 def test_audit_blocks_empty_deployment_readiness(tmp_path) -> None:
     config = write_config(tmp_path, "crazyflie_measured.toml", measured=True)
     deployment = tmp_path / "deployment_readiness.json"
@@ -111,7 +134,7 @@ def test_cli_writes_json_and_markdown(tmp_path) -> None:
     assert output.with_suffix(".md").exists()
 
 
-def write_config(tmp_path, name: str, *, measured: bool):
+def write_config(tmp_path, name: str, *, measured: bool, include_noisy_state: bool = True):
     path = tmp_path / name
     path.write_text(
         f"""
@@ -136,7 +159,7 @@ max_pitch_torque = 2.2
 actuator_tau = 0.11
 
 [sensors]
-include_noisy_state = true
+include_noisy_state = {str(include_noisy_state).lower()}
 
 [domain_randomization]
 enabled = true

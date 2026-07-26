@@ -7,11 +7,16 @@ import torch
 
 from .circle import circle_orbit_error_from_arrays
 from .controller import executed_action_for_controller
+from .disturbance import configure_disturbance
 from .env import SixDofCrazyflieEnv
+from .gates import gate_status
 from .observation import augment_observation
-from .policies import SixDofPolicy, teacher_actions
+from .policies import SixDofPolicy, roll_pitch_from_quat, teacher_actions
 from .tasks import append_task_encoding, parse_task_spec
 from .yaw import yaw_error_for_task
+
+
+OPEN_SPACE_CLEARANCE_M = 0.45
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,11 +131,23 @@ def aggregate_task_metrics(per_task: dict[str, dict[str, float]]) -> dict:
         "mean_terminal_fraction": float(np.mean([metrics["terminal_fraction"] for metrics in per_task.values()])),
         "per_task": per_task,
     }
-    optional_keys = ("teacher_action_l2_mean", "teacher_action_l2_p95", "action_abs_mean", "action_abs_max", "action_saturation_fraction")
+    optional_keys = (
+        "teacher_action_l2_mean",
+        "teacher_action_l2_p95",
+        "action_abs_mean",
+        "action_abs_max",
+        "action_saturation_fraction",
+        "horizontal_speed_p95_m_s",
+        "horizontal_speed_max_m_s",
+        "open_space_horizontal_speed_p95_m_s",
+        "open_space_horizontal_speed_max_m_s",
+        "tilt_p95_deg",
+        "tilt_max_deg",
+    )
     for key in optional_keys:
         values = [metrics[key] for metrics in per_task.values() if key in metrics]
         if values:
-            summary[key] = float(np.mean(values)) if not key.endswith("_max") else float(np.max(values))
+            summary[key] = float(np.max(values)) if "_max" in key else float(np.mean(values))
     return summary
 
 
@@ -147,8 +164,21 @@ def evaluate_one(
     sensor_profile: str | None,
     observation_mode: str,
     metric_start_step: int = 0,
+    physics_profile: str | None = None,
+    domain_randomization: str | None = None,
+    disturbance_profile: str | None = None,
 ) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, use_native_step=use_native_step, reset_profile=reset_profile, sensor_profile=sensor_profile)
+    env = SixDofCrazyflieEnv(
+        num_envs=num_envs,
+        seed=seed,
+        task=task,
+        use_native_step=use_native_step,
+        reset_profile=reset_profile,
+        sensor_profile=sensor_profile,
+        physics_profile=physics_profile,
+        domain_randomization=domain_randomization,
+    )
+    configure_disturbance(env, disturbance_profile)
     obs, _ = env.reset(seed=seed)
     task_indices = np.full(env.num_envs, tasks.index(task), dtype=np.int64)
     rewards = []
@@ -156,7 +186,11 @@ def evaluate_one(
     action_abs = []
     action_l2 = []
     yaw_errors = []
+    horizontal_speed = []
+    open_space_horizontal_speed = []
+    tilt = []
     survived = np.ones(env.num_envs, dtype=bool)
+    ever_close = np.min(env.ranges_m[:, :4], axis=1) < OPEN_SPACE_CLEARANCE_M
     alive_samples = []
     previous_obs = None
     previous_action = np.zeros((env.num_envs, 4), dtype=np.float32)
@@ -176,8 +210,16 @@ def evaluate_one(
         previous_obs = model_obs.copy()
         previous_action = actions.copy()
         rewards.append(reward)
-        min_clearance.append(np.min(env.ranges_m[:, :4], axis=1))
+        current_clearance = np.min(env.ranges_m[:, :4], axis=1)
+        current_horizontal_speed = np.linalg.norm(env.velocity[:, :2], axis=1)
+        min_clearance.append(current_clearance)
         yaw_errors.append(yaw_error_for_task(env, task))
+        horizontal_speed.append(current_horizontal_speed)
+        ever_close |= current_clearance < OPEN_SPACE_CLEARANCE_M
+        free_space = (current_clearance >= OPEN_SPACE_CLEARANCE_M) & ~ever_close
+        open_space_horizontal_speed.append(current_horizontal_speed[free_space])
+        roll, pitch = roll_pitch_from_quat(env.quaternion)
+        tilt.append(np.rad2deg(np.maximum(np.abs(roll), np.abs(pitch))))
         survived &= ~terminals.astype(bool)
         alive_samples.append(survived.astype(np.float32))
         fresh = (terminals | truncations).astype(bool)
@@ -186,6 +228,9 @@ def evaluate_one(
     yaw_error = yaw_error_for_task(env, task)
     clearances = np.concatenate(min_clearance)
     yaw_error_samples = np.concatenate(yaw_errors)
+    horizontal_speed_samples = np.concatenate(horizontal_speed)
+    open_space_speed_samples = np.concatenate([sample for sample in open_space_horizontal_speed if sample.size]) if any(sample.size for sample in open_space_horizontal_speed) else np.asarray([0.0])
+    tilt_samples = np.concatenate(tilt)
     settled_yaw = np.concatenate(yaw_errors[max(0, min(metric_start_step, len(yaw_errors) - 1)) :])
     result = {
         "mean_reward": float(np.mean(rewards)),
@@ -202,6 +247,12 @@ def evaluate_one(
         "action_abs_mean": float(np.mean(np.concatenate(action_abs))),
         "action_abs_max": float(np.max(np.concatenate(action_abs))),
         "action_saturation_fraction": float(np.mean(np.concatenate(action_abs) > 0.95)),
+        "horizontal_speed_p95_m_s": float(np.quantile(horizontal_speed_samples, 0.95)),
+        "horizontal_speed_max_m_s": float(np.max(horizontal_speed_samples)),
+        "open_space_horizontal_speed_p95_m_s": float(np.quantile(open_space_speed_samples, 0.95)),
+        "open_space_horizontal_speed_max_m_s": float(np.max(open_space_speed_samples)),
+        "tilt_p95_deg": float(np.quantile(tilt_samples, 0.95)),
+        "tilt_max_deg": float(np.max(tilt_samples)),
     }
     if action_l2:
         action_errors = np.concatenate(action_l2)
@@ -238,29 +289,3 @@ def validate_task_subset(selected_tasks: tuple[str, ...], policy_tasks: tuple[st
     missing = [task for task in selected_tasks if task not in policy_tasks]
     if missing:
         raise ValueError(f"selected task(s) not present in checkpoint: {', '.join(missing)}")
-
-
-def gate_status(
-    metrics: dict,
-    *,
-    min_clearance_m: float,
-    min_completed_fraction: float,
-    max_position_error_m: float,
-    max_yaw_error_rad: float | None = None,
-    max_yaw_p95_error_rad: float | None = None,
-    max_settled_yaw_p95_error_rad: float | None = None,
-) -> dict:
-    failures = []
-    if metrics.get("clearance_p01_m", metrics["min_clearance_m"]) < min_clearance_m:
-        failures.append("min_clearance")
-    if metrics["mean_completed_fraction"] < min_completed_fraction:
-        failures.append("completion")
-    if metrics["mean_position_error_m"] > max_position_error_m:
-        failures.append("position_error")
-    if max_yaw_error_rad is not None and metrics.get("mean_yaw_error_rad", 0.0) > max_yaw_error_rad:
-        failures.append("yaw_error")
-    if max_yaw_p95_error_rad is not None and metrics.get("yaw_error_p95_rad", 0.0) > max_yaw_p95_error_rad:
-        failures.append("yaw_error_p95")
-    if max_settled_yaw_p95_error_rad is not None and metrics.get("settled_yaw_error_p95_rad", 0.0) > max_settled_yaw_p95_error_rad:
-        failures.append("settled_yaw_error_p95")
-    return {"passed": not failures, "failures": failures}

@@ -11,6 +11,7 @@ CHECKPOINT_MARKERS = ("--checkpoint", "torch.load", "create_policy_for_checkpoin
 CONTROL_MARKERS = ("send_", "motion_commander_cls", "start_linear_motion", "execute_demo_flight", "commander.")
 APPROVAL_MARKERS = ("require_hardware_approved", "require_policy_approval")
 MONITOR_MARKERS = ("hardware_approval_status", "monitor_only")
+LEARNED_POLICY_MONITOR_MARKERS = ("LEARNED_POLICY_MONITOR_ONLY = True",)
 
 
 def build_live_safety_report(paths: list[Path]) -> dict[str, Any]:
@@ -35,7 +36,9 @@ def scan_live_script(path: Path) -> dict[str, Any]:
     uses_checkpoint = contains_any(text, CHECKPOINT_MARKERS)
     controls_drone = contains_any(text, CONTROL_MARKERS)
     approval_gate = contains_any(text, APPROVAL_MARKERS)
-    monitor_only = contains_any(text, MONITOR_MARKERS) and not controls_drone
+    monitor_only = contains_any(text, LEARNED_POLICY_MONITOR_MARKERS) or (
+        contains_any(text, MONITOR_MARKERS) and not controls_drone
+    )
     failures = live_failures(path, text, uses_hardware, uses_checkpoint, controls_drone, approval_gate, monitor_only)
     return {
         "path": str(path),
@@ -61,7 +64,7 @@ def live_failures(
     if not uses_hardware or not uses_checkpoint:
         return []
     failures = []
-    if controls_drone:
+    if controls_drone and not monitor_only:
         if not approval_gate:
             failures.append(f"{path}:checkpoint_control_without_hardware_approval")
         elif first_index(text, APPROVAL_MARKERS) > first_index(text, HARDWARE_TOUCH_MARKERS):

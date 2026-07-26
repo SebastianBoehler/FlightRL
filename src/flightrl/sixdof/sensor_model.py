@@ -10,6 +10,7 @@ import numpy as np
 @dataclass(frozen=True, slots=True)
 class SixDofSensorProfile:
     name: str = "ideal"
+    range_observation_enabled: bool = True
     state_noise_std_m: float = 0.0
     velocity_noise_std_m_s: float = 0.0
     body_rate_noise_std_rad_s: float = 0.0
@@ -33,6 +34,8 @@ class SixDofSensorProfile:
 
     @property
     def observation_enabled(self) -> bool:
+        if not self.range_observation_enabled:
+            return True
         return any(
             value > 0.0
             for value in (
@@ -49,8 +52,9 @@ class SixDofSensorProfile:
             return 1.0
         return float(dt / (self.action_lag_s + dt))
 
-    def as_env_values(self) -> dict[str, float]:
+    def as_env_values(self) -> dict[str, float | int]:
         return {
+            "range_observation_enabled": int(self.range_observation_enabled),
             "state_noise_std_m": self.state_noise_std_m,
             "velocity_noise_std_m_s": self.velocity_noise_std_m_s,
             "body_rate_noise_std_rad_s": self.body_rate_noise_std_rad_s,
@@ -64,18 +68,36 @@ class SixDofSensorProfile:
 
 
 IDEAL_SENSOR_PROFILE = SixDofSensorProfile()
+DECKLESS_SENSOR_PROFILE = SixDofSensorProfile(name="deckless", range_observation_enabled=False)
+RANGER_SENSOR_PROFILE = SixDofSensorProfile(name="ranger")
+
+BUILTIN_SENSOR_PROFILES = {
+    "ideal": IDEAL_SENSOR_PROFILE,
+    "none": IDEAL_SENSOR_PROFILE,
+    "off": IDEAL_SENSOR_PROFILE,
+    "ranger": RANGER_SENSOR_PROFILE,
+    "deckless": DECKLESS_SENSOR_PROFILE,
+    "flow_only": DECKLESS_SENSOR_PROFILE,
+    "no_ranger": DECKLESS_SENSOR_PROFILE,
+}
 
 
 def resolve_sensor_profile(value: str | Path | SixDofSensorProfile | None) -> SixDofSensorProfile:
-    if value is None or value in {"ideal", "none", "off"}:
+    if value is None:
         return IDEAL_SENSOR_PROFILE
     if isinstance(value, SixDofSensorProfile):
         return value
+    if str(value) in BUILTIN_SENSOR_PROFILES:
+        return BUILTIN_SENSOR_PROFILES[str(value)]
     path = Path(value)
+    if not path.exists():
+        expected = ", ".join(sorted(BUILTIN_SENSOR_PROFILES))
+        raise ValueError(f"unknown 6-DoF sensor profile {value!r}; expected one of {expected} or a JSON path")
     data = json.loads(path.read_text())
     payload = data.get("sensor_profile", data)
     return SixDofSensorProfile(
         name=str(payload.get("name", path.stem)),
+        range_observation_enabled=_bool(payload.get("range_observation_enabled", True)),
         state_noise_std_m=float(payload.get("state_noise_std_m", 0.0) or 0.0),
         velocity_noise_std_m_s=float(payload.get("velocity_noise_std_m_s", 0.0) or 0.0),
         body_rate_noise_std_rad_s=float(payload.get("body_rate_noise_std_rad_s", 0.0) or 0.0),
@@ -83,6 +105,14 @@ def resolve_sensor_profile(value: str | Path | SixDofSensorProfile | None) -> Si
         range_dropout_prob=float(payload.get("range_dropout_prob", 0.0) or 0.0),
         action_lag_s=float(payload.get("action_lag_s", 0.0) or 0.0),
     )
+
+
+def _bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
 
 
 def noisy_values(values: np.ndarray, std: float, rng: np.random.Generator) -> np.ndarray:
@@ -98,6 +128,8 @@ def observed_ranges(
     profile: SixDofSensorProfile,
     rng: np.random.Generator,
 ) -> np.ndarray:
+    if not profile.range_observation_enabled:
+        return np.full_like(ranges_m, max_range_m, dtype=np.float32)
     observed = noisy_values(ranges_m, profile.range_noise_std_m, rng)
     if profile.range_dropout_prob > 0.0:
         dropout = rng.random(observed.shape) < profile.range_dropout_prob

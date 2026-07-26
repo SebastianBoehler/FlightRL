@@ -110,6 +110,21 @@ def test_live_clearance_reward_penalizes_close_obstacles_more() -> None:
     assert live_clearance[1] > clearance[1]
 
 
+def test_live_stable_clearance_penalizes_open_space_drift() -> None:
+    env = SixDofCrazyflieEnv(num_envs=2, seed=9, reset_profile="position_yaw_easy")
+    env.ranges_m[:, :4] = 1.2
+    env.velocity[:] = np.asarray([[1.2, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
+    previous_error = np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)
+    actions = np.zeros((2, 4), dtype=np.float32)
+    done = np.zeros(2, dtype=bool)
+
+    live_clearance = rollout_reward(env, np.zeros(2, dtype=np.float32), done, previous_error, actions, "live_clearance")
+    stable = rollout_reward(env, np.zeros(2, dtype=np.float32), done, previous_error, actions, "live_stable_clearance")
+
+    assert stable[0] < live_clearance[0] - 0.4
+    assert stable[1] == live_clearance[1]
+
+
 def test_circle_progress_reward_uses_orbit_error_not_center_error() -> None:
     env = SixDofCrazyflieEnv(num_envs=1, seed=10, task="circle", reset_profile="circle_recovery")
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)

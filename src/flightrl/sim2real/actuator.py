@@ -30,12 +30,24 @@ def fit_motor_calibration(
     min_powers: int = 3,
     min_r2: float = 0.9,
     max_gain_imbalance: float = 0.25,
+    min_valid_rpm: float = 0.0,
+    max_dropout_ratio: float = 0.0,
 ) -> dict[str, Any]:
     rows = load_motor_rows(path)
     motors = group_motor_rows(rows)
-    records = {str(motor): fit_motor_curve(values, min_powers=min_powers, min_r2=min_r2) for motor, values in sorted(motors.items())}
+    records = {
+        str(motor): fit_motor_curve(
+            values,
+            min_powers=min_powers,
+            min_r2=min_r2,
+            min_valid_rpm=min_valid_rpm,
+            max_dropout_ratio=max_dropout_ratio,
+        )
+        for motor, values in sorted(motors.items())
+    }
     slopes = [record["slope_rpm_per_power"] for record in records.values() if record["passed"]]
     gain_imbalance = slope_imbalance(slopes)
+    dropped_samples = sum(record["dropped_samples"] for record in records.values())
     failures = []
     if set(motors) != {1, 2, 3, 4}:
         failures.append("motor_coverage")
@@ -54,6 +66,8 @@ def fit_motor_calibration(
             "gain_imbalance": gain_imbalance,
             "min_r2": min_r2,
             "max_gain_imbalance": max_gain_imbalance,
+            "dropped_samples": dropped_samples,
+            "warnings": ["rpm_dropouts_filtered"] if dropped_samples else [],
             "vbat": vbat_range(rows),
         },
         "motors": records,
@@ -81,8 +95,16 @@ def group_motor_rows(rows: list[dict[str, float | int | None]]) -> dict[int, lis
     return grouped
 
 
-def fit_motor_curve(rows: list[dict[str, float | int | None]], *, min_powers: int, min_r2: float) -> dict[str, Any]:
-    points = sorted([(float(row["power"]), float(row["rpm"])) for row in rows], key=lambda item: item[0])
+def fit_motor_curve(
+    rows: list[dict[str, float | int | None]],
+    *,
+    min_powers: int,
+    min_r2: float,
+    min_valid_rpm: float = 0.0,
+    max_dropout_ratio: float = 0.0,
+) -> dict[str, Any]:
+    raw_points = sorted([(float(row["power"]), float(row["rpm"])) for row in rows], key=lambda item: item[0])
+    points, dropped = filter_motor_dropouts(raw_points, min_valid_rpm=min_valid_rpm, max_dropout_ratio=max_dropout_ratio)
     powers = {power for power, _rpm in points}
     slope, intercept, r2 = linear_fit(points)
     failures = []
@@ -99,7 +121,10 @@ def fit_motor_curve(rows: list[dict[str, float | int | None]], *, min_powers: in
     return {
         "passed": not failures,
         "failures": failures,
-        "samples": len(points),
+        "samples": len(raw_points),
+        "filtered_samples": len(points),
+        "dropped_samples": len(dropped),
+        "dropped": dropped,
         "power_min": min(powers) if powers else None,
         "power_max": max(powers) if powers else None,
         "rpm_min": min([rpm for _power, rpm in points], default=None),
@@ -108,6 +133,27 @@ def fit_motor_curve(rows: list[dict[str, float | int | None]], *, min_powers: in
         "intercept_rpm": intercept,
         "r2": r2,
     }
+
+
+def filter_motor_dropouts(
+    points: list[tuple[float, float]],
+    *,
+    min_valid_rpm: float,
+    max_dropout_ratio: float,
+) -> tuple[list[tuple[float, float]], list[dict[str, float | str]]]:
+    kept: list[tuple[float, float]] = []
+    dropped: list[dict[str, float | str]] = []
+    for power, rpm in points:
+        reason = None
+        if min_valid_rpm > 0.0 and rpm < min_valid_rpm:
+            reason = "rpm_below_min"
+        elif max_dropout_ratio > 0.0 and kept and rpm < kept[-1][1] * max_dropout_ratio:
+            reason = "rpm_dropout"
+        if reason:
+            dropped.append({"power": power, "rpm": rpm, "reason": reason})
+            continue
+        kept.append((power, rpm))
+    return kept, dropped
 
 
 def linear_fit(points: list[tuple[float, float]]) -> tuple[float, float, float | None]:
@@ -146,13 +192,16 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Passed: `{summary['passed']}`",
         f"- Failures: `{', '.join(summary['failures']) or 'none'}`",
         f"- Gain imbalance: `{summary['gain_imbalance']}`",
+        f"- Warnings: `{', '.join(summary.get('warnings', [])) or 'none'}`",
+        f"- Dropped samples: `{summary.get('dropped_samples', 0)}`",
         "",
-        "| motor | passed | slope rpm/power | intercept rpm | r2 | rpm min | rpm max | failures |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| motor | passed | filtered/total | dropped | slope rpm/power | intercept rpm | r2 | rpm min | rpm max | failures |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for motor, record in report["motors"].items():
         lines.append(
-            f"| {motor} | {record['passed']} | {_fmt(record['slope_rpm_per_power'])} | {_fmt(record['intercept_rpm'])} | "
+            f"| {motor} | {record['passed']} | {record.get('filtered_samples', record['samples'])}/{record['samples']} | "
+            f"{record.get('dropped_samples', 0)} | {_fmt(record['slope_rpm_per_power'])} | {_fmt(record['intercept_rpm'])} | "
             f"{_fmt(record['r2'])} | {_fmt(record['rpm_min'])} | {_fmt(record['rpm_max'])} | {', '.join(record['failures']) or 'none'} |"
         )
     lines.extend(["", report["safety"]])

@@ -9,7 +9,8 @@ import numpy as np
 import torch
 
 from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy
-from flightrl.sixdof.evaluation import position_error_for_task
+from flightrl.sixdof.curriculum import ResetProfile
+from flightrl.sixdof.evaluation import aggregate_task_metrics, evaluate_one, gate_status, position_error_for_task
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,3 +95,58 @@ def test_circle_eval_position_error_uses_orbit_not_center() -> None:
 
     assert position_error_for_task(env, "circle")[0] < 1e-5
     assert position_error_for_task(env, "position_yaw")[0] > 0.7
+
+
+def test_gate_can_reject_open_space_horizontal_speed() -> None:
+    gate = gate_status(
+        {
+            "clearance_p01_m": 0.5,
+            "min_clearance_m": 0.5,
+            "mean_completed_fraction": 1.0,
+            "mean_position_error_m": 0.1,
+            "open_space_horizontal_speed_p95_m_s": 0.8,
+        },
+        min_clearance_m=0.08,
+        min_completed_fraction=0.9,
+        max_position_error_m=1.0,
+        max_open_space_horizontal_speed_p95_m_s=0.45,
+    )
+
+    assert gate["passed"] is False
+    assert "open_space_horizontal_speed_p95" in gate["failures"]
+
+
+def test_open_space_speed_excludes_envs_that_started_close() -> None:
+    close_profile = ResetProfile(
+        "unit_close",
+        0.75,
+        0.75,
+        (0.5, 0.5),
+        (0.5, 0.5),
+        0.0,
+        target_xy_offset_abs=0.0,
+        target_z_offset_abs=0.0,
+        target_yaw_offset_abs=0.0,
+        near_wall_probability=1.0,
+        near_wall_clearance_range=(0.1, 0.1),
+    )
+
+    metrics = aggregate_task_metrics(
+        {
+            "obstacle_avoidance": evaluate_one(
+                lambda _model, env, *_args: np.zeros((env.num_envs, 4), dtype=np.float32),
+                None,
+                ("obstacle_avoidance",),
+                "obstacle_avoidance",
+                123,
+                3,
+                8,
+                False,
+                close_profile,
+                None,
+                "base",
+            )
+        }
+    )
+
+    assert metrics["open_space_horizontal_speed_p95_m_s"] == 0.0

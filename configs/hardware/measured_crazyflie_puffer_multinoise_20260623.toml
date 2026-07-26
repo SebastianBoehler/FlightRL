@@ -1,0 +1,114 @@
+[environment]
+dt = 0.02
+num_envs = 512
+action_mode = "stabilized_planar"
+reset_mode = "random_uniform"
+
+[drone]
+mass = 0.036
+inertia = 3e-05
+arm_length = 0.046
+drag = 0.04
+angular_drag = 0.03
+gravity = 9.81
+hover_thrust = 0.34335
+thrust_gain = 0.16
+max_total_thrust = 0.75
+max_pitch_torque = 0.015
+actuator_tau = 0.06
+max_velocity = 4.0
+max_pitch_rate = 8.0
+max_pitch_angle = 0.9
+floor_z = 0.0
+x_limit = 4.0
+z_limit = 4.0
+
+[sensors]
+include_position = false
+include_velocity = false
+include_attitude = false
+include_angular_velocity = false
+include_target_vector = false
+include_previous_action = false
+include_health = false
+include_ideal_state = false
+include_noisy_state = true
+include_imu = true
+include_range_sensor = true
+include_crazyflie_telemetry = true
+state_noise_std = 0.0
+imu_noise_std = 0.0028487516889900864
+range_noise_std_m = 0.002
+range_dropout_prob = 0.0
+action_lag_s = 0.026601552963256836
+
+[task]
+task_type = "hover"
+max_steps = 384
+hover_hold_steps = 32
+success_radius = 0.25
+hover_speed_threshold = 0.25
+fixed_start = [0.0, 0.45]
+fixed_target = [0.0, 0.45]
+fixed_waypoints = [[0.0, 0.45], [0.0, 0.45], [0.0, 0.45], [0.0, 0.45]]
+spawn_bounds = [-0.6, 0.6, 0.25, 0.75]
+target_bounds = [-0.2, 0.2, 0.35, 0.65]
+
+[reward]
+alive_bonus = 0.04
+distance_penalty = 0.25
+progress_bonus = 0.8
+velocity_penalty = 0.08
+angular_rate_penalty = 0.05
+control_penalty = 0.01
+smoothness_penalty = 0.03
+success_bonus = 8.0
+crash_penalty = 10.0
+out_of_bounds_penalty = 6.0
+
+[training]
+device = "cpu"
+total_timesteps = 131072
+batch_size = 4096
+bptt_horizon = 32
+minibatch_size = 1024
+max_minibatch_size = 4096
+learning_rate = 0.0003
+iterations = 6
+checkpoint_interval = 3
+hidden_size = 128
+
+[domain_randomization]
+enabled = true
+mass_scale = 0.08
+drag_scale = 0.15
+thrust_scale = 0.12
+actuator_tau_scale = 0.2
+sensor_noise_scale = 0.5
+
+[logging]
+report_interval = 8
+trajectory_dir = "artifacts/trajectories"
+
+[wind]
+enabled = true
+steady_x = 0.0
+steady_z = 0.0
+gust_strength = 0.08
+gust_tau = 0.4
+
+[sim2real]
+measured = true
+source = "offline_composed_measured_profile"
+confidence = "mixed_log_calibrated_and_base_priors"
+evidence_files = ["artifacts/replay/puffer_sixdof_baseline_physics_calibration_20260622.json", "artifacts/replay/motor_bench_calibration_20260617_full_ramp_dropout_filtered.json", "artifacts/replay/live_system_id_runs38_44_20260620.json", "artifacts/replay/rich_live_sim_profile_multinoise_20260623.json"]
+base_config = "configs/tasks/crazyflie_hover.toml"
+base_prior_parameters = ["angular_drag", "arm_length", "floor_z", "gravity", "hover_thrust", "inertia", "max_pitch_angle", "max_pitch_rate", "max_pitch_torque", "max_total_thrust", "max_velocity", "thrust_gain", "x_limit", "z_limit"]
+physics_linear_drag = 0.04
+physics_rate_tau_s = 0.06
+physics_motor_tau_s = 0.0
+motor_gain_imbalance = 0.02772195393096467
+response_lag_s = 0.14299583435058594
+response_tau_s = 0.4502620941026115
+response_gain = 0.6101976654194203
+sensor_profile_present = true

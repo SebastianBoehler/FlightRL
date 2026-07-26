@@ -46,6 +46,14 @@ def live_env_from_telemetry(
     env.target_yaw[0] = target_yaw
 
 
+def target_from_telemetry(telemetry: dict[str, float], fallback: np.ndarray) -> np.ndarray:
+    target = np.asarray(fallback, dtype=np.float32).copy()
+    for index, key in enumerate(("target_x", "target_y", "target_z")):
+        if key in telemetry:
+            target[index] = value(telemetry, key)
+    return target
+
+
 def value(telemetry: dict[str, float], key: str, *, fallback: str | None = None) -> float:
     raw = telemetry.get(key)
     if raw is None and fallback is not None:
@@ -58,6 +66,8 @@ def value(telemetry: dict[str, float], key: str, *, fallback: str | None = None)
 
 def range_m(telemetry: dict[str, float], key: str) -> float:
     raw = value(telemetry, key, fallback=None)
+    if raw <= 0.0 or not np.isfinite(raw):
+        return 4.0
     return 4.0 if raw >= 32000.0 else raw / 1000.0
 
 

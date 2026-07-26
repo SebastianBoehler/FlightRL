@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--deployment-readiness", type=Path, default=ROOT / "artifacts/replay/sixdof_deployment_readiness_puffer_replay_blocked_2026-05-20.json")
     parser.add_argument("--replay-comparison", type=Path, default=ROOT / "artifacts/replay/room_scan_autonomous_35s.command_replay_frame_best_compare.json")
     parser.add_argument("--motor-bench", type=Path, default=ROOT / "artifacts/crazyflie_logs/motor_bench_single_motor.csv")
+    parser.add_argument("--sensor-profile", type=Path, default=None)
     parser.add_argument("--sim-readiness", type=Path, default=ROOT / "artifacts/replay/sixdof_readiness_multitask_residual_puffer_gated_2026-05-20.json")
     parser.add_argument("--room-report", type=Path, default=ROOT / "artifacts/replay/room_scan_autonomous_35s.clean20.strict_path.room.json")
     parser.add_argument("--live-script", action="append", type=Path, default=None)
@@ -51,6 +52,7 @@ def main() -> None:
         replay_comparison=resolve_optional(args.replay_comparison),
         motor_bench=resolve_optional(args.motor_bench),
         room_report=resolve_optional(args.room_report),
+        sensor_profile=resolve_optional(args.sensor_profile),
         hardware_blockers=hardware_blockers,
         input_paths={
             "hardware_config": resolve_path(args.hardware_config),
@@ -63,6 +65,7 @@ def main() -> None:
             "deployment_readiness": resolve_path(args.deployment_readiness),
             "replay_comparison": resolve_optional(args.replay_comparison),
             "motor_bench": resolve_optional(args.motor_bench),
+            "sensor_profile": resolve_optional(args.sensor_profile),
             "sim_readiness": resolve_path(args.sim_readiness),
             "room_report": resolve_optional(args.room_report),
             "live_scripts": live_scripts,

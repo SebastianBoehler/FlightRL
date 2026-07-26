@@ -30,6 +30,22 @@ def test_ttc_shadow_report_groups_close_and_pinch_rows(tmp_path: Path) -> None:
     assert report["groups"]["urgent_ttc_lt_35"]["samples"] == 1
 
 
+def test_ttc_shadow_carries_sparse_live_rows(tmp_path: Path) -> None:
+    log = tmp_path / "ttc_shadow_sparse.csv"
+    log.write_text(
+        "range.front,min_horizontal_range_m,min_horizontal_ttc_s,"
+        "raw_vx_m_s,raw_vy_m_s,raw_yawrate_deg_s,raw_zdistance_m,"
+        "ttc_shadow_vx_m_s,ttc_shadow_vy_m_s,ttc_shadow_yawrate_deg_s,ttc_shadow_zdistance_m\n"
+        "2000,2.0,99.0,0.1,0.0,0.0,0.5,0.1,0.0,0.0,0.5\n"
+        "150,0.15,0.2,-0.4,0.0,0.0,0.5,,,,\n"
+    )
+
+    report = evaluate_ttc_shadow_log(log)
+
+    assert report["groups"]["all"]["samples"] == 2
+    assert report["groups"]["close_lt_18cm"]["samples"] == 1
+
+
 def test_ttc_shadow_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     log = tmp_path / "ttc_shadow.csv"
     log.write_text(

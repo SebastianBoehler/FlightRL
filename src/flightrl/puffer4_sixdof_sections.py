@@ -6,7 +6,21 @@ from .sixdof.sensor_model import resolve_sensor_profile
 
 
 TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "attitude": 2, "circle": 3}
-REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3, "live_clearance": 4}
+REWARD_MODE_IDS = {
+    "env": 0,
+    "progress": 1,
+    "progress_clearance": 2,
+    "progress_yaw_clearance": 3,
+    "live_clearance": 4,
+    "live_stable_clearance": 5,
+}
+RANGE_DEPENDENT_TASKS = {"obstacle_avoidance"}
+RANGE_DEPENDENT_REWARD_MODES = {
+    "progress_clearance",
+    "progress_yaw_clearance",
+    "live_clearance",
+    "live_stable_clearance",
+}
 
 
 def build_sixdof_sections(settings: Puffer4ExportSettings) -> dict[str, dict[str, int | float | str]]:
@@ -14,6 +28,12 @@ def build_sixdof_sections(settings: Puffer4ExportSettings) -> dict[str, dict[str
     num_buffers = settings.num_buffers or 8
     hidden_size = settings.policy_hidden_size or 128
     sensor_profile = resolve_sensor_profile(settings.sim_profile)
+    validate_sensor_task_contract(
+        sensor_profile.name,
+        sensor_profile.range_observation_enabled,
+        settings.task,
+        settings.reward_mode,
+    )
     return {
         "base": {"env_name": settings.env_name, "checkpoint_interval": 10, "seed": settings.train_seed},
         "vec": {"total_agents": total_agents, "num_buffers": num_buffers, "num_threads": settings.num_threads or num_buffers},
@@ -58,6 +78,24 @@ def build_sixdof_sections(settings: Puffer4ExportSettings) -> dict[str, dict[str
             "horizon": 32,
         },
     }
+
+
+def validate_sensor_task_contract(
+    sensor_profile: str,
+    range_observation_enabled: bool,
+    task: str,
+    reward_mode: str,
+) -> None:
+    if range_observation_enabled:
+        return
+    if task in RANGE_DEPENDENT_TASKS:
+        raise ValueError(
+            f"sensor profile {sensor_profile!r} disables range observations; task {task!r} requires ranger data"
+        )
+    if reward_mode in RANGE_DEPENDENT_REWARD_MODES:
+        raise ValueError(
+            f"sensor profile {sensor_profile!r} disables range observations; reward mode {reward_mode!r} requires ranger data"
+        )
 
 
 def reset_profile_values(name: str) -> dict[str, float]:

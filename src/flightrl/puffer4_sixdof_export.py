@@ -62,6 +62,7 @@ typedef struct {
 	    float state_noise_std_m;
 	    float velocity_noise_std_m_s;
 	    float body_rate_noise_std_rad_s;
+	    int range_observation_enabled;
 	    float range_noise_std_m;
 	    float range_dropout_prob;
 	    float action_lag_s;
@@ -116,6 +117,7 @@ void my_init(Env* env, Dict* kwargs) {
 	    env->state_noise_std_m = (float)dict_get(kwargs, "state_noise_std_m")->value;
 	    env->velocity_noise_std_m_s = (float)dict_get(kwargs, "velocity_noise_std_m_s")->value;
 	    env->body_rate_noise_std_rad_s = (float)dict_get(kwargs, "body_rate_noise_std_rad_s")->value;
+	    env->range_observation_enabled = (int)dict_get(kwargs, "range_observation_enabled")->value;
 	    env->range_noise_std_m = (float)dict_get(kwargs, "range_noise_std_m")->value;
 	    env->range_dropout_prob = (float)dict_get(kwargs, "range_dropout_prob")->value;
 	    env->action_lag_s = (float)dict_get(kwargs, "action_lag_s")->value;
@@ -199,6 +201,12 @@ void my_log(Log* log, Dict* out) {
 	    for (int i = 0; i < 3; ++i) {
 	        env->observations[3 + i] += uniform_noise(env, env->velocity_noise_std_m_s) / 3.0f;
 	        env->observations[10 + i] += uniform_noise(env, env->body_rate_noise_std_rad_s) / fmaxf(env->physics[5 + i], 1.0e-6f);
+	    }
+	    if (!env->range_observation_enabled) {
+	        for (int i = 0; i < 6; ++i) {
+	            env->observations[18 + i] = 1.0f;
+	        }
+	        return;
 	    }
 	    for (int i = 0; i < 6; ++i) {
 	        if (env->range_dropout_prob > 0.0f && rnd(&env->rng, 0.0f, 1.0f) < env->range_dropout_prob) {

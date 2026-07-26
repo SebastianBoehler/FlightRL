@@ -97,9 +97,13 @@ def score_comparison(comparison: dict) -> dict[str, float]:
     state_z = worst_rmse(signals, ("stateEstimate.z",))
     yaw = worst_rmse(signals, ("stabilizer.yaw",))
     ranges = worst_rmse(signals, ("range.",))
+    xy_yaw_score = state_xy + 0.01 * yaw
+    state_bridge_score = state_xy + 0.25 * state_z + 0.01 * yaw
     score = state_xy + 0.25 * state_z + 0.002 * ranges + 0.01 * yaw
     return {
         "score": score,
+        "xy_yaw_score": xy_yaw_score,
+        "state_bridge_score": state_bridge_score,
         "samples": float(comparison.get("samples", 0)),
         "overlap_duration_s": float(comparison.get("overlap_duration_s", 0.0)),
         "worst_xy_state_rmse_m": state_xy,

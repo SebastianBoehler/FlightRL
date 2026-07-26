@@ -5,6 +5,7 @@ import numpy as np
 from flightrl.puffer4_sixdof_export import build_sixdof_sections
 from flightrl.puffer4_config import Puffer4ExportSettings
 from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof.disturbance import SixDofDisturbanceProfile, configure_disturbance, resolve_disturbance_profile
 from flightrl.sixdof.physics import LINEAR_DRAG, MASS, MOTOR_TAU
 
 
@@ -43,3 +44,39 @@ def test_puffer_sixdof_export_includes_realism_knobs() -> None:
     assert env_section["motor_tau_s"] == 0.035
     assert env_section["range_noise_std_m"] == 0.0
     assert env_section["action_lag_s"] == 0.0
+
+
+def test_disturbance_profile_pushes_level_hover_in_open_space() -> None:
+    env = SixDofCrazyflieEnv(num_envs=4, seed=11, reset_profile="obstacle_hover_live")
+    env.position[:] = np.asarray([0.0, 0.0, 0.5], dtype=np.float32)
+    env.velocity[:] = 0.0
+    env.quaternion[:] = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    env.target_position[:] = env.position
+    env._update_ranges()
+    configure_disturbance(env, SixDofDisturbanceProfile("test", world_accel_xy_m_s2=(0.5, 0.5)))
+
+    for _ in range(20):
+        env.step(np.zeros((env.num_envs, 4), dtype=np.float32))
+
+    assert np.min(np.linalg.norm(env.velocity[:, :2], axis=1)) > 0.05
+
+
+def test_disturbance_profile_can_load_measured_json(tmp_path) -> None:
+    profile_path = tmp_path / "disturbance.json"
+    profile_path.write_text(
+        """
+        {
+          "disturbance_profile": {
+            "name": "measured",
+            "world_accel_xy_m_s2": [0.3, 0.4],
+            "world_accel_z_m_s2": [-0.02, 0.01]
+          }
+        }
+        """
+    )
+
+    profile = resolve_disturbance_profile(str(profile_path))
+
+    assert profile.name == "measured"
+    assert profile.world_accel_xy_m_s2 == (0.3, 0.4)
+    assert profile.world_accel_z_m_s2 == (-0.02, 0.01)

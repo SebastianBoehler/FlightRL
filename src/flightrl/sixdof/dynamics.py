@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .disturbance import disturbance_accel
 from .geometry import quat_to_matrix
 from .physics import (
     GRAVITY,
@@ -32,6 +33,9 @@ def step_body_rate(env, clipped: np.ndarray) -> None:
     acceleration = up_world * (thrust / params[:, MASS])[:, None]
     acceleration[:, 2] -= params[:, GRAVITY]
     acceleration -= params[:, LINEAR_DRAG][:, None] * env.velocity
+    disturbance = disturbance_accel(env)
+    if disturbance is not None:
+        acceleration += disturbance
     env.velocity += acceleration.astype(np.float32) * env.dt
     env.position += env.velocity * env.dt
     env._update_ranges()

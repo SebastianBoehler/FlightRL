@@ -27,6 +27,7 @@
 #define SIXDOF_REWARD_PROGRESS_CLEARANCE 2
 #define SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE 3
 #define SIXDOF_REWARD_LIVE_CLEARANCE 4
+#define SIXDOF_REWARD_LIVE_STABLE_CLEARANCE 5
 
 static const float DEFAULT_ROOM[7] = {
     SIXDOF_ROOM_X_MIN, SIXDOF_ROOM_X_MAX, SIXDOF_ROOM_Y_MIN, SIXDOF_ROOM_Y_MAX, SIXDOF_ROOM_Z_MIN, SIXDOF_ROOM_Z_MAX, 4.0f
@@ -197,15 +198,40 @@ static void assemble_one(
     *reward = 1.0f - norm3(pos_error) - 0.15f * norm3(v) - 0.1f * fabsf(yaw_error) - 1.5f * clearance_penalty - 0.02f * action_norm;
     *terminal = in_room(p, room) ? 0 : 1;
     *truncation = step_count >= 800 ? 1 : 0;
-    if (reward_mode >= SIXDOF_REWARD_PROGRESS && reward_mode <= SIXDOF_REWARD_LIVE_CLEARANCE) {
-        float threshold = reward_mode == SIXDOF_REWARD_PROGRESS ? 0.25f : (reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 0.65f : 0.45f);
-        float clearance_weight = reward_mode == SIXDOF_REWARD_PROGRESS ? 1.0f : (reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 5.0f : 2.5f);
+    if (reward_mode >= SIXDOF_REWARD_PROGRESS && reward_mode <= SIXDOF_REWARD_LIVE_STABLE_CLEARANCE) {
+        int stable = reward_mode == SIXDOF_REWARD_LIVE_STABLE_CLEARANCE;
+        int live = reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE || stable;
+        float threshold = reward_mode == SIXDOF_REWARD_PROGRESS ? 0.25f : (live ? 0.65f : 0.45f);
+        float clearance_weight = reward_mode == SIXDOF_REWARD_PROGRESS ? 1.0f : (live ? 5.0f : 2.5f);
         float yaw_weight = reward_mode == SIXDOF_REWARD_PROGRESS_YAW_CLEARANCE ? 0.6f : 0.1f;
         float progress_clearance = fmaxf(0.0f, threshold - min_clearance);
-        float clearance_bonus = reward_mode == SIXDOF_REWARD_LIVE_CLEARANCE ? 0.15f * fminf(min_clearance, threshold) : 0.0f;
-        *reward = 0.2f + 3.0f * (previous_error - current_error) - 0.05f * current_error - 0.02f * norm3(v) -
+        float clearance_bonus = live ? 0.15f * fminf(min_clearance, threshold) : 0.0f;
+        float open_space = stable ? clampf((min_clearance - 0.45f) / 0.20f, 0.0f, 1.0f) : 0.0f;
+        float horizontal_speed = sqrtf(v[0] * v[0] + v[1] * v[1]);
+        float tilt_action = sqrtf(action[1] * action[1] + action[2] * action[2]);
+        float stable_penalty = open_space * (0.35f * horizontal_speed + 0.10f * tilt_action);
+        float escape_reward = 0.0f;
+        float vertical_reward = 0.0f;
+        if (stable) {
+            float push_x = fmaxf(0.0f, threshold - ranges[1]) - fmaxf(0.0f, threshold - ranges[0]);
+            float push_y = fmaxf(0.0f, threshold - ranges[3]) - fmaxf(0.0f, threshold - ranges[2]);
+            float rmat[9];
+            quat_matrix(q, rmat);
+            float body_vx = rmat[0] * v[0] + rmat[3] * v[1] + rmat[6] * v[2];
+            float body_vy = rmat[1] * v[0] + rmat[4] * v[1] + rmat[7] * v[2];
+            float velocity_alignment = push_x * body_vx + push_y * body_vy;
+            float action_alignment = push_x * action[2] - push_y * action[1];
+            escape_reward = 1.20f * velocity_alignment + 0.80f * action_alignment;
+            float top_pressure = fmaxf(0.0f, 0.45f - ranges[4]);
+            float bottom_pressure = fmaxf(0.0f, 0.45f - ranges[5]);
+            float vertical_push = bottom_pressure - top_pressure;
+            vertical_reward = -3.00f * (top_pressure + bottom_pressure) + 0.50f * vertical_push * v[2] + 0.25f * vertical_push * action[0];
+        }
+        float speed_weight = stable ? 0.12f : 0.02f;
+        float terminal_penalty = stable ? 2.0f : 1.0f;
+        *reward = 0.2f + 3.0f * (previous_error - current_error) - 0.05f * current_error - speed_weight * norm3(v) -
             yaw_weight * fabsf(yaw_error) - clearance_weight * progress_clearance + clearance_bonus - 0.01f * action_norm -
-            ((*terminal || *truncation) ? 1.0f : 0.0f);
+            stable_penalty + escape_reward + vertical_reward - terminal_penalty * ((*terminal || *truncation) ? 1.0f : 0.0f);
     }
     obs[0] = pos_error[0] / 2.0f;
     obs[1] = pos_error[1] / 2.0f;

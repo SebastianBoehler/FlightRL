@@ -146,6 +146,48 @@ def test_export_sixdof_puffer4_assets_supports_task_reward_mode(tmp_path: Path) 
     assert "flightrl_sixdof_step_env_context_batch" in binding_text
 
 
+def test_export_sixdof_puffer4_assets_supports_stable_live_reward(tmp_path: Path) -> None:
+    pufferlib_root = tmp_path / "PufferLib-4.0"
+    result = export_sixdof_puffer4_assets(
+        pufferlib_root,
+        settings=Puffer4ExportSettings(
+            env_name="flightrl_obstacle",
+            task="obstacle_avoidance",
+            reward_mode="live_stable_clearance",
+            reset_profile="obstacle_close_live",
+        ),
+    )
+
+    assert "reward_mode = 5" in result.config_path.read_text()
+
+
+def test_export_sixdof_puffer4_assets_supports_deckless_sensor_profile(tmp_path: Path) -> None:
+    pufferlib_root = tmp_path / "PufferLib-4.0"
+    result = export_sixdof_puffer4_assets(
+        pufferlib_root,
+        settings=Puffer4ExportSettings(
+            env_name="flightrl_deckless",
+            sim_profile="deckless",
+            task="position_yaw",
+            reward_mode="env",
+        ),
+    )
+    binding_text = (result.env_dir / "binding.c").read_text()
+    ini_text = result.config_path.read_text()
+
+    assert "range_observation_enabled = 0" in ini_text
+    assert 'dict_get(kwargs, "range_observation_enabled")' in binding_text
+    assert "env->observations[18 + i] = 1.0f" in binding_text
+
+
+def test_export_sixdof_puffer4_assets_rejects_deckless_obstacle_training(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="requires ranger data"):
+        export_sixdof_puffer4_assets(
+            tmp_path / "PufferLib-4.0",
+            settings=Puffer4ExportSettings(env_name="flightrl_bad", sim_profile="deckless", task="obstacle_avoidance"),
+        )
+
+
 def test_render_sixdof_binding_is_ocean_shaped() -> None:
     binding = render_sixdof_puffer4_binding()
     assert "#define Env FlightRLSixDofEnv" in binding

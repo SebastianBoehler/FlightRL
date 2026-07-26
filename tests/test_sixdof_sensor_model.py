@@ -6,7 +6,7 @@ import numpy as np
 
 from flightrl.sim2real.live_profile import build_live_sim_profile, range_dropout_probability
 from flightrl.sixdof import SixDofCrazyflieEnv
-from flightrl.sixdof.sensor_model import SixDofSensorProfile
+from flightrl.sixdof.sensor_model import SixDofSensorProfile, resolve_sensor_profile
 
 
 HEADER = (
@@ -65,3 +65,24 @@ def test_sensor_profile_adds_observation_dropout_and_action_lag() -> None:
     assert np.all(env.previous_action < 1.0)
     assert np.all(env.previous_action > 0.0)
     assert np.any(env.ranges_m[:, :4] < env.room.max_range_m)
+
+
+def test_deckless_sensor_profile_masks_range_observation_without_disabling_room_model() -> None:
+    profile = resolve_sensor_profile("deckless")
+    env = SixDofCrazyflieEnv(num_envs=4, seed=13, task="position_yaw", sensor_profile=profile)
+
+    obs, _ = env.reset(seed=13)
+
+    assert profile.range_observation_enabled is False
+    assert np.allclose(obs[:, 18:24], 1.0)
+    assert np.any(env.ranges_m[:, :4] < env.room.max_range_m)
+
+
+def test_sensor_profile_json_can_disable_range_observation(tmp_path: Path) -> None:
+    path = tmp_path / "sensor.json"
+    path.write_text('{"sensor_profile": {"name": "unit", "range_observation_enabled": false}}')
+
+    profile = resolve_sensor_profile(path)
+
+    assert profile.name == "unit"
+    assert profile.range_observation_enabled is False

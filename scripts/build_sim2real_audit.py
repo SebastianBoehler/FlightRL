@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--motor-bench", type=Path, default=None)
     parser.add_argument("--stationary-noise", type=Path, default=None)
     parser.add_argument("--hardware-latency", type=Path, default=None)
+    parser.add_argument("--sensor-profile", type=Path, default=None)
     parser.add_argument("--hardware-blockers-file", type=Path, default=None)
     parser.add_argument("--hardware-blocker", action="append", default=[])
     parser.add_argument("--max-replay-state-rmse", type=float, default=0.5)
@@ -36,6 +37,7 @@ def main() -> None:
         motor_bench=args.motor_bench,
         stationary_noise=args.stationary_noise,
         hardware_latency=args.hardware_latency,
+        sensor_profile=args.sensor_profile,
         hardware_blockers=load_hardware_blockers(args.hardware_blockers_file, args.hardware_blocker),
         max_replay_state_rmse=args.max_replay_state_rmse,
         max_replay_range_rmse_mm=args.max_replay_range_rmse_mm,

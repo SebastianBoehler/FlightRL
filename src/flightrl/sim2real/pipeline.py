@@ -30,6 +30,7 @@ def build_pipeline(
     replay_comparison: Path | None = None,
     motor_bench: Path | None = None,
     room_report: Path | None = None,
+    sensor_profile: Path | None = None,
     hardware_blockers: list[str] | None = None,
     input_paths: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -50,6 +51,7 @@ def build_pipeline(
         motor_bench=motor_bench,
         stationary_noise=stationary_noise,
         hardware_latency=hardware_latency,
+        sensor_profile=sensor_profile,
         hardware_blockers=hardware_blockers or [],
     )
     write_json_markdown(audit, outputs["audit"], render_audit_markdown)
@@ -85,6 +87,7 @@ def build_pipeline(
         replay_comparison=replay_comparison,
         motor_bench=motor_bench,
         room_report=room_report,
+        sensor_profile=sensor_profile,
         hardware_blockers=hardware_blockers or [],
     )
     report = pipeline_summary(outputs, audit, profile, config_export, gate, manifest, inputs)

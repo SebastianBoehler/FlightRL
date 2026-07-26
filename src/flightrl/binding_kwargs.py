@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .config import FlightConfig, MAX_WAYPOINTS
+from .observation_schema import OBSERVATION_FLAG_BITS
 
 
 TASK_MAP = {
@@ -22,18 +23,21 @@ RESET_MAP = {
 }
 
 
-def build_binding_kwargs(config: FlightConfig) -> dict[str, float | int]:
+def build_binding_kwargs(config: FlightConfig, *, host_fed_vision: bool = False) -> dict[str, float | int]:
     task = config.task
     drone = config.drone
     reward = config.reward
     sensors = config.sensors
     randomization = config.domain_randomization
     wind = config.wind
+    observation_flags = config.observation_flags
+    if host_fed_vision:
+        observation_flags &= ~OBSERVATION_FLAG_BITS["include_vision_sensor"]
     kwargs: dict[str, float | int] = {
         "dt": config.environment.dt,
         "action_dim": config.action_dim,
         "observation_dim": config.observation_dim,
-        "observation_flags": config.observation_flags,
+        "observation_flags": observation_flags,
         "state_noise_std": sensors.state_noise_std,
         "imu_noise_std": sensors.imu_noise_std,
         "task_type": TASK_MAP[task.task_type],

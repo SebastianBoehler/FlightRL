@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .curriculum import ResetProfile, resolve_reset_profile, sample_reset
+from .curriculum import ResetProfile, resolve_reset_profile, sample_initial_velocity, sample_reset
 from .dynamics import step_body_rate
 from .geometry import BoxRoom, body_rays_world, normalize_quat
 from .motor_rpm import MotorRpmParams, resolve_motor_rpm_params, step_motor_rpm
@@ -25,7 +25,7 @@ from .sensor_model import SixDofSensorProfile, noisy_values, observed_ranges, re
 OBSERVATION_DIM = 28
 ACTION_DIM = 4
 TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "attitude": 2, "circle": 3}
-REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3, "live_clearance": 4}
+REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3, "live_clearance": 4, "live_stable_clearance": 5}
 
 
 @dataclass(slots=True)
@@ -67,6 +67,7 @@ class SixDofCrazyflieEnv:
         self.physics_profile = resolve_physics_profile(physics_profile)
         self.domain_randomization = resolve_domain_randomization(domain_randomization)
         self.sensor_profile = resolve_sensor_profile(sensor_profile)
+        self.teacher_profile = "default"
         self.room = room or BoxRoom()
         self.room_bounds = np.asarray([self.room.x_min, self.room.x_max, self.room.y_min, self.room.y_max, self.room.z_min, self.room.z_max, self.room.max_range_m], dtype=np.float32)
         self.rng = np.random.default_rng(seed)
@@ -220,7 +221,7 @@ class SixDofCrazyflieEnv:
             return
         position, roll, pitch, yaw, target, target_yaw = sample_reset(self.reset_profile, self.rng, count, self.room)
         self.position[mask] = position
-        self.velocity[mask] = 0.0
+        self.velocity[mask] = sample_initial_velocity(self.reset_profile, self.rng, count)
         self.body_rates[mask] = 0.0
         self.quaternion[mask] = euler_to_quat(roll, pitch, yaw)
         self.physics_params[mask] = sample_physics(self.physics_profile, self.domain_randomization, self.rng, count)

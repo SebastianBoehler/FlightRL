@@ -17,6 +17,7 @@ def build_audit(
     motor_bench: Path | None = None,
     stationary_noise: Path | None = None,
     hardware_latency: Path | None = None,
+    sensor_profile: Path | None = None,
     hardware_blockers: list[str] | None = None,
     max_replay_state_rmse: float = 0.5,
     max_replay_range_rmse_mm: float = 300.0,
@@ -33,6 +34,7 @@ def build_audit(
         ),
         "stationary_noise": summarize_stationary_noise(stationary_noise),
         "hardware_latency": summarize_hardware_latency(hardware_latency),
+        "sensor_profile": summarize_sensor_profile(sensor_profile),
         "deployment_readiness": summarize_deployment(deployment_readiness),
         "training_stack": summarize_training_stack(deployment_readiness),
         "thresholds": {
@@ -125,6 +127,33 @@ def summarize_hardware_latency(path: Path | None) -> dict[str, Any]:
     }
 
 
+def summarize_sensor_profile(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {"present": False, "passed": False, "failures": ["missing"]}
+    data = _read_json(path)
+    profile = data.get("sensor_profile", data)
+    knobs = {
+        key: float(profile.get(key, 0.0) or 0.0)
+        for key in (
+            "state_noise_std_m",
+            "velocity_noise_std_m_s",
+            "body_rate_noise_std_rad_s",
+            "range_noise_std_m",
+            "range_dropout_prob",
+            "action_lag_s",
+        )
+    }
+    enabled = bool(profile.get("enabled", False)) or any(value > 0.0 for value in knobs.values())
+    return {
+        "present": True,
+        "path": str(path),
+        "passed": enabled,
+        "failures": [] if enabled else ["disabled"],
+        "name": profile.get("name"),
+        **knobs,
+    }
+
+
 def summarize_deployment(path: Path | None) -> dict[str, Any]:
     if path is None or not path.exists():
         return {"present": False, "passed": False, "failures": ["missing"]}
@@ -172,7 +201,9 @@ def collect_blockers(report: dict[str, Any]) -> list[str]:
         blockers.append("deployment_readiness_blocked")
     if not report["training_stack"]["passed"]:
         blockers.append("training_stack_incomplete")
-    if not report["hardware_config"].get("sensor_model", {}).get("include_noisy_state"):
+    hardware_sensor_model = bool(report["hardware_config"].get("sensor_model", {}).get("include_noisy_state"))
+    measured_sensor_profile = bool(report.get("sensor_profile", {}).get("passed"))
+    if not hardware_sensor_model and not measured_sensor_profile:
         blockers.append("sensor_model_incomplete")
     if not report["stationary_noise"]["passed"]:
         blockers.append("sensor_noise_unmeasured" if not report["stationary_noise"]["present"] else "sensor_noise_failed")
@@ -191,6 +222,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         ("replay comparison", report["replay_comparison"]["passed"], ",".join(report["replay_comparison"].get("failures", [])) or "pass", "real-vs-sim fit"),
         ("stationary noise", report["stationary_noise"]["passed"], ",".join(report["stationary_noise"].get("failures", [])) or "pass", "sensor randomization"),
         ("hardware latency", report["hardware_latency"]["passed"], ",".join(report["hardware_latency"].get("failures", [])) or "pass", "command/sensor timing"),
+        ("sensor profile", report["sensor_profile"]["passed"], ",".join(report["sensor_profile"].get("failures", [])) or "pass", "sim observation/noise profile"),
         ("deployment readiness", report["deployment_readiness"]["passed"], str(report["deployment_readiness"].get("summary", {})), "candidate gates"),
         ("training stack", report["training_stack"]["passed"], ",".join(report["training_stack"].get("failures", [])) or "pass", "Puffer/export/throughput"),
     ]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -40,6 +42,9 @@ class SixDofPhysicsProfile:
             ],
             dtype=np.float32,
         )
+
+    def as_report(self) -> dict:
+        return asdict(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +97,21 @@ def resolve_physics_profile(value: str | SixDofPhysicsProfile | None) -> SixDofP
         return PUFFER_DRONE_PHYSICS
     if isinstance(value, SixDofPhysicsProfile):
         return value
+    path = Path(value)
+    if path.exists():
+        data = json.loads(path.read_text())
+        payload = data.get("physics_profile", data)
+        default = LEGACY_PHYSICS
+        rates = payload.get("max_rate_rad_s", default.max_rate_rad_s)
+        return SixDofPhysicsProfile(
+            mass_kg=float(payload.get("mass_kg", default.mass_kg)),
+            gravity_m_s2=float(payload.get("gravity_m_s2", default.gravity_m_s2)),
+            linear_drag=float(payload.get("linear_drag", default.linear_drag)),
+            rate_tau_s=float(payload.get("rate_tau_s", default.rate_tau_s)),
+            thrust_scale=float(payload.get("thrust_scale", default.thrust_scale)),
+            max_rate_rad_s=tuple(float(item) for item in rates),
+            motor_tau_s=float(payload.get("motor_tau_s", default.motor_tau_s)),
+        )
     raise ValueError(f"unknown 6-DoF physics profile {value!r}")
 
 

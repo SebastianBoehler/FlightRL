@@ -66,10 +66,13 @@ def load_examples(paths: list[Path], args) -> tuple[torch.Tensor, torch.Tensor, 
     targets: list[list[float]] = []
     weights: list[float] = []
     for path in paths:
-        for row in csv.DictReader(path.open()):
+        latest: dict[str, float] = {}
+        for raw_row in csv.DictReader(path.open()):
+            latest.update({key: float(value) for key, value in raw_row.items() if numeric(value)})
+            row = latest
             if not has_required_columns(row, args):
                 continue
-            telemetry = {key: float(value) for key, value in row.items() if numeric(value)}
+            telemetry = dict(row)
             reading = reading_from_telemetry(telemetry)
             rate = rate_from_telemetry(telemetry)
             observations.append(ttc_observation(reading, rate))
@@ -109,7 +112,7 @@ def append_synthetic_close_examples(train_x: torch.Tensor, train_y: torch.Tensor
 
 def synthetic_close_state(rng: np.random.Generator, index: int, height_m: float) -> tuple[RangerReading, RangerReading]:
     horizontal = rng.uniform(0.8, 3.0, size=4)
-    sides = rng.choice(4, size=1 + (index % 3 == 0), replace=False)
+    sides = synthetic_close_sides(rng, index)
     for side in sides:
         horizontal[side] = rng.uniform(0.08, 0.42)
     rates = np.zeros(4, dtype=np.float32)
@@ -125,6 +128,14 @@ def synthetic_close_state(rng: np.random.Generator, index: int, height_m: float)
     )
     rate = RangerReading(float(rates[0]), float(rates[1]), float(rates[2]), float(rates[3]), 0.0, 0.0)
     return reading, rate
+
+
+def synthetic_close_sides(rng: np.random.Generator, index: int) -> np.ndarray:
+    patterns = ((0, 1), (2, 3), (0, 3), (1, 2))
+    pattern = index % 6
+    if pattern < len(patterns):
+        return np.asarray(patterns[pattern], dtype=np.int64)
+    return rng.choice(4, size=1, replace=False)
 
 
 def teacher_label(reading: RangerReading, rate: RangerReading, args):

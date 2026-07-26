@@ -29,6 +29,20 @@ def test_motor_calibration_rejects_zero_rpm(tmp_path) -> None:
     assert report["simulator_priors"]["present"] is False
 
 
+def test_motor_calibration_can_filter_rpm_dropouts(tmp_path) -> None:
+    path = tmp_path / "motor.csv"
+    write_motor_bench_with_dropouts(path)
+
+    strict = fit_motor_calibration(path)
+    filtered = fit_motor_calibration(path, min_valid_rpm=1000.0, max_dropout_ratio=0.6)
+
+    assert strict["summary"]["passed"] is False
+    assert filtered["summary"]["passed"] is True
+    assert filtered["summary"]["warnings"] == ["rpm_dropouts_filtered"]
+    assert filtered["summary"]["dropped_samples"] == 4
+    assert filtered["simulator_priors"]["present"] is True
+
+
 def test_motor_bench_summary_flags_missing_rpm_signal(tmp_path) -> None:
     path = tmp_path / "motor.csv"
     write_motor_bench(path, zero_rpm=True)
@@ -64,6 +78,28 @@ def write_motor_bench(path, *, zero_rpm: bool) -> None:
             gain = 0.42 + 0.01 * motor
             for power in [14000, 20000, 26000, 32000]:
                 rpm = 0.0 if zero_rpm else gain * power - 2000.0
+                writer.writerow(
+                    {
+                        "motor": motor,
+                        "power": power,
+                        "rpm": rpm,
+                        "motor_output": power,
+                        "motor_requested": power,
+                        "vbat": 3.9,
+                    }
+                )
+
+
+def write_motor_bench_with_dropouts(path) -> None:
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["motor", "power", "rpm", "motor_output", "motor_requested", "vbat"])
+        writer.writeheader()
+        for motor in range(1, 5):
+            gain = 0.50 + 0.01 * motor
+            for power in [8000, 12000, 16000, 22000, 28000]:
+                rpm = gain * power
+                if power == 22000:
+                    rpm = 100.0
                 writer.writerow(
                     {
                         "motor": motor,

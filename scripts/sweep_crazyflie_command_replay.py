@@ -67,14 +67,15 @@ def render_markdown(report: dict) -> str:
     lines = [
         "# Crazyflie Command Replay Sweep",
         "",
-        "| rank | score | velocity_gain | yawrate_scale | max_dt_s | hold_z_m | frame/yaw | vx/vy sign | xy_rmse_m | z_rmse_m | yaw_rmse_deg | range_rmse_mm |",
-        "| ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: |",
+        "| rank | score | state_score | xy_yaw | velocity_gain | yawrate_scale | max_dt_s | hold_z_m | frame/yaw | vx/vy sign | xy_rmse_m | z_rmse_m | yaw_rmse_deg | range_rmse_mm |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for rank, record in enumerate(report["records"][:12], start=1):
         params = record["params"]
         metrics = record["metrics"]
         lines.append(
-            f"| {rank} | {record['score']:.4f} | {params['velocity_gain']:.3f} | {params['yawrate_scale']:.3f} | "
+            f"| {rank} | {record['score']:.4f} | {metrics['state_bridge_score']:.4f} | {metrics['xy_yaw_score']:.4f} | "
+            f"{params['velocity_gain']:.3f} | {params['yawrate_scale']:.3f} | "
             f"{params['max_dt_s']:.3f} | {params['hold_z_m']} | {params.get('command_frame', 'body')}/{params.get('yaw_source', 'logged')} | "
             f"{params.get('vx_sign', 1.0):.0f}/{params.get('vy_sign', 1.0):.0f} | {metrics['worst_xy_state_rmse_m']:.4f} | "
             f"{metrics['z_rmse_m']:.4f} | {metrics['yaw_rmse_deg']:.2f} | {metrics['worst_range_rmse_mm']:.1f} |"

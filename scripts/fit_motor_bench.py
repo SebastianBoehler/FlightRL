@@ -13,6 +13,8 @@ def main() -> None:
     parser.add_argument("--min-powers", type=int, default=3)
     parser.add_argument("--min-r2", type=float, default=0.9)
     parser.add_argument("--max-gain-imbalance", type=float, default=0.25)
+    parser.add_argument("--min-valid-rpm", type=float, default=0.0)
+    parser.add_argument("--max-dropout-ratio", type=float, default=0.0)
     args = parser.parse_args()
 
     report = fit_motor_calibration(
@@ -20,6 +22,8 @@ def main() -> None:
         min_powers=args.min_powers,
         min_r2=args.min_r2,
         max_gain_imbalance=args.max_gain_imbalance,
+        min_valid_rpm=args.min_valid_rpm,
+        max_dropout_ratio=args.max_dropout_ratio,
     )
     write_report(report, args.output)
     print(f"summary={args.output}")

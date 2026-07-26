@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from flightrl.hardware.sixdof_live_replay import range_m, target_from_telemetry
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("evaluate_puffer_sixdof_live_log", ROOT / "scripts" / "evaluate_puffer_sixdof_live_log.py")
 assert SPEC and SPEC.loader
@@ -48,6 +50,23 @@ def test_puffer_live_shadow_report_groups_vertical_clearance() -> None:
     assert report["groups"]["vertical_lt_35cm"]["min_bottom_range_m"] == 0.18
     assert "thrust" in report["groups"]["all"]["sign_agreement"]
     assert MODULE.live_range_m({"range.up": 0.0}, "range.up") == 4.0
+
+
+def test_puffer_live_shadow_reconstructs_sparse_live_rows(tmp_path: Path) -> None:
+    log = tmp_path / "sparse.csv"
+    log.write_text(
+        "host_time_s,range.front,range.back,target_x,target_y,target_z\n"
+        "1.0,1000,,0.2,0.3,0.5\n"
+        "1.1,,900,,,\n"
+    )
+
+    rows = MODULE.load_rows(log)
+
+    assert rows[1]["range.front"] == 1000.0
+    assert rows[1]["range.back"] == 900.0
+    target = target_from_telemetry(rows[1], np.asarray([0.0, 0.0, 0.45], dtype=np.float32))
+    np.testing.assert_allclose(target, [0.2, 0.3, 0.5])
+    assert range_m({}, "range.front") == 4.0
 
 
 def row(*, range_up: float, range_zrange: float) -> dict[str, float]:

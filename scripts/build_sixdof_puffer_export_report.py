@@ -15,6 +15,7 @@ REQUIRED_BINDING_TOKENS = (
     "flightrl_sixdof_step_env_context_batch",
     'dict_get(kwargs, "room_x_min")',
     'dict_get(kwargs, "mass_kg")',
+    'dict_get(kwargs, "range_observation_enabled")',
     'dict_get(kwargs, "task_id")',
 )
 
@@ -124,6 +125,7 @@ def validate(files: dict, config: dict, args: argparse.Namespace) -> list[dict]:
             "sensor_profile_knobs_present",
             all(key in config.get("env", {}) for key in ("range_noise_std_m", "range_dropout_prob", "action_lag_s")),
         ),
+        check("range_observation_flag_present", "range_observation_enabled" in config.get("env", {})),
         check("task_id_present", "task_id" in config.get("env", {})),
         check("reward_mode_present", "reward_mode" in config.get("env", {})),
         check(

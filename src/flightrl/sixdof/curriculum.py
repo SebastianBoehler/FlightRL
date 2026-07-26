@@ -24,6 +24,8 @@ class ResetProfile:
     near_wall_clearance_range: tuple[float, float] | None = None
     near_wall_yaw_jitter_rad: float = 0.0
     z_margin: float = 0.25
+    initial_velocity_xy_std: float = 0.0
+    initial_velocity_z_std: float = 0.0
 
 
 RESET_PROFILES = {
@@ -46,6 +48,57 @@ RESET_PROFILES = {
         near_wall_probability=0.65,
         near_wall_clearance_range=(0.08, 0.62),
         near_wall_yaw_jitter_rad=0.10,
+    ),
+    "obstacle_hover_live": ResetProfile(
+        "obstacle_hover_live",
+        0.75,
+        0.75,
+        (0.44, 0.58),
+        (0.45, 0.60),
+        0.04,
+        target_xy_offset_abs=0.0,
+        target_z_offset_abs=0.0,
+        target_yaw_offset_abs=0.0,
+        near_wall_probability=0.65,
+        near_wall_clearance_range=(0.08, 0.62),
+        near_wall_yaw_jitter_rad=0.10,
+    ),
+    "obstacle_hover_drift_recovery": ResetProfile(
+        "obstacle_hover_drift_recovery",
+        0.55,
+        0.55,
+        (0.44, 0.58),
+        (0.45, 0.60),
+        0.06,
+        target_xy_offset_abs=0.0,
+        target_z_offset_abs=0.0,
+        target_yaw_offset_abs=0.0,
+        initial_velocity_xy_std=0.35,
+        initial_velocity_z_std=0.06,
+    ),
+    "obstacle_hover_open_drift_stress": ResetProfile(
+        "obstacle_hover_open_drift_stress",
+        0.20,
+        0.20,
+        (0.44, 0.58),
+        (0.45, 0.60),
+        0.04,
+        target_xy_offset_abs=0.0,
+        target_z_offset_abs=0.0,
+        target_yaw_offset_abs=0.0,
+    ),
+    "obstacle_hover_raw_transfer_stress": ResetProfile(
+        "obstacle_hover_raw_transfer_stress",
+        0.20,
+        0.20,
+        (0.44, 0.58),
+        (0.45, 0.60),
+        0.06,
+        target_xy_offset_abs=0.0,
+        target_z_offset_abs=0.0,
+        target_yaw_offset_abs=0.0,
+        initial_velocity_xy_std=1.0,
+        initial_velocity_z_std=0.08,
     ),
     "obstacle_vertical_live": ResetProfile(
         "obstacle_vertical_live",
@@ -153,6 +206,8 @@ def sample_target(profile: ResetProfile, rng: np.random.Generator, position: np.
         target[:, 0] = position[:, 0] + rng.uniform(-profile.target_xy_offset_abs, profile.target_xy_offset_abs, len(position))
         target[:, 1] = position[:, 1] + rng.uniform(-profile.target_xy_offset_abs, profile.target_xy_offset_abs, len(position))
         target[:, 2] = position[:, 2] + rng.uniform(-profile.target_z_offset_abs, profile.target_z_offset_abs, len(position))
+    if profile.target_xy_offset_abs == 0.0 and profile.target_z_offset_abs == 0.0:
+        return target.astype(np.float32)
     target[:, 0] = np.clip(target[:, 0], room.x_min + 0.25, room.x_max - 0.25)
     target[:, 1] = np.clip(target[:, 1], room.y_min + 0.25, room.y_max - 0.25)
     target[:, 2] = np.clip(target[:, 2], room.z_min + 0.35, room.z_max - 0.25)
@@ -163,6 +218,15 @@ def clip_axis(values: np.ndarray, low: float, high: float, *, margin: float) -> 
     if low + margin > high - margin:
         return np.full_like(values, 0.5 * (low + high))
     return np.clip(values, low + margin, high - margin)
+
+
+def sample_initial_velocity(profile: ResetProfile, rng: np.random.Generator, count: int) -> np.ndarray:
+    velocity = np.zeros((count, 3), dtype=np.float32)
+    if profile.initial_velocity_xy_std > 0.0:
+        velocity[:, :2] = rng.normal(0.0, profile.initial_velocity_xy_std, (count, 2))
+    if profile.initial_velocity_z_std > 0.0:
+        velocity[:, 2] = rng.normal(0.0, profile.initial_velocity_z_std, count)
+    return velocity.astype(np.float32)
 
 
 def sample_target_yaw(profile: ResetProfile, rng: np.random.Generator, yaw: np.ndarray) -> np.ndarray:

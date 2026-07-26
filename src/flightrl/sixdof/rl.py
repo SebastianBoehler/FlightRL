@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from .circle import circle_orbit_error_from_arrays
 from .controller import executed_action_for_controller, imitation_target_for_controller, validate_controller
 from .env import ACTION_DIM, quat_to_yaw, wrap_angle
+from .geometry import quat_to_matrix
 from .dataset import sample_task_indices, task_probability_vector, teacher_labels
 from .observation import augment_observation
 from .policies import SixDofPolicy
@@ -17,7 +18,7 @@ from .tasks import append_task_encoding
 from .yaw import yaw_error_for_task_indices
 
 
-REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance", "live_clearance")
+REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance", "live_clearance", "live_stable_clearance")
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +213,29 @@ def rollout_reward(
             tasks=tasks,
             task_indices=task_indices,
         )
+    if mode == "live_stable_clearance":
+        return shaped_progress_reward(
+            env,
+            done,
+            previous_error,
+            actions,
+            clearance_threshold=0.65,
+            clearance_weight=5.0,
+            yaw_weight=0.1,
+            clearance_bonus_weight=0.15,
+            speed_weight=0.12,
+            open_space_speed_weight=0.35,
+            open_space_action_weight=0.10,
+            escape_velocity_weight=1.20,
+            escape_action_weight=0.80,
+            vertical_clearance_threshold=0.45,
+            vertical_clearance_weight=3.00,
+            vertical_escape_velocity_weight=0.50,
+            vertical_escape_action_weight=0.25,
+            terminal_penalty=2.0,
+            tasks=tasks,
+            task_indices=task_indices,
+        )
     raise ValueError(f"unknown PPO reward mode {mode!r}")
 
 
@@ -227,6 +251,16 @@ def shaped_progress_reward(
     tasks: tuple[str, ...] | None,
     task_indices: np.ndarray | None,
     clearance_bonus_weight: float = 0.0,
+    speed_weight: float = 0.02,
+    open_space_speed_weight: float = 0.0,
+    open_space_action_weight: float = 0.0,
+    escape_velocity_weight: float = 0.0,
+    escape_action_weight: float = 0.0,
+    vertical_clearance_threshold: float = 0.0,
+    vertical_clearance_weight: float = 0.0,
+    vertical_escape_velocity_weight: float = 0.0,
+    vertical_escape_action_weight: float = 0.0,
+    terminal_penalty: float = 1.0,
 ) -> np.ndarray:
     current_error = position_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else position_error(env)
     progress = previous_error - current_error
@@ -236,9 +270,58 @@ def shaped_progress_reward(
     clearance_penalty = np.maximum(0.0, clearance_threshold - min_clearance)
     clearance_bonus = clearance_bonus_weight * np.minimum(min_clearance, clearance_threshold)
     control = np.linalg.norm(actions, axis=1)
-    reward = 0.2 + 3.0 * progress - 0.05 * current_error - 0.02 * speed - yaw_weight * yaw_error - clearance_weight * clearance_penalty + clearance_bonus - 0.01 * control
-    reward -= done.astype(np.float32)
+    open_space = np.clip((min_clearance - 0.45) / 0.20, 0.0, 1.0)
+    horizontal_speed = np.linalg.norm(env.velocity[:, :2], axis=1)
+    tilt_action = np.linalg.norm(actions[:, 1:3], axis=1)
+    stable_penalty = open_space * (open_space_speed_weight * horizontal_speed + open_space_action_weight * tilt_action)
+    escape_reward = clearance_escape_reward(env, actions, clearance_threshold, escape_velocity_weight, escape_action_weight)
+    vertical_reward = vertical_clearance_reward(
+        env,
+        actions,
+        vertical_clearance_threshold,
+        vertical_clearance_weight,
+        vertical_escape_velocity_weight,
+        vertical_escape_action_weight,
+    )
+    reward = (
+        0.2 + 3.0 * progress - 0.05 * current_error - speed_weight * speed - yaw_weight * yaw_error
+        - clearance_weight * clearance_penalty + clearance_bonus - 0.01 * control - stable_penalty
+        + escape_reward + vertical_reward
+    )
+    reward -= terminal_penalty * done.astype(np.float32)
     return reward.astype(np.float32)
+
+
+def clearance_escape_reward(env, actions: np.ndarray, threshold: float, velocity_weight: float, action_weight: float) -> np.ndarray:
+    if velocity_weight == 0.0 and action_weight == 0.0:
+        return np.zeros(env.num_envs, dtype=np.float32)
+    body_push_x = np.maximum(0.0, threshold - env.ranges_m[:, 1]) - np.maximum(0.0, threshold - env.ranges_m[:, 0])
+    body_push_y = np.maximum(0.0, threshold - env.ranges_m[:, 3]) - np.maximum(0.0, threshold - env.ranges_m[:, 2])
+    rotation = quat_to_matrix(env.quaternion)
+    body_velocity = np.einsum("nij,ni->nj", rotation, env.velocity, optimize=True)
+    velocity_alignment = body_push_x * body_velocity[:, 0] + body_push_y * body_velocity[:, 1]
+    action_alignment = body_push_x * actions[:, 2] - body_push_y * actions[:, 1]
+    return (velocity_weight * velocity_alignment + action_weight * action_alignment).astype(np.float32)
+
+
+def vertical_clearance_reward(
+    env,
+    actions: np.ndarray,
+    threshold: float,
+    clearance_weight: float,
+    velocity_weight: float,
+    action_weight: float,
+) -> np.ndarray:
+    if threshold <= 0.0:
+        return np.zeros(env.num_envs, dtype=np.float32)
+    top_pressure = np.maximum(0.0, threshold - env.ranges_m[:, 4])
+    bottom_pressure = np.maximum(0.0, threshold - env.ranges_m[:, 5])
+    vertical_push = bottom_pressure - top_pressure
+    return (
+        -clearance_weight * (top_pressure + bottom_pressure)
+        + velocity_weight * vertical_push * env.velocity[:, 2]
+        + action_weight * vertical_push * actions[:, 0]
+    ).astype(np.float32)
 
 
 def compute_advantages(rollout: dict[str, np.ndarray], gamma: float, gae_lambda: float) -> tuple[np.ndarray, np.ndarray]:

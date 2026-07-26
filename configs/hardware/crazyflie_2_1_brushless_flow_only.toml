@@ -1,0 +1,85 @@
+[radio]
+uri = "radio://0/80/2M/E7E7E7E7E7"
+cache_dir = "artifacts/cflib_cache"
+
+[safety]
+default_height_m = 0.3
+velocity_m_s = 0.15
+turn_rate_deg_s = 45.0
+turn_angle_deg = 20.0
+hover_s = 2.0
+max_flight_s = 20.0
+requires_manual_confirm = true
+
+[decks]
+expect_flow_deck = true
+expect_multiranger = false
+
+[logging]
+period_ms = 50
+output_dir = "artifacts/crazyflie_logs"
+variables = [
+  "stateEstimate.x",
+  "stateEstimate.y",
+  "stateEstimate.z",
+  "stateEstimate.vx",
+  "stateEstimate.vy",
+  "stateEstimate.vz",
+  "stateEstimate.roll",
+  "stateEstimate.pitch",
+  "stateEstimate.yaw",
+  "stateEstimate.qx",
+  "stateEstimate.qy",
+  "stateEstimate.qz",
+  "stateEstimate.qw",
+  "acc.x",
+  "acc.y",
+  "acc.z",
+  "gyro.x",
+  "gyro.y",
+  "gyro.z",
+  "stabilizer.thrust",
+  "controller.cmd_thrust",
+  "controller.cmd_roll",
+  "controller.cmd_pitch",
+  "controller.cmd_yaw",
+  "ctrltarget.x",
+  "ctrltarget.y",
+  "ctrltarget.z",
+  "ctrltarget.vx",
+  "ctrltarget.vy",
+  "ctrltarget.vz",
+  "ctrltarget.roll",
+  "ctrltarget.pitch",
+  "ctrltarget.yaw",
+  "ctrltarget.thrust",
+  "motor.m1",
+  "motor.m2",
+  "motor.m3",
+  "motor.m4",
+  "motor.m1req",
+  "motor.m2req",
+  "motor.m3req",
+  "motor.m4req",
+  "pm.vbat",
+  "pm.batteryLevel",
+  "supervisor.info",
+  "sys.canfly",
+  "sys.isFlying",
+  "sys.isTumbled",
+]
+
+[logging.variable_types]
+"pm.batteryLevel" = "uint8_t"
+"supervisor.info" = "uint16_t"
+"sys.canfly" = "uint8_t"
+"sys.isFlying" = "uint8_t"
+"sys.isTumbled" = "uint8_t"
+"motor.m1" = "uint16_t"
+"motor.m2" = "uint16_t"
+"motor.m3" = "uint16_t"
+"motor.m4" = "uint16_t"
+"motor.m1req" = "int32_t"
+"motor.m2req" = "int32_t"
+"motor.m3req" = "int32_t"
+"motor.m4req" = "int32_t"

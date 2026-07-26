@@ -15,6 +15,8 @@ def main() -> None:
     parser.add_argument("--sim-readiness", type=Path, default=None)
     parser.add_argument("--room-report", type=Path, default=None)
     parser.add_argument("--live-safety", type=Path, default=None)
+    parser.add_argument("--puffer-transfer-test", type=Path, action="append", default=None)
+    parser.add_argument("--hardware-blockers", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=Path("artifacts/replay/sim2real_transfer_gate.json"))
     args = parser.parse_args()
 
@@ -26,6 +28,8 @@ def main() -> None:
         sim_readiness=args.sim_readiness,
         room_report=args.room_report,
         live_safety=args.live_safety,
+        puffer_transfer_test=args.puffer_transfer_test,
+        hardware_blockers=args.hardware_blockers,
     )
     write_report(report, args.output)
     print(f"gate={args.output}")
