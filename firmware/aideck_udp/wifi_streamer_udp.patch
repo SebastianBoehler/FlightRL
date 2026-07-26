@@ -1,0 +1,819 @@
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index 0e79551..645905b 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -5,9 +5,53 @@ ifeq ($(SETUP_WIFI_AP), 1)
+ APP_CFLAGS += -DSETUP_WIFI_AP
+ endif
+ 
++CAMERA_RESOLUTION ?= qvga
++CAPTURE_MODE ?= start-stop
++JPEG_CLUSTER_OFFLOAD ?= 0
++OUTPUT_PROFILING_DATA ?= 0
++STREAM_ENCODING ?= raw
++TARGET_FRAME_TIME_MS ?= 0
++
++ifeq ($(CAMERA_RESOLUTION),qvga)
++APP_CFLAGS += -DCAMERA_FORMAT=PI_CAMERA_QVGA -DCAM_WIDTH=324 -DCAM_HEIGHT=244
++else ifeq ($(CAMERA_RESOLUTION),qqvga)
++APP_CFLAGS += -DCAMERA_FORMAT=PI_CAMERA_QQVGA -DCAM_WIDTH=162 -DCAM_HEIGHT=122
++else
++$(error CAMERA_RESOLUTION must be qvga or qqvga)
++endif
++
++ifeq ($(CAPTURE_MODE),start-stop)
++APP_CFLAGS += -DCAPTURE_MODE=0
++else ifeq ($(CAPTURE_MODE),continuous)
++APP_CFLAGS += -DCAPTURE_MODE=1
++else ifeq ($(CAPTURE_MODE),pipelined)
++APP_CFLAGS += -DCAPTURE_MODE=2
++else
++$(error CAPTURE_MODE must be start-stop, continuous, or pipelined)
++endif
++
++ifeq ($(STREAM_ENCODING),raw)
++APP_CFLAGS += -DSTREAM_ENCODING_MODE=RAW_ENCODING
++else ifeq ($(STREAM_ENCODING),jpeg)
++APP_CFLAGS += -DSTREAM_ENCODING_MODE=JPEG_ENCODING
++else
++$(error STREAM_ENCODING must be raw or jpeg)
++endif
++
++ifeq ($(filter $(JPEG_CLUSTER_OFFLOAD),0 1),)
++$(error JPEG_CLUSTER_OFFLOAD must be 0 or 1)
++endif
++
++ifeq ($(filter $(OUTPUT_PROFILING_DATA),0 1),)
++$(error OUTPUT_PROFILING_DATA must be 0 or 1)
++endif
++
+ APP = wifi-img-streamer
+ APP_SRCS += wifi-img-streamer.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c
+ APP_CFLAGS += -O3 -g
++APP_CFLAGS += -DJPEG_CLUSTER_OFFLOAD=$(JPEG_CLUSTER_OFFLOAD)
++APP_CFLAGS += -DOUTPUT_PROFILING_DATA=$(OUTPUT_PROFILING_DATA)
++APP_CFLAGS += -DTARGET_FRAME_TIME_MS=$(TARGET_FRAME_TIME_MS)
+ APP_INC=../../../lib/cpx/inc
+ APP_CFLAGS += -DconfigUSE_TIMERS=1 -DINCLUDE_xTimerPendFunctionCall=1
+ 
+diff --git a/examples/other/wifi-img-streamer/wifi-img-streamer.c b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+index 91633e8..0194499 100644
+--- a/examples/other/wifi-img-streamer/wifi-img-streamer.c
++++ b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+@@ -35,23 +35,61 @@
+ #include "wifi.h"
+ 
+ #define IMG_ORIENTATION 0x0101
++
++#ifndef CAMERA_FORMAT
++#define CAMERA_FORMAT PI_CAMERA_QVGA
++#endif
++
++#ifndef CAM_WIDTH
+ #define CAM_WIDTH 324
++#endif
++
++#ifndef CAM_HEIGHT
+ #define CAM_HEIGHT 244
++#endif
++
++#ifndef JPEG_CLUSTER_OFFLOAD
++#define JPEG_CLUSTER_OFFLOAD 0
++#endif
++
++#ifndef OUTPUT_PROFILING_DATA
++#define OUTPUT_PROFILING_DATA 0
++#endif
++
++#ifndef TARGET_FRAME_TIME_MS
++#define TARGET_FRAME_TIME_MS 0
++#endif
++
++#define CAPTURE_MODE_START_STOP 0
++#define CAPTURE_MODE_CONTINUOUS 1
++#define CAPTURE_MODE_PIPELINED 2
++
++#ifndef CAPTURE_MODE
++#define CAPTURE_MODE CAPTURE_MODE_START_STOP
++#endif
++
++#if CAPTURE_MODE == CAPTURE_MODE_PIPELINED
++#define CAPTURE_BUFFER_COUNT 2
++#else
++#define CAPTURE_BUFFER_COUNT 1
++#endif
+ 
+ static pi_task_t task1;
+-static unsigned char *imgBuff;
++static unsigned char *imgBuff[CAPTURE_BUFFER_COUNT];
+ static struct pi_device camera;
+-static pi_buffer_t buffer;
++static pi_buffer_t buffer[CAPTURE_BUFFER_COUNT];
+ 
+ static EventGroupHandle_t evGroup;
+ #define CAPTURE_DONE_BIT (1 << 0)
+ 
+-// Performance menasuring variables
++// Performance measuring variables
+ static uint32_t start = 0;
++static volatile uint32_t captureDoneAt = 0;
+ static uint32_t captureTime = 0;
++static uint32_t frameTime = 0;
++static uint32_t waitTime = 0;
+ static uint32_t transferTime = 0;
+ static uint32_t encodingTime = 0;
+-// #define OUTPUT_PROFILING_DATA
+ 
+ static int open_pi_camera_himax(struct pi_device *device)
+ {
+@@ -59,7 +97,7 @@ static int open_pi_camera_himax(struct pi_device *device)
+ 
+   pi_himax_conf_init(&cam_conf);
+ 
+-  cam_conf.format = PI_CAMERA_QVGA;
++  cam_conf.format = CAMERA_FORMAT;
+ 
+   pi_open_from_conf(device, &cam_conf);
+   if (pi_camera_open(device))
+@@ -115,9 +153,25 @@ void rx_task(void *parameters)
+ 
+ static void capture_done_cb(void *arg)
+ {
++  captureDoneAt = xTaskGetTickCount();
+   xEventGroupSetBits(evGroup, CAPTURE_DONE_BIT);
+ }
+ 
++static uint32_t schedule_capture(uint32_t bufferIndex, uint32_t resolution)
++{
++  uint32_t captureStartedAt = xTaskGetTickCount();
++  pi_camera_capture_async(&camera, imgBuff[bufferIndex], resolution,
++                          pi_task_callback(&task1, capture_done_cb, NULL));
++  return captureStartedAt;
++}
++
++static void wait_for_capture(uint32_t captureStartedAt)
++{
++  xEventGroupWaitBits(evGroup, CAPTURE_DONE_BIT, pdTRUE, pdFALSE,
++                      (TickType_t)portMAX_DELAY);
++  captureTime = captureDoneAt - captureStartedAt;
++}
++
+ typedef struct
+ {
+   uint8_t magic;
+@@ -136,6 +190,10 @@ typedef enum
+   JPEG_ENCODING = 1
+ } __attribute__((packed)) StreamerMode_t;
+ 
++#ifndef STREAM_ENCODING_MODE
++#define STREAM_ENCODING_MODE RAW_ENCODING
++#endif
++
+ pi_buffer_t header;
+ uint32_t headerSize;
+ pi_buffer_t footer;
+@@ -143,7 +201,7 @@ uint32_t footerSize;
+ pi_buffer_t jpeg_data;
+ uint32_t jpegSize;
+ 
+-static StreamerMode_t streamerMode = RAW_ENCODING;
++static StreamerMode_t streamerMode = STREAM_ENCODING_MODE;
+ 
+ static CPXPacket_t txp;
+ 
+@@ -208,11 +266,17 @@ void camera_task(void *parameters)
+   cpxPrintToConsole(LOG_TO_CRTP, "Starting camera task...\n");
+   uint32_t resolution = CAM_WIDTH * CAM_HEIGHT;
+   uint32_t captureSize = resolution * sizeof(unsigned char);
+-  imgBuff = (unsigned char *)pmsis_l2_malloc(captureSize);
+-  if (imgBuff == NULL)
++  for (uint32_t i = 0; i < CAPTURE_BUFFER_COUNT; i++)
+   {
+-    cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
+-    return;
++    imgBuff[i] = (unsigned char *)pmsis_l2_malloc(captureSize);
++    if (imgBuff[i] == NULL)
++    {
++      cpxPrintToConsole(LOG_TO_CRTP, "Failed to allocate Memory for Image \n");
++      return;
++    }
++    pi_buffer_init(&buffer[i], PI_BUFFER_TYPE_L2, imgBuff[i]);
++    pi_buffer_set_format(&buffer[i], CAM_WIDTH, CAM_HEIGHT, 1,
++                         PI_BUFFER_FORMAT_GRAY);
+   }
+ 
+   if (open_pi_camera_himax(&camera))
+@@ -225,7 +289,11 @@ void camera_task(void *parameters)
+   jpeg_encoder_conf_init(&enc_conf);
+   enc_conf.width = CAM_WIDTH;
+   enc_conf.height = CAM_HEIGHT;
+-  enc_conf.flags = 0; // Move this to the cluster
++#if JPEG_CLUSTER_OFFLOAD
++  enc_conf.flags = JPEG_ENCODER_FLAGS_CLUSTER_OFFLOAD;
++#else
++  enc_conf.flags = 0;
++#endif
+ 
+   if (jpeg_encoder_open(&jpeg_encoder, &enc_conf))
+   {
+@@ -233,8 +301,13 @@ void camera_task(void *parameters)
+     return;
+   }
+ 
+-  pi_buffer_init(&buffer, PI_BUFFER_TYPE_L2, imgBuff);
+-  pi_buffer_set_format(&buffer, CAM_WIDTH, CAM_HEIGHT, 1, PI_BUFFER_FORMAT_GRAY);
++#if JPEG_CLUSTER_OFFLOAD
++  if (jpeg_encoder_start(&jpeg_encoder))
++  {
++    cpxPrintToConsole(LOG_TO_CRTP, "Failed to start JPEG encoder\n");
++    return;
++  }
++#endif
+ 
+   header.size = 1024;
+   header.data = pmsis_l2_malloc(1024);
+@@ -260,17 +333,43 @@ void camera_task(void *parameters)
+   cpxInitRoute(CPX_T_GAP8, CPX_T_WIFI_HOST, CPX_F_APP, &txp.route);
+ 
+   uint32_t imgSize = 0;
++  uint32_t readyBuffer = 0;
++  int cameraStreaming = 0;
++  int pipelinePrimed = 0;
+ 
+   while (1)
+   {
+     if (wifiClientConnected == 1)
+     {
+-      start = xTaskGetTickCount();
+-      pi_camera_capture_async(&camera, imgBuff, resolution, pi_task_callback(&task1, capture_done_cb, NULL));
++#if CAPTURE_MODE == CAPTURE_MODE_START_STOP
++      uint32_t frameStartedAt = xTaskGetTickCount();
++      uint32_t captureStartedAt = schedule_capture(readyBuffer, resolution);
+       pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
+-      xEventGroupWaitBits(evGroup, CAPTURE_DONE_BIT, pdTRUE, pdFALSE, (TickType_t)portMAX_DELAY);
++      wait_for_capture(captureStartedAt);
+       pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
+-      captureTime = xTaskGetTickCount() - start;
++#else
++      if (!cameraStreaming)
++      {
++        pi_camera_control(&camera, PI_CAMERA_CMD_START, 0);
++        cameraStreaming = 1;
++      }
++
++#if CAPTURE_MODE == CAPTURE_MODE_PIPELINED
++      if (!pipelinePrimed)
++      {
++        uint32_t firstCaptureAt = schedule_capture(readyBuffer, resolution);
++        wait_for_capture(firstCaptureAt);
++        pipelinePrimed = 1;
++      }
++      uint32_t frameStartedAt = xTaskGetTickCount();
++      uint32_t nextBuffer = readyBuffer ^ 1;
++      uint32_t captureStartedAt = schedule_capture(nextBuffer, resolution);
++#else
++      uint32_t frameStartedAt = xTaskGetTickCount();
++      uint32_t captureStartedAt = schedule_capture(readyBuffer, resolution);
++      wait_for_capture(captureStartedAt);
++#endif
++#endif
+ 
+       if (streamerMode == JPEG_ENCODING)
+       {
+@@ -278,7 +377,7 @@ void camera_task(void *parameters)
+         //xEventGroupWaitBits(evGroup, JPEG_ENCODING_DONE_BIT, pdTRUE, pdFALSE, (TickType_t)portMAX_DELAY);
+         //jpeg_encoder_process_status(&jpegSize, NULL);
+         start = xTaskGetTickCount();
+-        jpeg_encoder_process(&jpeg_encoder, &buffer, &jpeg_data, &jpegSize);
++        jpeg_encoder_process(&jpeg_encoder, &buffer[readyBuffer], &jpeg_data, &jpegSize);
+         encodingTime = xTaskGetTickCount() - start;
+ 
+         imgSize = headerSize + jpegSize + footerSize;
+@@ -314,17 +413,48 @@ void camera_task(void *parameters)
+ 
+         start = xTaskGetTickCount();
+         // Send image
+-        sendBufferViaCPX(&txp, imgBuff, imgSize);
++        sendBufferViaCPX(&txp, imgBuff[readyBuffer], imgSize);
+ 
+         transferTime = xTaskGetTickCount() - start;
+       }
+-// #ifdef OUTPUT_PROFILING_DATA
+-      cpxPrintToConsole(LOG_TO_CRTP, "capture=%dms, encoding=%d ms (%d bytes), transfer=%d ms\n",
+-                        captureTime, encodingTime, imgSize, transferTime);
+-// #endif
++
++#if CAPTURE_MODE == CAPTURE_MODE_PIPELINED
++      uint32_t waitStartedAt = xTaskGetTickCount();
++      wait_for_capture(captureStartedAt);
++      waitTime = xTaskGetTickCount() - waitStartedAt;
++      readyBuffer = nextBuffer;
++#else
++      waitTime = 0;
++#endif
++      frameTime = xTaskGetTickCount() - frameStartedAt;
++
++#if TARGET_FRAME_TIME_MS > 0
++      const uint32_t targetFrameTime = TARGET_FRAME_TIME_MS / portTICK_PERIOD_MS;
++
++      if (frameTime < targetFrameTime)
++      {
++        vTaskDelay(targetFrameTime - frameTime);
++        frameTime = targetFrameTime;
++      }
++#endif
++
++#if OUTPUT_PROFILING_DATA
++      cpxPrintToConsole(LOG_TO_CRTP,
++                        "capture=%dms, encoding=%d ms (%d bytes), transfer=%d ms, frame=%d ms, wait=%d ms\n",
++                        captureTime, encodingTime, imgSize, transferTime,
++                        frameTime, waitTime);
++#endif
+     }
+     else
+     {
++#if CAPTURE_MODE != CAPTURE_MODE_START_STOP
++      if (cameraStreaming)
++      {
++        pi_camera_control(&camera, PI_CAMERA_CMD_STOP, 0);
++        cameraStreaming = 0;
++        pipelinePrimed = 0;
++      }
++#endif
+       vTaskDelay(10);
+     }
+   }
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index 645905b..d881f3d 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -9,6 +9,7 @@ CAMERA_RESOLUTION ?= qvga
+ CAPTURE_MODE ?= start-stop
+ JPEG_CLUSTER_OFFLOAD ?= 0
+ OUTPUT_PROFILING_DATA ?= 0
++SENSOR_FRAME_RATE ?= default
+ STREAM_ENCODING ?= raw
+ TARGET_FRAME_TIME_MS ?= 0
+ 
+@@ -30,6 +31,16 @@ else
+ $(error CAPTURE_MODE must be start-stop, continuous, or pipelined)
+ endif
+ 
++ifeq ($(SENSOR_FRAME_RATE),default)
++else ifeq ($(SENSOR_FRAME_RATE),60)
++APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=60
++APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=266
++APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=264
++APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
++else
++$(error SENSOR_FRAME_RATE must be default or 60)
++endif
++
+ ifeq ($(STREAM_ENCODING),raw)
+ APP_CFLAGS += -DSTREAM_ENCODING_MODE=RAW_ENCODING
+ else ifeq ($(STREAM_ENCODING),jpeg)
+@@ -47,7 +58,7 @@ $(error OUTPUT_PROFILING_DATA must be 0 or 1)
+ endif
+ 
+ APP = wifi-img-streamer
+-APP_SRCS += wifi-img-streamer.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c
++APP_SRCS += wifi-img-streamer.c himax_timing.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c
+ APP_CFLAGS += -O3 -g
+ APP_CFLAGS += -DJPEG_CLUSTER_OFFLOAD=$(JPEG_CLUSTER_OFFLOAD)
+ APP_CFLAGS += -DOUTPUT_PROFILING_DATA=$(OUTPUT_PROFILING_DATA)
+diff --git a/examples/other/wifi-img-streamer/wifi-img-streamer.c b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+index 0194499..504c8bf 100644
+--- a/examples/other/wifi-img-streamer/wifi-img-streamer.c
++++ b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+@@ -32,6 +32,7 @@
+ #include "stdio.h"
+ 
+ #include "cpx.h"
++#include "himax_timing.h"
+ #include "wifi.h"
+ 
+ #define IMG_ORIENTATION 0x0101
+@@ -60,6 +61,10 @@
+ #define TARGET_FRAME_TIME_MS 0
+ #endif
+ 
++#ifndef SENSOR_FRAME_RATE_HZ
++#define SENSOR_FRAME_RATE_HZ 0
++#endif
++
+ #define CAPTURE_MODE_START_STOP 0
+ #define CAPTURE_MODE_CONTINUOUS 1
+ #define CAPTURE_MODE_PIPELINED 2
+@@ -116,6 +121,19 @@ static int open_pi_camera_himax(struct pi_device *device)
+     return -1;
+   }
+   pi_camera_control(device, PI_CAMERA_CMD_STOP, 0);
++
++#if SENSOR_FRAME_RATE_HZ > 0
++  if (configure_himax_timing(device, HIMAX_FRAME_LENGTH_LINES,
++                             HIMAX_MAX_INTEGRATION_LINES,
++                             HIMAX_QVGA_WINDOW_ENABLE))
++  {
++    cpxPrintToConsole(LOG_TO_CRTP, "Failed to configure Himax timing\n");
++    return -1;
++  }
++  cpxPrintToConsole(LOG_TO_CRTP, "Configured Himax for %d FPS\n",
++                    SENSOR_FRAME_RATE_HZ);
++#endif
++
+   pi_camera_control(device, PI_CAMERA_CMD_AEG_INIT, 0);
+ 
+   return 0;
+@@ -218,18 +236,17 @@ void createImageHeaderPacket(CPXPacket_t * packet, uint32_t imgSize, StreamerMod
+ 
+ void sendBufferViaCPX(CPXPacket_t * packet, uint8_t * buffer, uint32_t bufferSize) {
+   uint32_t offset = 0;
+-  uint32_t size = 0;
+-  do {
+-    size = sizeof(packet->data);
++  while (offset < bufferSize) {
++    uint32_t size = sizeof(packet->data);
+     if (offset + size > bufferSize)
+     {
+       size = bufferSize - offset;
+     }
+-    memcpy(packet->data, &buffer[offset], sizeof(packet->data));
++    memcpy(packet->data, &buffer[offset], size);
+     packet->dataLength = size;
+     cpxSendPacketBlocking(packet);
+     offset += size;
+-  } while (size == sizeof(packet->data));
++  }
+ }
+ 
+ #ifdef SETUP_WIFI_AP
+diff --git a/examples/other/wifi-img-streamer/himax_timing.c b/examples/other/wifi-img-streamer/himax_timing.c
+new file mode 100644
+index 0000000..5704794
+--- /dev/null
++++ b/examples/other/wifi-img-streamer/himax_timing.c
+@@ -0,0 +1,45 @@
++#include "himax_timing.h"
++
++#define HIMAX_FRAME_LENGTH_LINES_H 0x0340
++#define HIMAX_MAX_INTEGRATION_LINES_H 0x2105
++#define HIMAX_QVGA_WINDOW_ENABLE_REG 0x3010
++#define HIMAX_GROUP_PARAMETER_HOLD 0x0104
++
++static int set_register(struct pi_device *camera, uint32_t address,
++                        uint8_t value)
++{
++  uint8_t actual = 0;
++  pi_camera_reg_set(camera, address, &value);
++  pi_camera_reg_get(camera, address, &actual);
++  return actual == value ? 0 : -1;
++}
++
++static int set_register_pair(struct pi_device *camera, uint32_t highAddress,
++                             uint16_t value)
++{
++  uint8_t high = (value >> 8) & 0xff;
++  uint8_t low = value & 0xff;
++  if (set_register(camera, highAddress, high))
++  {
++    return -1;
++  }
++  return set_register(camera, highAddress + 1, low);
++}
++
++int configure_himax_timing(struct pi_device *camera,
++                           uint16_t frameLengthLines,
++                           uint16_t maxIntegrationLines,
++                           uint8_t qvgaWindowEnable)
++{
++  if (set_register_pair(camera, HIMAX_FRAME_LENGTH_LINES_H,
++                        frameLengthLines) ||
++      set_register_pair(camera, HIMAX_MAX_INTEGRATION_LINES_H,
++                        maxIntegrationLines) ||
++      set_register(camera, HIMAX_QVGA_WINDOW_ENABLE_REG,
++                   qvgaWindowEnable) ||
++      set_register(camera, HIMAX_GROUP_PARAMETER_HOLD, 1))
++  {
++    return -1;
++  }
++  return 0;
++}
+diff --git a/examples/other/wifi-img-streamer/himax_timing.h b/examples/other/wifi-img-streamer/himax_timing.h
+new file mode 100644
+index 0000000..3f98dee
+--- /dev/null
++++ b/examples/other/wifi-img-streamer/himax_timing.h
+@@ -0,0 +1,9 @@
++#pragma once
++
++#include "pmsis.h"
++#include "bsp/camera.h"
++
++int configure_himax_timing(struct pi_device *camera,
++                           uint16_t frameLengthLines,
++                           uint16_t maxIntegrationLines,
++                           uint8_t qvgaWindowEnable);
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index d881f3d..59e485c 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -37,8 +37,16 @@ APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=60
+ APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=266
+ APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=264
+ APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
++else ifeq ($(SENSOR_FRAME_RATE),65)
++ifneq ($(CAMERA_RESOLUTION),qqvga)
++$(error SENSOR_FRAME_RATE=65 requires CAMERA_RESOLUTION=qqvga)
++endif
++APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=65
++APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=226
++APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=224
++APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
+ else
+-$(error SENSOR_FRAME_RATE must be default or 60)
++$(error SENSOR_FRAME_RATE must be default, 60, or 65)
+ endif
+ 
+ ifeq ($(STREAM_ENCODING),raw)
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index 59e485c..dee6d0b 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -11,6 +11,8 @@
+ OUTPUT_PROFILING_DATA ?= 0
+ SENSOR_FRAME_RATE ?= default
+ STREAM_ENCODING ?= raw
++STREAM_WIDTH ?= 64
++STREAM_HEIGHT ?= 48
+ TARGET_FRAME_TIME_MS ?= 0
+ 
+ ifeq ($(CAMERA_RESOLUTION),qvga)
+@@ -50,11 +52,14 @@
+ endif
+ 
+ ifeq ($(STREAM_ENCODING),raw)
+-APP_CFLAGS += -DSTREAM_ENCODING_MODE=RAW_ENCODING
++APP_CFLAGS += -DSTREAM_ENCODING_MODE=0
+ else ifeq ($(STREAM_ENCODING),jpeg)
+-APP_CFLAGS += -DSTREAM_ENCODING_MODE=JPEG_ENCODING
++APP_CFLAGS += -DSTREAM_ENCODING_MODE=1
++else ifeq ($(STREAM_ENCODING),gray4)
++APP_CFLAGS += -DSTREAM_ENCODING_MODE=2
++APP_CFLAGS += -DSTREAM_WIDTH=$(STREAM_WIDTH) -DSTREAM_HEIGHT=$(STREAM_HEIGHT)
+ else
+-$(error STREAM_ENCODING must be raw or jpeg)
++$(error STREAM_ENCODING must be raw, jpeg, or gray4)
+ endif
+ 
+ ifeq ($(filter $(JPEG_CLUSTER_OFFLOAD),0 1),)
+@@ -66,7 +71,7 @@
+ endif
+ 
+ APP = wifi-img-streamer
+-APP_SRCS += wifi-img-streamer.c himax_timing.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c
++APP_SRCS += wifi-img-streamer.c himax_timing.c gray4.c ../../../lib/cpx/src/com.c ../../../lib/cpx/src/cpx.c
+ APP_CFLAGS += -O3 -g
+ APP_CFLAGS += -DJPEG_CLUSTER_OFFLOAD=$(JPEG_CLUSTER_OFFLOAD)
+ APP_CFLAGS += -DOUTPUT_PROFILING_DATA=$(OUTPUT_PROFILING_DATA)
+diff --git a/examples/other/wifi-img-streamer/wifi-img-streamer.c b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+index 504c8bf..9cbcb88 100644
+--- a/examples/other/wifi-img-streamer/wifi-img-streamer.c
++++ b/examples/other/wifi-img-streamer/wifi-img-streamer.c
+@@ -32,6 +32,7 @@
+ #include "stdio.h"
+ 
+ #include "cpx.h"
++#include "gray4.h"
+ #include "himax_timing.h"
+ #include "wifi.h"
+ 
+@@ -65,6 +66,18 @@
+ #define SENSOR_FRAME_RATE_HZ 0
+ #endif
+ 
++#ifndef STREAM_WIDTH
++#define STREAM_WIDTH 64
++#endif
++
++#ifndef STREAM_HEIGHT
++#define STREAM_HEIGHT 48
++#endif
++
++#if STREAM_WIDTH > CAM_WIDTH || STREAM_HEIGHT > CAM_HEIGHT
++#error Stream dimensions must not exceed camera dimensions
++#endif
++
+ #define CAPTURE_MODE_START_STOP 0
+ #define CAPTURE_MODE_CONTINUOUS 1
+ #define CAPTURE_MODE_PIPELINED 2
+@@ -205,7 +218,8 @@ typedef struct
+ typedef enum
+ {
+   RAW_ENCODING = 0,
+-  JPEG_ENCODING = 1
++  JPEG_ENCODING = 1,
++  GRAY4_ENCODING = 2
+ } __attribute__((packed)) StreamerMode_t;
+ 
+ #ifndef STREAM_ENCODING_MODE
+@@ -223,11 +237,13 @@ static StreamerMode_t streamerMode = STREAM_ENCODING_MODE;
+ 
+ static CPXPacket_t txp;
+ 
+-void createImageHeaderPacket(CPXPacket_t * packet, uint32_t imgSize, StreamerMode_t imgType) {
++void createImageHeaderPacket(CPXPacket_t * packet, uint16_t width,
++                             uint16_t height, uint32_t imgSize,
++                             StreamerMode_t imgType) {
+   img_header_t *imgHeader = (img_header_t *) packet->data;
+   imgHeader->magic = 0xBC;
+-  imgHeader->width = CAM_WIDTH;
+-  imgHeader->height = CAM_HEIGHT;
++  imgHeader->width = width;
++  imgHeader->height = height;
+   imgHeader->depth = 1;
+   imgHeader->type = imgType;
+   imgHeader->size = imgSize;
+@@ -353,6 +369,19 @@ void camera_task(void *parameters)
+   uint32_t readyBuffer = 0;
+   int cameraStreaming = 0;
+   int pipelinePrimed = 0;
++#if STREAM_ENCODING_MODE == 2
++  const uint32_t gray4Size = gray4_packed_size(STREAM_WIDTH, STREAM_HEIGHT);
++  uint8_t *gray4Data = pmsis_l2_malloc(gray4Size);
++  uint16_t gray4XMap[STREAM_WIDTH];
++  uint16_t gray4YMap[STREAM_HEIGHT];
++  if (gray4Data == NULL)
++  {
++    cpxPrintToConsole(LOG_TO_CRTP, "Could not allocate gray4 buffer\n");
++    return;
++  }
++  gray4_build_index_map(gray4XMap, STREAM_WIDTH, CAM_WIDTH);
++  gray4_build_index_map(gray4YMap, STREAM_HEIGHT, CAM_HEIGHT);
++#endif
+ 
+   while (1)
+   {
+@@ -400,7 +429,8 @@ void camera_task(void *parameters)
+         imgSize = headerSize + jpegSize + footerSize;
+ 
+         // First send information about the image
+-        createImageHeaderPacket(&txp, imgSize, JPEG_ENCODING);
++        createImageHeaderPacket(&txp, CAM_WIDTH, CAM_HEIGHT, imgSize,
++                                JPEG_ENCODING);
+         cpxSendPacketBlocking(&txp);
+ 
+         start = xTaskGetTickCount();
+@@ -419,13 +449,15 @@ void camera_task(void *parameters)
+ 
+         transferTime = xTaskGetTickCount() - start;
+       }
+-      else
++      else if (streamerMode == RAW_ENCODING)
+       {
+         imgSize = captureSize;
++        encodingTime = 0;
+         start = xTaskGetTickCount();
+ 
+         // First send information about the image
+-        createImageHeaderPacket(&txp, imgSize, RAW_ENCODING);
++        createImageHeaderPacket(&txp, CAM_WIDTH, CAM_HEIGHT, imgSize,
++                                RAW_ENCODING);
+         cpxSendPacketBlocking(&txp);
+ 
+         start = xTaskGetTickCount();
+@@ -434,7 +466,25 @@ void camera_task(void *parameters)
+ 
+         transferTime = xTaskGetTickCount() - start;
+       }
++#if STREAM_ENCODING_MODE == 2
++      else
++      {
++        start = xTaskGetTickCount();
++        gray4_resize_pack(imgBuff[readyBuffer], CAM_WIDTH, gray4XMap,
++                          gray4YMap, STREAM_WIDTH, STREAM_HEIGHT, gray4Data);
++        encodingTime = xTaskGetTickCount() - start;
++        imgSize = gray4Size;
+ 
++        createImageHeaderPacket(&txp, STREAM_WIDTH, STREAM_HEIGHT, imgSize,
++                                GRAY4_ENCODING);
++        cpxSendPacketBlocking(&txp);
++
++        start = xTaskGetTickCount();
++        sendBufferViaCPX(&txp, gray4Data, gray4Size);
++        transferTime = xTaskGetTickCount() - start;
++      }
++#endif
++
+ #if CAPTURE_MODE == CAPTURE_MODE_PIPELINED
+       uint32_t waitStartedAt = xTaskGetTickCount();
+       wait_for_capture(captureStartedAt);
+diff --git a/examples/other/wifi-img-streamer/gray4.c b/examples/other/wifi-img-streamer/gray4.c
+new file mode 100644
+index 0000000..3c0e118
+--- /dev/null
++++ b/examples/other/wifi-img-streamer/gray4.c
+@@ -0,0 +1,36 @@
++#include "gray4.h"
++
++uint32_t gray4_packed_size(uint16_t width, uint16_t height)
++{
++  return ((uint32_t)width * height + 1) / 2;
++}
++
++void gray4_build_index_map(uint16_t *map, uint16_t outputSize,
++                           uint16_t inputSize)
++{
++  for (uint16_t i = 0; i < outputSize; i++)
++  {
++    map[i] = ((uint32_t)i * inputSize) / outputSize;
++  }
++}
++
++void gray4_resize_pack(const uint8_t *source, uint16_t sourceWidth,
++                       const uint16_t *xMap, const uint16_t *yMap,
++                       uint16_t outputWidth, uint16_t outputHeight,
++                       uint8_t *output)
++{
++  uint32_t outputOffset = 0;
++  for (uint16_t y = 0; y < outputHeight; y++)
++  {
++    const uint8_t *row = source + (uint32_t)yMap[y] * sourceWidth;
++    for (uint16_t x = 0; x < outputWidth; x += 2)
++    {
++      uint8_t packed = (row[xMap[x]] >> 4) << 4;
++      if (x + 1 < outputWidth)
++      {
++        packed |= row[xMap[x + 1]] >> 4;
++      }
++      output[outputOffset++] = packed;
++    }
++  }
++}
+diff --git a/examples/other/wifi-img-streamer/gray4.h b/examples/other/wifi-img-streamer/gray4.h
+new file mode 100644
+index 0000000..296fa03
+--- /dev/null
++++ b/examples/other/wifi-img-streamer/gray4.h
+@@ -0,0 +1,11 @@
++#pragma once
++
++#include <stdint.h>
++
++uint32_t gray4_packed_size(uint16_t width, uint16_t height);
++void gray4_build_index_map(uint16_t *map, uint16_t outputSize,
++                           uint16_t inputSize);
++void gray4_resize_pack(const uint8_t *source, uint16_t sourceWidth,
++                       const uint16_t *xMap, const uint16_t *yMap,
++                       uint16_t outputWidth, uint16_t outputHeight,
++                       uint8_t *output);
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index dee6d0b..e1d5206 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -47,8 +47,16 @@
+ APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=65
+ APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=226
+ APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=224
+ APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
++else ifeq ($(SENSOR_FRAME_RATE),120)
++ifneq ($(CAMERA_RESOLUTION),qqvga)
++$(error SENSOR_FRAME_RATE=120 requires CAMERA_RESOLUTION=qqvga)
++endif
++APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=120
++APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=128
++APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=126
++APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
+ else
+-$(error SENSOR_FRAME_RATE must be default, 60, or 65)
++$(error SENSOR_FRAME_RATE must be default, 60, 65, or 120)
+ endif
+ 
+ ifeq ($(STREAM_ENCODING),raw)
+diff --git a/examples/other/wifi-img-streamer/Makefile b/examples/other/wifi-img-streamer/Makefile
+index e1d5206..7999b90 100644
+--- a/examples/other/wifi-img-streamer/Makefile
++++ b/examples/other/wifi-img-streamer/Makefile
+@@ -47,6 +47,14 @@
+ APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=226
+ APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=224
+ APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
++else ifeq ($(SENSOR_FRAME_RATE),100)
++ifneq ($(CAMERA_RESOLUTION),qqvga)
++$(error SENSOR_FRAME_RATE=100 requires CAMERA_RESOLUTION=qqvga)
++endif
++APP_CFLAGS += -DSENSOR_FRAME_RATE_HZ=100
++APP_CFLAGS += -DHIMAX_FRAME_LENGTH_LINES=142
++APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=140
++APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
+ else ifeq ($(SENSOR_FRAME_RATE),120)
+ ifneq ($(CAMERA_RESOLUTION),qqvga)
+ $(error SENSOR_FRAME_RATE=120 requires CAMERA_RESOLUTION=qqvga)
+@@ -56,7 +64,7 @@
+ APP_CFLAGS += -DHIMAX_MAX_INTEGRATION_LINES=126
+ APP_CFLAGS += -DHIMAX_QVGA_WINDOW_ENABLE=1
+ else
+-$(error SENSOR_FRAME_RATE must be default, 60, 65, or 120)
++$(error SENSOR_FRAME_RATE must be default, 60, 65, 100, or 120)
+ endif
+ 
+ ifeq ($(STREAM_ENCODING),raw)

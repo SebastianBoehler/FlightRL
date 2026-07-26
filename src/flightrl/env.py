@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 import gymnasium
 import numpy as np
 
@@ -7,6 +9,7 @@ from . import _binding
 from .binding_kwargs import build_binding_kwargs
 from .config import FlightConfig
 from .renderer import DroneFrame, FlightRenderer
+from .vision import VisionObservationBatchEncoder
 
 
 class DronePlanarEnv:
@@ -49,6 +52,17 @@ class DronePlanarEnv:
         self.rewards = np.zeros(self.num_agents, dtype=np.float32)
         self.terminals = np.zeros(self.num_agents, dtype=np.uint8)
         self.truncations = np.zeros(self.num_agents, dtype=np.uint8)
+        self._vision_encoder = (
+            VisionObservationBatchEncoder(config.vision, self.num_agents)
+            if config.sensors.include_vision_sensor
+            else None
+        )
+        self._vision_values = (
+            np.zeros((self.num_agents, config.vision.flat_dim), dtype=np.float32)
+            if config.sensors.include_vision_sensor
+            else None
+        )
+        self._vision_ready = self._vision_encoder is None
 
         self._emit_logs = emit_logs
         self._handles: list[int] = []
@@ -56,7 +70,7 @@ class DronePlanarEnv:
         self._report_interval = config.logging.report_interval
         self._tick = 0
 
-        kwargs = build_binding_kwargs(config)
+        kwargs = build_binding_kwargs(config, host_fed_vision=True)
         for env_idx in range(self.num_agents):
             handle = _binding.env_init(
                 self.observations[env_idx : env_idx + 1],
@@ -73,21 +87,56 @@ class DronePlanarEnv:
     def reset(self, seed: int | None = None) -> tuple[np.ndarray, list[dict[str, float]]]:
         self._tick = 0
         _binding.vec_reset(self._vec_handle, 0 if seed is None else seed)
+        if self._vision_encoder is not None and self._vision_values is not None:
+            self._vision_encoder.reset()
+            self._vision_values.fill(0.0)
+            self._vision_ready = False
+            self._apply_vision_observation()
         return self.observations, []
 
     def step(
         self,
         actions: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[dict[str, float]]]:
+        if not self._vision_ready:
+            raise RuntimeError("set_vision_frames() or set_vision_observations() is required before stepping")
         self._tick += 1
         self.actions[:] = np.asarray(actions, dtype=np.float32)
         _binding.vec_step(self._vec_handle)
+        self._apply_vision_observation()
         info: list[dict[str, float]] = []
         if self._emit_logs and self._tick % self._report_interval == 0:
             log = _binding.vec_log(self._vec_handle)
             if log:
                 info.append(log)
         return self.observations, self.rewards, self.terminals, self.truncations, info
+
+    @property
+    def vision_observation_shape(self) -> tuple[int, int, int] | None:
+        return self.config.vision.shape if self._vision_encoder is not None else None
+
+    def set_vision_frames(self, frames: Sequence[np.ndarray] | np.ndarray) -> np.ndarray:
+        if self._vision_encoder is None:
+            raise RuntimeError("vision observations are not enabled in this environment")
+        batch = _as_frame_batch(frames, self.num_agents)
+        values = self._vision_encoder.encode(batch)
+        self.set_vision_observations(values)
+        return values.reshape((self.num_agents, *self.config.vision.shape))
+
+    def set_vision_observations(self, values: np.ndarray) -> None:
+        if self._vision_values is None:
+            raise RuntimeError("vision observations are not enabled in this environment")
+        array = np.asarray(values, dtype=np.float32)
+        expected = (self.num_agents, self.config.vision.flat_dim)
+        if array.shape == (self.num_agents, *self.config.vision.shape):
+            array = array.reshape(expected)
+        if array.shape != expected:
+            raise ValueError(f"expected vision observations with shape {expected}, got {array.shape}")
+        if not np.all(np.isfinite(array)):
+            raise ValueError("vision observations contain non-finite values")
+        self._vision_values[:] = array
+        self._vision_ready = True
+        self._apply_vision_observation()
 
     def snapshot(self, env_index: int = 0) -> dict[str, float]:
         return _binding.env_get(self._handles[env_index])
@@ -141,3 +190,20 @@ class DronePlanarEnv:
             active_target=int(snapshot["active_target"]),
             target_count=int(snapshot["target_count"]),
         )
+
+    def _apply_vision_observation(self) -> None:
+        if self._vision_values is not None:
+            self.observations[:, self.config.vision_slice] = self._vision_values
+
+
+def _as_frame_batch(frames: Sequence[np.ndarray] | np.ndarray, batch_size: int) -> tuple[np.ndarray, ...]:
+    if isinstance(frames, np.ndarray) and batch_size == 1 and frames.ndim in (2, 3):
+        return (frames,)
+    if isinstance(frames, np.ndarray):
+        if frames.shape[0] != batch_size:
+            raise ValueError(f"expected {batch_size} vision frames, got array shape {frames.shape}")
+        return tuple(frames[index] for index in range(batch_size))
+    batch = tuple(frames)
+    if len(batch) != batch_size:
+        raise ValueError(f"expected {batch_size} vision frames, got {len(batch)}")
+    return batch

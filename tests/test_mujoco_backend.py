@@ -29,6 +29,34 @@ def test_mujoco_backend_shapes_when_available() -> None:
     assert np.isfinite(next_obs).all()
 
 
+def test_mujoco_backend_accepts_physics_profile_when_available(tmp_path: Path) -> None:
+    if not is_mujoco_available():
+        pytest.skip("MuJoCo optional dependency is not installed")
+    physics = tmp_path / "physics.json"
+    physics.write_text(json.dumps({"physics_profile": {"mass_kg": 0.042, "gravity_m_s2": 9.7, "thrust_scale": 0.6}}))
+    env = MuJoCoCrazyflieEnv(num_envs=1, seed=4, physics_profile=str(physics))
+
+    assert env.control.mass_kg == pytest.approx(0.042)
+    assert env.control.gravity == pytest.approx(9.7)
+    assert env.control.thrust_scale == pytest.approx(0.6)
+
+
+def test_mujoco_aideck_camera_matches_gray4_contract_when_available() -> None:
+    if not is_mujoco_available():
+        pytest.skip("MuJoCo optional dependency is not installed")
+    env = MuJoCoCrazyflieEnv(num_envs=1, seed=4)
+
+    first = env.render_aideck_gray4()
+    env.data[0].qpos[0] += 0.5
+    env.mujoco.mj_forward(env.model, env.data[0])
+    translated = env.render_aideck_gray4()
+
+    assert first.shape == (48, 64)
+    assert first.dtype == np.uint8
+    assert np.all(first % 17 == 0)
+    assert not np.array_equal(first, translated)
+
+
 def test_mujoco_benchmark_writes_report(tmp_path: Path) -> None:
     output = tmp_path / "mujoco_bench.json"
     subprocess.run(

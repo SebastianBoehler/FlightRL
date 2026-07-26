@@ -5,9 +5,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from flightrl.mujoco.model import load_crazyflie_model, require_mujoco
+from flightrl.mujoco.semantic_scene import box_room_from_semantic_scene
+from flightrl.navigation.semantic_scene import SemanticScene
 from flightrl.sixdof.curriculum import ResetProfile, resolve_reset_profile, sample_reset
+from flightrl.sixdof.disturbance import disturbance_accel
 from flightrl.sixdof.env import ACTION_DIM, OBSERVATION_DIM, euler_to_quat, quat_to_yaw, wrap_angle
 from flightrl.sixdof.geometry import BoxRoom, body_rays_world
+from flightrl.sixdof.physics import SixDofPhysicsProfile, resolve_physics_profile
 from flightrl.sixdof.sensor_model import SixDofSensorProfile, noisy_values, observed_ranges, resolve_sensor_profile
 
 
@@ -34,11 +38,13 @@ class MuJoCoCrazyflieEnv:
         num_envs: int = 1,
         seed: int = 0,
         room: BoxRoom | None = None,
+        semantic_scene: SemanticScene | None = None,
         dt: float = 0.01,
         task: str = "position_yaw",
         reset_profile: str | ResetProfile | None = None,
         control: MuJoCoControlParams | None = None,
         sensor_profile: str | SixDofSensorProfile | None = None,
+        physics_profile: str | SixDofPhysicsProfile | None = None,
     ) -> None:
         self.mujoco = require_mujoco()
         self.num_envs = int(num_envs)
@@ -46,13 +52,21 @@ class MuJoCoCrazyflieEnv:
         self.task = task
         self.reset_profile = resolve_reset_profile(reset_profile)
         self.sensor_profile = resolve_sensor_profile(sensor_profile)
-        self.room = room or BoxRoom()
+        self.physics_profile = resolve_physics_profile(physics_profile)
+        if room is not None and semantic_scene is not None:
+            raise ValueError("provide either room or semantic_scene, not both")
+        self.semantic_scene = semantic_scene
+        self.room = (
+            box_room_from_semantic_scene(semantic_scene)
+            if semantic_scene is not None
+            else room or BoxRoom()
+        )
         self.rng = np.random.default_rng(seed)
-        self.control = control or MuJoCoControlParams()
+        self.control = control or control_from_physics_profile(self.physics_profile)
         self.gravity = float(self.control.gravity)
         self.max_rate = np.asarray(self.control.max_rate_rad_s, dtype=np.float32)
 
-        self.model = load_crazyflie_model(self.dt)
+        self.model = load_crazyflie_model(self.dt, scene=semantic_scene)
         self.body_id = self.mujoco.mj_name2id(self.model, self.mujoco.mjtObj.mjOBJ_BODY, "crazyflie")
         if self.body_id < 0:
             raise RuntimeError("MuJoCo Crazyflie model is missing body 'crazyflie'")
@@ -96,7 +110,7 @@ class MuJoCoCrazyflieEnv:
         clipped = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
         executed = self._executed_action(clipped)
         for idx, data in enumerate(self.data):
-            self._apply_control(data, executed[idx])
+            self._apply_control(idx, data, executed[idx])
             self.mujoco.mj_step(self.model, data)
         self._sync_state_from_data()
         self._update_ranges()
@@ -131,10 +145,27 @@ class MuJoCoCrazyflieEnv:
         )
         return obs.astype(np.float32)
 
-    def render_rgb(self, width: int = 640, height: int = 480, env_index: int = 0) -> np.ndarray:
+    def render_rgb(
+        self,
+        width: int = 640,
+        height: int = 480,
+        env_index: int = 0,
+        *,
+        camera: str | None = None,
+    ) -> np.ndarray:
         with self.mujoco.Renderer(self.model, height=height, width=width) as renderer:
-            renderer.update_scene(self.data[env_index])
+            renderer.update_scene(self.data[env_index], camera=camera)
             return renderer.render()
+
+    def render_aideck_gray4(self, width: int = 64, height: int = 48, env_index: int = 0) -> np.ndarray:
+        gray = self.render_aideck_gray(width, height, env_index)
+        quantized = np.rint(gray.astype(np.float32) / 17.0) * 17.0
+        return np.clip(quantized, 0.0, 255.0).astype(np.uint8)
+
+    def render_aideck_gray(self, width: int = 64, height: int = 48, env_index: int = 0) -> np.ndarray:
+        rgb = self.render_rgb(width, height, env_index, camera="aideck").astype(np.float32)
+        gray = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+        return np.clip(gray, 0.0, 255.0).astype(np.uint8)
 
     def _reset_mask(self, mask: np.ndarray) -> None:
         count = int(np.sum(mask))
@@ -162,7 +193,7 @@ class MuJoCoCrazyflieEnv:
         self.terminals[mask] = 0
         self.truncations[mask] = 0
 
-    def _apply_control(self, data, action: np.ndarray) -> None:
+    def _apply_control(self, idx: int, data, action: np.ndarray) -> None:
         data.xfrc_applied[:] = 0.0
         rotation = np.asarray(data.xmat[self.body_id], dtype=np.float64).reshape(3, 3)
         current_rates = np.asarray(data.qvel[3:6], dtype=np.float64)
@@ -170,6 +201,9 @@ class MuJoCoCrazyflieEnv:
         thrust = self.control.mass_kg * self.control.gravity * (1.0 + self.control.thrust_scale * float(action[0]))
         torque_body = self.control.rate_kp * (target_rates - current_rates) - self.control.rate_kd * current_rates
         data.xfrc_applied[self.body_id, :3] = rotation[:, 2] * thrust
+        disturbance = disturbance_accel(self)
+        if disturbance is not None:
+            data.xfrc_applied[self.body_id, :3] += disturbance[idx] * self.control.mass_kg
         data.xfrc_applied[self.body_id, 3:] = rotation @ torque_body
 
     def _executed_action(self, clipped: np.ndarray) -> np.ndarray:
@@ -207,3 +241,12 @@ def is_mujoco_available() -> bool:
     except ModuleNotFoundError:
         return False
     return True
+
+
+def control_from_physics_profile(profile: SixDofPhysicsProfile) -> MuJoCoControlParams:
+    return MuJoCoControlParams(
+        mass_kg=profile.mass_kg,
+        gravity=profile.gravity_m_s2,
+        max_rate_rad_s=profile.max_rate_rad_s,
+        thrust_scale=profile.thrust_scale,
+    )

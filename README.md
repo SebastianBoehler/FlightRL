@@ -42,6 +42,7 @@ The implementation follows the current Ocean pattern:
 - `docs/crazyflie_bringup.md`: Crazyflie 2.1 Brushless setup, dry-run checks, demo flight, and telemetry logging.
 - `docs/crazyflie_6dof_training.md`: simulation-only 6-DoF Crazyflie training, replay, and room visualization track.
 - `docs/sim_to_real_roadmap.md`: indoor-first hardware, VLA, and sim-to-real roadmap.
+- `docs/room_scene_autonomy_ideas.md`: notes on scanned room scenes, target/path training, and future swarm simulation.
 - `docs/pufferlib_crazyflie_env.md`: upstream-readiness notes for contributing the native 6-DoF env to PufferLib.
 
 ## Build

@@ -1,6 +1,8 @@
 #include "binding_env.h"
 #include "binding_vec.h"
 #include "binding_sixdof.h"
+#include "binding_sixdof_setpoint.h"
+#include "binding_sixdof_vision.h"
 
 static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
     env->dt = (float)flightrl_unpack_number(kwargs, "dt");
@@ -79,7 +81,7 @@ static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
     }
 
     if (env->sensor_config.flags & FLIGHT_OBS_VISION) {
-        PyErr_SetString(PyExc_NotImplementedError, "vision sensors are placeholders in the MVP");
+        PyErr_SetString(PyExc_NotImplementedError, "native vision rendering is not implemented; feed frames through DronePlanarEnv");
         return -1;
     }
     return PyErr_Occurred() ? -1 : 0;
@@ -144,6 +146,9 @@ static PyMethodDef methods[] = {
     {"sixdof_step", sixdof_step, METH_VARARGS, "Step vectorized 6-DoF Crazyflie state arrays"},
     {"sixdof_step_env", sixdof_step_env, METH_VARARGS, "Step vectorized 6-DoF Crazyflie env buffers"},
     {"sixdof_step_env_context", sixdof_step_env_context, METH_VARARGS, "Step vectorized 6-DoF Crazyflie env buffers with task/reward context"},
+    {"sixdof_setpoint_actions", sixdof_setpoint_actions, METH_VARARGS, "Convert navigation setpoints to firmware-style actions"},
+    {"sixdof_render_gray4", sixdof_render_gray4, METH_VARARGS, "Render batched AI Deck-shaped gray4 room frames"},
+    {"sixdof_visual_observation", sixdof_visual_observation, METH_VARARGS, "Assemble batched visual navigation observations"},
     {NULL, NULL, 0, NULL},
 };
 

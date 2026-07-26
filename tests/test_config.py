@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from flightrl import load_config
 
 
@@ -33,9 +31,22 @@ def test_hover_command_config_matches_live_command_shape() -> None:
     assert config.observation_dim > 0
 
 
-def test_vision_sensor_placeholder_fails_fast() -> None:
-    with pytest.raises(NotImplementedError):
-        load_config(
-            ROOT / "configs" / "tasks" / "hover.toml",
-            overrides={"sensors": {"include_vision_sensor": True}},
-        )
+def test_vision_sensor_reserves_configurable_observation_slots() -> None:
+    baseline = load_config(ROOT / "configs" / "tasks" / "hover.toml")
+    config = load_config(
+        ROOT / "configs" / "tasks" / "hover.toml",
+        overrides={
+            "sensors": {"include_vision_sensor": True},
+            "vision": {
+                "width": 8,
+                "height": 6,
+                "frame_stack": 2,
+                "include_delta": True,
+                "include_motion_mask": True,
+            },
+        },
+    )
+
+    assert config.vision.shape == (4, 6, 8)
+    assert config.observation_dim == baseline.observation_dim + 4 * 6 * 8
+    assert config.vision_slice == slice(baseline.observation_dim, config.observation_dim)

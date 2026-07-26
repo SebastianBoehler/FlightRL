@@ -97,6 +97,9 @@ The low-level stabilizer remains responsible for:
 
 This keeps the fast PufferLib/Ocean C backend useful for stabilization and control research while leaving room for a slower multimodal navigator on external compute later. It also avoids coupling future VLA work to unsafe or brittle direct motor-command outputs.
 
+The executable semantic mission contract and the MuJoCo/Ocean rollout plan are
+documented in `docs/research/semantic_mission_architecture_20260726.md`.
+
 ## Future Multi-Agent Path
 
 The current MVP is single-drone, but the core already separates drone state from world/task state. To extend toward multiple drones later:

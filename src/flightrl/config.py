@@ -21,8 +21,8 @@ from .observation_schema import (
     TARGET_VECTOR_DIM,
     TTC_SENSOR_DIM,
     VELOCITY_DIM,
-    VISION_SENSOR_DIM,
 )
+from .vision import VisionObservationConfig
 
 
 MAX_WAYPOINTS = 8
@@ -187,6 +187,7 @@ class FlightConfig:
     domain_randomization: DomainRandomizationConfig = field(default_factory=DomainRandomizationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     wind: WindConfig = field(default_factory=WindConfig)
+    vision: VisionObservationConfig = field(default_factory=VisionObservationConfig)
 
     @property
     def action_dim(self) -> int:
@@ -220,12 +221,17 @@ class FlightConfig:
         dims += RANGE_SENSOR_DIM if self.sensors.include_range_sensor else 0
         dims += RANGE_RATE_SENSOR_DIM if self.sensors.include_range_rate_sensor else 0
         dims += TTC_SENSOR_DIM if self.sensors.include_ttc_sensor else 0
-        dims += VISION_SENSOR_DIM if self.sensors.include_vision_sensor else 0
         if self.sensors.include_crazyflie_telemetry:
             dims += CRAZYFLIE_TELEMETRY_BASE_DIM + self.action_dim
         if self.sensors.include_vision_sensor:
-            raise NotImplementedError("Vision sensors are placeholders in the MVP")
+            dims += self.vision.flat_dim
         return dims
+
+    @property
+    def vision_slice(self) -> slice:
+        if not self.sensors.include_vision_sensor:
+            return slice(self.observation_dim, self.observation_dim)
+        return slice(self.observation_dim - self.vision.flat_dim, self.observation_dim)
 
 
 def _merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
@@ -281,6 +287,7 @@ def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Fl
         domain_randomization=DomainRandomizationConfig(**raw.get("domain_randomization", {})),
         logging=LoggingConfig(**raw.get("logging", {})),
         wind=WindConfig(**raw.get("wind", {})),
+        vision=VisionObservationConfig(**raw.get("vision", {})),
     )
     if config.observation_dim <= 0:
         raise ValueError("Observation config produced an empty observation vector")

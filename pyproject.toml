@@ -19,10 +19,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "plotly>=6",
   "pytest>=8.0",
 ]
 hardware = [
   "cflib>=0.1.32,<0.2",
+  "Pillow>=10",
+]
+semantic = [
+  "Pillow>=10",
+  "torch>=2.8",
+  "transformers>=5,<6",
 ]
 mujoco = [
   "mujoco>=3.2",

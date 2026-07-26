@@ -29,6 +29,38 @@ def test_reset_and_step_shapes() -> None:
     env.close()
 
 
+def test_host_fed_vision_observation_persists_across_native_step() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "hover.toml",
+        overrides={
+            "environment": {"num_envs": 2},
+            "sensors": {"include_vision_sensor": True},
+            "vision": {"width": 2, "height": 2, "normalization": "zero_one"},
+        },
+    )
+    env = make_env(config, seed=9)
+    env.reset(seed=9)
+    with np.testing.assert_raises_regex(RuntimeError, "set_vision"):
+        env.step(np.zeros((2, config.action_dim), dtype=np.float32))
+
+    encoded = env.set_vision_frames(
+        (
+            np.zeros((2, 2), dtype=np.uint8),
+            np.full((2, 2), 255, dtype=np.uint8),
+        )
+    )
+    assert encoded.shape == (2, 1, 2, 2)
+    assert np.all(env.observations[0, config.vision_slice] == 0.0)
+    assert np.all(env.observations[1, config.vision_slice] == 1.0)
+
+    env.step(np.zeros((2, config.action_dim), dtype=np.float32))
+    assert np.all(env.observations[1, config.vision_slice] == 1.0)
+
+    observations, _ = env.reset(seed=9)
+    env.close()
+    assert np.all(observations[:, config.vision_slice] == 0.0)
+
+
 def test_deterministic_rollout_is_reproducible() -> None:
     config = load_config(
         ROOT / "configs" / "tasks" / "sequence.toml",
