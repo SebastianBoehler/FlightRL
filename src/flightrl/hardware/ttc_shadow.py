@@ -19,15 +19,15 @@ def evaluate_ttc_shadow_log(
     target: str = "raw",
     shadow_prefix: str = "ttc_shadow",
 ) -> dict[str, Any]:
-    rows = list(csv.DictReader(Path(input_csv).open()))
     grouped: dict[str, list[tuple[np.ndarray, np.ndarray]]] = {name: [] for name in GROUPS}
-    for row in rows:
-        if not has_command_pair(row, target=target, shadow_prefix=shadow_prefix):
+    latest: dict[str, float] = {}
+    for row in csv.DictReader(Path(input_csv).open()):
+        latest.update({key: float(value) for key, value in row.items() if numeric(value)})
+        if not has_command_pair(latest, target=target, shadow_prefix=shadow_prefix):
             continue
-        telemetry = {key: float(value) for key, value in row.items() if numeric(value)}
-        actual = command_vector(row, target)
-        predicted = prefixed_command_vector(row, shadow_prefix)
-        for group in groups_for_row(telemetry):
+        actual = command_vector(latest, target)
+        predicted = prefixed_command_vector(latest, shadow_prefix)
+        for group in groups_for_row(latest):
             grouped[group].append((actual, predicted))
     return {
         "input": str(input_csv),

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
+from flightrl.hardware.console_capture import CrazyflieConsoleCapture
 from flightrl.hardware.errors import HardwareError
 from flightrl.hardware.motion import reset_crazyflie_estimator
 from flightrl.hardware.telemetry import default_log_path, write_sync_log
@@ -20,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--duration-s", type=float, default=10.0)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--console-output", type=Path)
     parser.add_argument("--dry-run", action="store_true", help="validate config without recording telemetry")
     args = parser.parse_args(argv)
 
@@ -33,8 +35,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         modules = require_cflib()
         with sync_crazyflie_context(config, modules) as scf:
-            reset_crazyflie_estimator(scf.cf)
-            count = write_sync_log(scf, modules, config, output, args.duration_s)
+            console_capture = CrazyflieConsoleCapture(scf.cf, args.console_output)
+            console_capture.start()
+            try:
+                reset_crazyflie_estimator(scf.cf)
+                count = write_sync_log(scf, modules, config, output, args.duration_s)
+            finally:
+                console_capture.close()
         print(f"wrote {count} telemetry samples to {output}")
         return 0
     except HardwareError as exc:

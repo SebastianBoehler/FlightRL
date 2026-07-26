@@ -110,6 +110,14 @@ def test_vertical_clearance_velocity_reacts_without_height_target() -> None:
     assert vertical_velocity_from_clearance(bottom_close) > 0.0
 
 
+def test_vertical_clearance_floor_guard_wins_over_sustained_top_pressure() -> None:
+    top_only = RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=0.18, zrange_m=0.5)
+    squeezed = RangerReading(front_m=2.0, back_m=2.0, left_m=2.0, right_m=2.0, up_m=0.18, zrange_m=0.25)
+
+    assert vertical_velocity_from_clearance(top_only) < 0.0
+    assert vertical_velocity_from_clearance(squeezed) > 0.0
+
+
 def test_reactive_single_hard_clearance_dominates_opposite_sensor() -> None:
     command = reactive_clearance_command(RangerReading(front_m=0.08, back_m=2.0, left_m=2.0, right_m=2.0, up_m=2.0, zrange_m=0.45))
 
@@ -131,6 +139,20 @@ def test_reactive_left_right_pinch_escapes_toward_open_side() -> None:
     assert command.vx_m_s > 0.15
     assert command.vy_m_s < 0.0
     assert np.linalg.norm([command.vx_m_s, command.vy_m_s]) <= 0.250001
+
+
+def test_reactive_left_right_tunnel_prioritizes_longitudinal_escape() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=2.0, back_m=0.6, left_m=0.28, right_m=0.25, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s > 0.15
+    assert abs(command.vy_m_s) < 0.04
+
+
+def test_reactive_left_right_tunnel_keeps_hard_side_escape() -> None:
+    command = reactive_clearance_command(RangerReading(front_m=2.0, back_m=0.6, left_m=0.08, right_m=0.25, up_m=2.0, zrange_m=0.45))
+
+    assert command.vx_m_s > 0.10
+    assert command.vy_m_s < -0.08
 
 
 def test_reactive_corner_escape_is_diagonal() -> None:

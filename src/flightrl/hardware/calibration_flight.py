@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+CALIBRATION_PATTERNS = ("line", "yaw", "square", "line_yaw_square", "full_yaw_square")
+
+
 CALIBRATION_LOG_VARIABLES = (
     "range.front",
     "range.back",
@@ -49,6 +52,17 @@ def build_calibration_sequence(
     if speed_m_s <= 0.0 or yawrate_deg_s <= 0.0:
         raise ValueError("speed_m_s and yawrate_deg_s must be positive")
     sequence = [CalibrationCommand("hover_start", hover_s)]
+    if pattern == "full_yaw_square":
+        sequence.append(
+            CalibrationCommand(
+                "yaw_360",
+                duration_s=360.0 / yawrate_deg_s,
+                yawrate_deg_s=yawrate_deg_s,
+            )
+        )
+        sequence.extend(square_commands(segment_s, speed_m_s))
+        sequence.append(CalibrationCommand("hover_end", hover_s))
+        return sequence
     if pattern in {"line", "line_yaw_square"}:
         sequence.extend(line_commands(segment_s, speed_m_s))
     if pattern in {"yaw", "line_yaw_square"}:

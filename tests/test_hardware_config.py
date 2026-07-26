@@ -54,6 +54,18 @@ def test_load_low_level_hardware_config_stays_under_cflib_block_budget() -> None
     assert config.logging.variable_types["rpm.m3"] == "uint16_t"
 
 
+def test_load_flow_only_hardware_config_does_not_require_multiranger() -> None:
+    config = load_hardware_config(ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless_flow_only.toml")
+
+    assert config.decks.expect_flow_deck is True
+    assert config.decks.expect_multiranger is False
+    assert "stateEstimate.x" in config.logging.variables
+    assert "supervisor.info" in config.logging.variables
+    assert "sys.canfly" in config.logging.variables
+    assert "range.front" not in config.logging.variables
+    assert len(config.logging.variables) <= 80
+
+
 def test_invalid_demo_height_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "bad.toml"
     path.write_text(

@@ -6,7 +6,13 @@ from dataclasses import asdict
 from pathlib import Path
 from time import sleep, time
 
-from flightrl.hardware.calibration_flight import CALIBRATION_LOG_VARIABLES, build_calibration_sequence, command_row, sequence_duration_s
+from flightrl.hardware.calibration_flight import (
+    CALIBRATION_LOG_VARIABLES,
+    CALIBRATION_PATTERNS,
+    build_calibration_sequence,
+    command_row,
+    sequence_duration_s,
+)
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.motion import arm_crazyflie_for_flight, disarm_crazyflie_after_flight, install_legacy_hover_warning_filter, reset_crazyflie_estimator
@@ -18,7 +24,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run a known Crazyflie calibration trajectory for sim-to-real replay fitting")
     parser.add_argument("--hardware-config", default="configs/hardware/crazyflie_2_1_brushless.toml")
     parser.add_argument("--output", default="artifacts/crazyflie_logs/calibration_flight.csv")
-    parser.add_argument("--pattern", default="line_yaw_square", choices=("line", "yaw", "square", "line_yaw_square"))
+    parser.add_argument("--pattern", default="line_yaw_square", choices=CALIBRATION_PATTERNS)
     parser.add_argument("--height-m", type=float, default=0.55)
     parser.add_argument("--segment-s", type=float, default=1.6)
     parser.add_argument("--hover-s", type=float, default=1.0)

@@ -57,7 +57,11 @@ def build_log_configs(modules, config: CrazyflieHardwareConfig):
             period_in_ms=config.logging.period_ms,
         )
         for variable in chunk:
-            log_config.add_variable(variable, variable_types.get(variable, "float"))
+            fetch_as = variable_types.get(variable)
+            if fetch_as is None:
+                log_config.add_variable(variable)
+            else:
+                log_config.add_variable(variable, fetch_as)
         configs.append(log_config)
     return configs
 

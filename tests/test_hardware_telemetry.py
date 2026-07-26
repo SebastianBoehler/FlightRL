@@ -58,7 +58,7 @@ def test_log_configs_use_configured_variable_types() -> None:
     configs = build_log_configs(modules, config)
 
     assert configs[0].variables == [
-        ("stabilizer.roll", "float"),
+        ("stabilizer.roll", None),
         ("motor.m1", "uint16_t"),
         ("motor.m1req", "int32_t"),
     ]
@@ -100,7 +100,7 @@ class FakeLogConfig:
         self.period_in_ms = period_in_ms
         self.variables = []
 
-    def add_variable(self, variable: str, kind: str) -> None:
+    def add_variable(self, variable: str, kind: str | None = None) -> None:
         self.variables.append((variable, kind))
 
 

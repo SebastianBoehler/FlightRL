@@ -25,6 +25,27 @@ def test_build_calibration_sequence_contains_replay_modes() -> None:
     assert sequence_duration_s(sequence) == 11.0
 
 
+def test_full_yaw_square_uses_independent_turn_duration() -> None:
+    sequence = build_calibration_sequence(
+        pattern="full_yaw_square",
+        segment_s=2.0,
+        hover_s=0.5,
+        speed_m_s=0.15,
+        yawrate_deg_s=60.0,
+    )
+
+    assert sequence[1].mode == "yaw_360"
+    assert sequence[1].duration_s == 6.0
+    assert sequence[1].yawrate_deg_s == 60.0
+    assert [command.mode for command in sequence[2:6]] == [
+        "square_x_pos",
+        "square_y_pos",
+        "square_x_neg",
+        "square_y_neg",
+    ]
+    assert sequence_duration_s(sequence) == 15.0
+
+
 def test_calibration_summary_marks_complete_log_ready() -> None:
     rows = sample_rows()
 

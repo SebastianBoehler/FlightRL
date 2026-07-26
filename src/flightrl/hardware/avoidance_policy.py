@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from .avoidance_ttc import min_horizontal_ttc_s, ttc_escape_pressure
+from flightrl.vertical_clearance import vertical_velocity_from_clearance
 
 
 RANGER_KEYS = ("front", "back", "left", "right", "up", "zrange")
@@ -113,6 +114,8 @@ def reactive_clearance_command(
 ) -> AvoidanceCommand:
     vx_pressure = _axis_clearance_pressure(reading.back_m, reading.front_m, clearance_m, hard_clearance_m)
     vy_pressure = _axis_clearance_pressure(reading.right_m, reading.left_m, clearance_m, hard_clearance_m)
+    vx_pressure = _dampen_confined_axis_pressure(vx_pressure, reading.back_m, reading.front_m, clearance_m, hard_clearance_m)
+    vy_pressure = _dampen_confined_axis_pressure(vy_pressure, reading.right_m, reading.left_m, clearance_m, hard_clearance_m)
     escape_vx, escape_vy = _open_space_escape_pressure(reading, clearance_m, hard_clearance_m)
     vx_pressure += escape_vx
     vy_pressure += escape_vy
@@ -183,7 +186,6 @@ def smooth_command(
 def command_array(command: AvoidanceCommand) -> np.ndarray:
     return np.asarray([command.vx_m_s, command.vy_m_s, command.yawrate_deg_s, command.zdistance_m], dtype=np.float32)
 
-
 def command_row(command: AvoidanceCommand) -> dict[str, float]:
     return {
         "vx_m_s": command.vx_m_s,
@@ -201,20 +203,6 @@ def vertical_velocity_from_height_error(
     max_vertical_speed_m_s: float = 0.18,
 ) -> float:
     return float(np.clip(gain * (command.zdistance_m - reading.zrange_m), -max_vertical_speed_m_s, max_vertical_speed_m_s))
-
-
-def vertical_velocity_from_clearance(
-    reading: RangerReading,
-    *,
-    top_clearance_m: float = 0.45,
-    bottom_clearance_m: float = 0.35,
-    hard_clearance_m: float = 0.10,
-    max_vertical_speed_m_s: float = 0.18,
-) -> float:
-    bottom_pressure = _clearance_pressure(reading.zrange_m, bottom_clearance_m, hard_clearance_m)
-    top_pressure = _clearance_pressure(reading.up_m, top_clearance_m, hard_clearance_m)
-    return float(np.clip(max_vertical_speed_m_s * (bottom_pressure - top_pressure), -max_vertical_speed_m_s, max_vertical_speed_m_s))
-
 
 def sample_readings(count: int, rng: np.random.Generator) -> list[RangerReading]:
     samples = []
@@ -239,7 +227,6 @@ def _clearance_pressure(distance_m: float, clearance_m: float, hard_clearance_m:
     scaled = np.clip((clearance_m - distance_m) / (clearance_m - hard_clearance_m), 0.0, 1.0)
     return float(np.sqrt(scaled))
 
-
 def _axis_clearance_pressure(positive_side_m: float, negative_side_m: float, clearance_m: float, hard_clearance_m: float) -> float:
     if positive_side_m <= hard_clearance_m and positive_side_m < negative_side_m:
         return 1.0
@@ -250,6 +237,21 @@ def _axis_clearance_pressure(positive_side_m: float, negative_side_m: float, cle
         clearance_m,
         hard_clearance_m,
     )
+
+def _dampen_confined_axis_pressure(
+    axis_pressure: float,
+    positive_side_m: float,
+    negative_side_m: float,
+    clearance_m: float,
+    hard_clearance_m: float,
+) -> float:
+    if positive_side_m >= clearance_m or negative_side_m >= clearance_m:
+        return axis_pressure
+    if min(positive_side_m, negative_side_m) <= hard_clearance_m:
+        return axis_pressure
+    span = max(clearance_m - hard_clearance_m, 1e-6)
+    imbalance = abs(positive_side_m - negative_side_m) / span
+    return axis_pressure * float(np.clip(imbalance, 0.15, 1.0))
 
 
 def _open_space_escape_pressure(reading: RangerReading, clearance_m: float, hard_clearance_m: float) -> tuple[float, float]:
