@@ -23,9 +23,9 @@ def test_calibration_replay_pipeline_blocks_unready_quality(tmp_path: Path) -> N
             "--room-report",
             str(room_report(tmp_path)),
             "--matrix",
-            "artifacts/replay/sixdof_candidate_matrix_current.json",
+            str(candidate_matrix(tmp_path)),
             "--native-parity",
-            "artifacts/replay/sixdof_native_parity_current.json",
+            str(native_parity(tmp_path)),
             "--output-dir",
             str(tmp_path / "out"),
         ],
@@ -53,9 +53,9 @@ def test_calibration_replay_pipeline_writes_outputs_when_quality_ready(tmp_path:
             "--room-report",
             str(room_report(tmp_path)),
             "--matrix",
-            "artifacts/replay/sixdof_candidate_matrix_current.json",
+            str(candidate_matrix(tmp_path)),
             "--native-parity",
-            "artifacts/replay/sixdof_native_parity_current.json",
+            str(native_parity(tmp_path)),
             "--profile-matrix",
             str(profile_matrix(tmp_path)),
             "--output-dir",
@@ -150,4 +150,31 @@ def room_report(tmp_path: Path) -> Path:
 def profile_matrix(tmp_path: Path) -> Path:
     path = tmp_path / "profile.json"
     path.write_text(json.dumps({"profiles": ["broad"], "records": []}) + "\n")
+    return path
+
+
+def candidate_matrix(tmp_path: Path) -> Path:
+    path = tmp_path / "candidate-matrix.json"
+    path.write_text(json.dumps({"best_by_task": {}}) + "\n")
+    return path
+
+
+def native_parity(tmp_path: Path) -> Path:
+    path = tmp_path / "native-parity.json"
+    path.write_text(
+        json.dumps(
+            {
+                "aligned": {
+                    "samples": 2,
+                    "overlap_duration_s": 1.0,
+                    "signals": {
+                        "range.front": {"rmse": 0.0},
+                        "stateEstimate.x": {"rmse": 0.0},
+                    },
+                },
+                "profiles": [],
+            }
+        )
+        + "\n"
+    )
     return path
