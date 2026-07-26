@@ -54,6 +54,14 @@ def test_wandb_is_enabled_by_default_and_can_be_disabled() -> None:
     assert parser.parse_args(["--no-wandb"]).wandb is False
 
 
+def test_wandb_mode_defaults_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("WANDB_MODE", "disabled")
+    parser = argparse.ArgumentParser()
+    add_wandb_args(parser)
+
+    assert parser.parse_args([]).wandb_mode == "disabled"
+
+
 def test_load_wandb_env_file(monkeypatch, tmp_path) -> None:
     env_file = tmp_path / "wandb.env"
     env_file.write_text("export WANDB_API_KEY=secret\nWANDB_PROJECT=FlightRL\n")

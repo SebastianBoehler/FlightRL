@@ -17,7 +17,11 @@ def add_wandb_args(parser: argparse.ArgumentParser, *, default_project: str = "F
     parser.add_argument("--wandb-env-file", default=str(DEFAULT_WANDB_ENV))
     parser.add_argument("--wandb-name")
     parser.add_argument("--wandb-tags", default="")
-    parser.add_argument("--wandb-mode", choices=("online", "offline", "disabled"), default="online")
+    parser.add_argument(
+        "--wandb-mode",
+        choices=("online", "offline", "disabled"),
+        default=os.environ.get("WANDB_MODE", "online"),
+    )
 
 
 def init_wandb(args, config: dict[str, Any]):
