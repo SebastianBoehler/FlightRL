@@ -258,11 +258,12 @@ positives on monitor rectangles, while the distractor-aware contract rejected
 that negative scene and retained monitor detections in five of five positive
 frames.
 
-The default first flight is a fixed-position 360-degree yaw scan at 20 degrees
-per second. It can discover a target outside the starting field of view, align
-the camera to it, hold, and land. If an object remains occluded from that
-position, the controller can move through a 0.25 m cross-pattern and scan
-again, but this translation requires `--confirm-bounded-exploration`.
+The default first flight begins with a fixed-position 360-degree yaw scan at 20
+degrees per second. Detections are logged but cannot terminate this initial
+sweep. The controller then aligns the camera to a reacquired target, holds, and
+lands. If an object remains occluded from that position, the controller can
+move through a 0.25 m cross-pattern and scan again, but this translation
+requires `--confirm-bounded-exploration`.
 
 With only the AI Deck and Flow Deck mounted, Flow Deck odometry and firmware
 stabilization do not provide forward obstacle clearance. The bounded

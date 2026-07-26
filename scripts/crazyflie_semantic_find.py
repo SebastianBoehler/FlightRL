@@ -35,6 +35,7 @@ def main() -> None:
         search_yawrate_deg_s=args.search_yawrate_deg_s,
         track_yawrate_deg_s=args.track_yawrate_deg_s,
         centered_hold_s=args.centered_hold_s,
+        minimum_scan_s=args.minimum_scan_s,
         max_duration_s=args.duration_s,
         search_radius_m=args.search_radius_m,
         reposition_speed_m_s=args.reposition_speed_m_s,
@@ -121,7 +122,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", default="IDEA-Research/grounding-dino-tiny")
     parser.add_argument("--device", choices=("cpu", "mps"), default="mps")
     parser.add_argument("--threshold", type=float, default=0.25)
-    parser.add_argument("--duration-s", type=float, default=20.0)
+    parser.add_argument("--duration-s", type=float, default=30.0)
     parser.add_argument("--height-m", type=float, default=0.3)
     parser.add_argument("--min-frame-width", type=int, default=128)
     parser.add_argument("--min-frame-mean", type=float, default=8.0)
@@ -129,6 +130,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--search-yawrate-deg-s", type=float, default=20.0)
     parser.add_argument("--track-yawrate-deg-s", type=float, default=8.0)
     parser.add_argument("--centered-hold-s", type=float, default=1.0)
+    parser.add_argument("--minimum-scan-s", type=float, default=18.0)
     parser.add_argument("--search-radius-m", type=float, default=0.25)
     parser.add_argument("--reposition-speed-m-s", type=float, default=0.06)
     parser.add_argument("--aideck-host", default="192.168.4.1")

@@ -9,6 +9,7 @@ from .contract import GroundingDetection, GroundingResult
 
 class DiscoveryPhase(str, Enum):
     SCAN = "scan"
+    REACQUIRE = "reacquire"
     TRACK = "track"
     HOLD = "hold"
     REPOSITION = "reposition"
@@ -25,6 +26,9 @@ class DiscoveryConfig:
     yaw_gain: float = 30.0
     center_deadband: float = 0.08
     centered_hold_s: float = 1.5
+    minimum_scan_s: float = 0.0
+    reacquire_yawrate_deg_s: float = 12.0
+    reacquire_tolerance_deg: float = 8.0
     max_duration_s: float = 45.0
     search_radius_m: float = 0.25
     reposition_speed_m_s: float = 0.06
@@ -42,12 +46,16 @@ class DiscoveryConfig:
             self.yaw_gain,
             self.center_deadband,
             self.centered_hold_s,
+            self.reacquire_yawrate_deg_s,
+            self.reacquire_tolerance_deg,
             self.max_duration_s,
             self.reposition_speed_m_s,
             self.waypoint_tolerance_m,
         )
         if any(value <= 0.0 for value in positive):
             raise ValueError("discovery timing, gains, and rates must be positive")
+        if self.minimum_scan_s < 0.0 or self.minimum_scan_s >= self.max_duration_s:
+            raise ValueError("minimum scan time must be non-negative and below max duration")
         if self.search_radius_m < 0.0:
             raise ValueError("search radius must be non-negative")
         if self.allow_reposition and self.search_radius_m <= self.waypoint_tolerance_m:
@@ -76,6 +84,9 @@ class DiscoveryController:
         self.phase_started_s = start_time_s
         self.centered_since_s: float | None = None
         self.waypoint_index = 0
+        self.initial_scan_complete = config.minimum_scan_s == 0.0
+        self.best_scan_confidence = 0.0
+        self.reacquire_yaw_deg: float | None = None
 
     def step(
         self,
@@ -90,6 +101,40 @@ class DiscoveryController:
             self.phase = DiscoveryPhase.TIMEOUT
             return self._stationary(False, 0.0, 0.0)
 
+        if not self.initial_scan_complete:
+            detection = self._valid_detection(grounding, now_s)
+            if detection is not None and detection.confidence > self.best_scan_confidence:
+                self.best_scan_confidence = detection.confidence
+                self.reacquire_yaw_deg = yaw_deg
+            if now_s - self.start_time_s < self.config.minimum_scan_s:
+                self.phase = DiscoveryPhase.SCAN
+                return self._scan()
+            self.initial_scan_complete = True
+            self.phase = DiscoveryPhase.SCAN
+            self.phase_started_s = now_s
+
+        if self.reacquire_yaw_deg is not None:
+            yaw_error = _signed_angle_deg(self.reacquire_yaw_deg - yaw_deg)
+            if abs(yaw_error) > self.config.reacquire_tolerance_deg:
+                self.phase = DiscoveryPhase.REACQUIRE
+                yawrate = max(
+                    -self.config.reacquire_yawrate_deg_s,
+                    min(self.config.reacquire_yawrate_deg_s, yaw_error),
+                )
+                return DiscoveryCommand(
+                    DiscoveryPhase.REACQUIRE,
+                    0.0,
+                    0.0,
+                    yawrate,
+                    False,
+                    self.best_scan_confidence,
+                    0.0,
+                    self.waypoint_index,
+                )
+            self.reacquire_yaw_deg = None
+            self.phase = DiscoveryPhase.SCAN
+            self.phase_started_s = now_s
+
         detection = self._valid_detection(grounding, now_s)
         if detection is not None:
             return self._track(detection, now_s)
@@ -99,16 +144,7 @@ class DiscoveryController:
             self._set_phase(DiscoveryPhase.SCAN, now_s, preserve_scan_start=True)
         scan_duration_s = 360.0 / self.config.search_yawrate_deg_s
         if now_s - self.phase_started_s < scan_duration_s:
-            return DiscoveryCommand(
-                DiscoveryPhase.SCAN,
-                0.0,
-                0.0,
-                self.config.search_yawrate_deg_s,
-                False,
-                0.0,
-                0.0,
-                self.waypoint_index,
-            )
+            return self._scan()
         if not self.config.allow_reposition:
             self.phase = DiscoveryPhase.TIMEOUT
             return self._stationary(False, 0.0, 0.0)
@@ -214,6 +250,18 @@ class DiscoveryController:
             self.waypoint_index,
         )
 
+    def _scan(self) -> DiscoveryCommand:
+        return DiscoveryCommand(
+            DiscoveryPhase.SCAN,
+            0.0,
+            0.0,
+            self.config.search_yawrate_deg_s,
+            False,
+            0.0,
+            0.0,
+            self.waypoint_index,
+        )
+
     def _set_phase(
         self,
         phase: DiscoveryPhase,
@@ -227,3 +275,7 @@ class DiscoveryController:
         self.phase = phase
         if not (preserve_scan_start and previous is DiscoveryPhase.SCAN):
             self.phase_started_s = now_s
+
+
+def _signed_angle_deg(angle: float) -> float:
+    return (angle + 180.0) % 360.0 - 180.0

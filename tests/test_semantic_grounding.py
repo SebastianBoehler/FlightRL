@@ -129,6 +129,42 @@ def test_stale_or_low_confidence_grounding_does_not_control_yaw() -> None:
     assert not stale.target_visible
 
 
+def test_discovery_ignores_early_detection_until_initial_scan_finishes() -> None:
+    controller = DiscoveryController(
+        DiscoveryConfig(minimum_scan_s=5.0, max_duration_s=20.0),
+        start_time_s=10.0,
+    )
+
+    scanning = controller.step(
+        now_s=12.0,
+        grounding=_result(0.8, frame_time_s=12.0),
+        position_xy_m=(0.0, 0.0),
+        origin_xy_m=(0.0, 0.0),
+        yaw_deg=0.0,
+    )
+    reacquiring = controller.step(
+        now_s=15.1,
+        grounding=_result(0.8, frame_time_s=15.1),
+        position_xy_m=(0.0, 0.0),
+        origin_xy_m=(0.0, 0.0),
+        yaw_deg=90.0,
+    )
+    tracking = controller.step(
+        now_s=15.2,
+        grounding=_result(0.8, frame_time_s=15.2),
+        position_xy_m=(0.0, 0.0),
+        origin_xy_m=(0.0, 0.0),
+        yaw_deg=0.0,
+    )
+
+    assert scanning.phase is DiscoveryPhase.SCAN
+    assert scanning.yawrate_deg_s == 20.0
+    assert not scanning.target_visible
+    assert reacquiring.phase is DiscoveryPhase.REACQUIRE
+    assert reacquiring.yawrate_deg_s < 0.0
+    assert tracking.phase is DiscoveryPhase.TRACK
+
+
 def test_semantic_writer_persists_frame_detection_and_control(tmp_path) -> None:
     result = _result(0.5, frame_time_s=time())
     frame = AiDeckFrame(
