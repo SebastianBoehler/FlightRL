@@ -30,6 +30,8 @@ wandb/
 .DS_Store
 .learnings/
 .journal/
+cache/
+external/
 
 # Workspace-specific symlink
 resources
