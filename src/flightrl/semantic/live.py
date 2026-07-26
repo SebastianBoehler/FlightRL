@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import median
 from time import sleep, time
@@ -36,6 +36,27 @@ from .controller import (
 )
 from .dataset import SemanticRunWriter
 from .worker import AsyncGroundingPipeline
+
+
+SEMANTIC_LOG_VARIABLES = (
+    "stateEstimate.x",
+    "stateEstimate.y",
+    "stateEstimate.z",
+    "stateEstimate.roll",
+    "stateEstimate.pitch",
+    "stateEstimate.yaw",
+    "gyro.x",
+    "gyro.y",
+    "gyro.z",
+    "pm.vbat",
+    "pm.batteryLevel",
+    "sys.isFlying",
+    "sys.isTumbled",
+    "motor.m1",
+    "motor.m2",
+    "motor.m3",
+    "motor.m4",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +136,10 @@ def run_semantic_flight(
     discovery: DiscoveryConfig,
 ) -> dict[str, Any]:
     config = load_hardware_config(hardware_config_path)
+    config = replace(
+        config,
+        logging=replace(config.logging, variables=SEMANTIC_LOG_VARIABLES),
+    )
     modules = require_cflib()
     install_legacy_hover_warning_filter()
     latest_telemetry: dict[str, float] = {}

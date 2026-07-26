@@ -313,3 +313,26 @@ uv run --extra semantic --extra hardware \
   --confirm-flight \
   --confirm-semantic-yaw-control
 ```
+
+### First live discovery results
+
+The first `computer monitor` flight reached 0.3 m but accepted an
+appliance-shaped rectangle as a monitor after about 60 degrees of yaw. That run
+is a grounding failure, not mission success.
+
+The corrected `window` run used a mandatory 18-second scan at 0.55 m:
+
+- 481 degrees total yaw travel;
+- altitude between 0.50 and 0.62 m;
+- no tumble or safety abort;
+- a correctly localized window candidate at 0.82 confidence;
+- mission timeout after intermittent weak reacquisition, followed by a clean
+  landing.
+
+Replay showed that a later 0.32-confidence detection covered nearly the entire
+frame. The grounder now rejects implausibly large boxes, and the discovery
+controller records the strongest candidate yaw during the full sweep and
+explicitly returns to that bearing before visual tracking. The fixes passed the
+focused controller and stream tests but have not been flown yet. Battery
+rebounded to 40 percent after the window run, so another live iteration requires
+charging first.
