@@ -26,6 +26,9 @@ jobs:
       - name: Install headless rendering
         run: sudo apt-get update && sudo apt-get install -y libosmesa6-dev
 
+      - name: Install CPU PyTorch
+        run: python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.8"
+
       - name: Install package
         run: python -m pip install -e ".[dev,hardware,mujoco,semantic,tracking]"
 
