@@ -14,7 +14,7 @@ clean:
 	find src -name "__pycache__" -type d -prune -exec rm -rf {} +
 
 test:
-	pytest
+	$(PYTHON) -m pytest
 
 smoke:
 	$(PYTHON) scripts/smoke_test.py --config $(CONFIG)
