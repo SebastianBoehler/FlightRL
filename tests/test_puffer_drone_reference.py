@@ -26,13 +26,14 @@ def write_fake_pufferlib(root: Path) -> None:
                 "#define BASE_K_MOT 0.15f",
                 "#define BASE_MAX_VEL 20.0f",
                 "#define BASE_MAX_OMEGA 20.0f",
-                "#define DRONE_OBS_SIZE 21",
                 "#define DT 0.002f",
                 "#define ACTION_SUBSTEPS 5",
+                "// Tau_iner.x Tau_iner.y Tau_iner.z",
+                "// rk4_step(",
             ]
         )
     )
-    (drone / "binding.c").write_text("#define NUM_ATNS 4\n")
+    (drone / "binding.c").write_text("#define OBS_SIZE 21\n#define NUM_ATNS 4\n")
     (config / "drone.ini").write_text(
         "\n".join(
             [
@@ -62,12 +63,15 @@ def test_reference_report_marks_official_drone_as_baseline_not_drop_in(tmp_path:
     report = build_reference_report(tmp_path)
 
     assert report["official_puffer_drone"]["observation_dim"] == 21
+    assert len(report["official_puffer_drone"]["source_files"]["dronelib"]["sha256"]) == 64
     assert report["flightrl"]["observation_dim"] == 28
     assert report["compatibility"]["action_dim_match"] is True
     assert report["compatibility"]["adaptation_required_for_replacement"] is True
     assert "observation_contract_differs" in report["compatibility"]["replacement_blockers"]
     assert "mass_profile_differs" not in report["compatibility"]["replacement_blockers"]
     assert "motor_time_constant_differs" not in report["compatibility"]["replacement_blockers"]
+    assert "angular_dynamics_equations_differ" in report["compatibility"]["replacement_blockers"]
+    assert "integration_scheme_differs" in report["compatibility"]["replacement_blockers"]
 
 
 def test_reference_report_markdown_and_json_outputs(tmp_path: Path) -> None:
@@ -77,6 +81,9 @@ def test_reference_report_markdown_and_json_outputs(tmp_path: Path) -> None:
 
     write_report(report, output)
 
-    assert json.loads(output.read_text())["compatibility"]["safe_use"] == "baseline_and_alignment_reference"
-    assert "Puffer Drone Reference Alignment" in output.with_suffix(".md").read_text()
+    assert (
+        json.loads(output.read_text())["compatibility"]["safe_use"]
+        == "official_speed_baseline_and_parameter_comparison_only"
+    )
+    assert "Puffer Drone Parameter Alignment (Non-Parity)" in output.with_suffix(".md").read_text()
     assert "Replacement blockers" in render_markdown(report)

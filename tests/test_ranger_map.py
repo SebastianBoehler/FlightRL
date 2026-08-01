@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flightrl.hardware.ranger_map import trajectory_from_rows
+from flightrl.hardware.ranger_projection import trajectory_from_rows
 
 
 def test_trajectory_from_rows_keeps_pose_samples() -> None:

@@ -9,7 +9,7 @@ from flightrl.puffer4_door_export import (
 )
 
 
-def test_fixed_door_export_has_no_goal_observation_or_translation_axes(
+def test_privileged_teacher_export_has_no_goal_or_live_authority(
     tmp_path: Path,
 ) -> None:
     result = export_fixed_door_assets(
@@ -39,20 +39,42 @@ def test_fixed_door_export_has_no_goal_observation_or_translation_axes(
     assert "native_door_episode_rng.c" in DOOR_NATIVE_FILES
     assert "native_door_episode_rng.h" in DOOR_NATIVE_FILES
     assert "native_door_episode_groups.inc" in DOOR_NATIVE_FILES
+    assert "native_door_mission.c" in DOOR_NATIVE_FILES
+    assert "native_door_mission.h" in DOOR_NATIVE_FILES
     assert "native_door_self_mask.c" in DOOR_NATIVE_FILES
     assert "native_sixdof_vision_surfaces.inc" in DOOR_NATIVE_FILES
     assert "native_door_scene_coverage.inc" in DOOR_NATIVE_FILES
     assert "flightrl_door_detector_update" in binding
-    assert "encoder = FlightRLDoorEncoder" in config
-    assert "network = MinGRU" in config
+    assert "flightrl_door_teacher_action(\n        env->position" in binding
+    assert "flightrl_door_detector_teacher_action(&env->detector" not in binding
+    assert "flightrl_door_mission_step(" in binding
+    assert "env->mission.target_standoff_m" in binding
+    assert (
+        "fminf(env->mission.planar_position_tolerance_m, "
+        "env->mission.standoff_tolerance_m)" in binding
+    )
+    assert "encoder = DefaultEncoder" in config
+    assert "network = MLP" in config
+    assert "total_timesteps = 0" in config
     assert "total_agents = 64" in config
     assert "camera_mask = 0" in config
     assert "domain_randomization = 1" in config
     assert "layout_diversity = 0" in config
     assert "camera_randomization = 0" in config
     assert "obstacle_probability = 0.5" in config
-    assert "max_episode_steps = 1300" in config
-    assert "success_radius_m = 0.8" in config
-    assert "max_yawrate_deg_s = 70" in config
+    assert "max_episode_steps = 2600" in config
+    assert "success_radius_m" not in config
+    assert "mission_target_standoff_m = 0.8" in config
+    assert "mission_planar_position_tolerance_m = 0.1" in config
+    assert "mission_vertical_position_tolerance_m = 0.1" in config
+    assert "mission_standoff_tolerance_m = 0.08" in config
+    assert "mission_yaw_alignment_tolerance_rad = 0.174532925199" in config
+    assert "mission_max_horizontal_speed_m_s = 0.08" in config
+    assert "mission_max_vertical_speed_m_s = 0.05" in config
+    assert "mission_max_yaw_rate_rad_s = 0.0872664625997" in config
+    assert "mission_dwell_steps = 33" in config
+    assert "max_horizontal_speed_m_s = 0.25" in config
+    assert "max_vertical_speed_m_s = 0.1" in config
+    assert "max_yawrate_deg_s = 45" in config
     for filename in DOOR_NATIVE_FILES:
         assert (result.env_dir / filename).exists()

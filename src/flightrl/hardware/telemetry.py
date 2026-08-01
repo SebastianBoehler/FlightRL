@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
-from time import time
+from queue import Empty
+from time import monotonic, time
 from typing import Mapping, Sequence
 
 from .config import CrazyflieHardwareConfig
+from .errors import HardwareSafetyError
 
 MAX_VARIABLES_PER_LOG_BLOCK = 5
 
@@ -46,6 +49,28 @@ class TelemetryCsvWriter:
         self.close()
 
 
+def next_log_packet(logger, *, timeout_s: float):
+    """Read one SyncLogger packet with a real wall-clock timeout."""
+    if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)):
+        raise ValueError("log packet timeout must be a finite positive number")
+    timeout = float(timeout_s)
+    if not isfinite(timeout) or timeout <= 0.0:
+        raise ValueError("log packet timeout must be a finite positive number")
+    packet_queue = getattr(logger, "_queue", None)
+    get = getattr(packet_queue, "get", None)
+    if get is None:
+        raise HardwareSafetyError("cflib SyncLogger does not expose bounded packet reads")
+    try:
+        packet = get(timeout=timeout)
+    except Empty:
+        return None
+    if packet == getattr(logger, "DISCONNECT_EVENT", object()):
+        raise HardwareSafetyError("Crazyflie disconnected while waiting for telemetry")
+    if not isinstance(packet, tuple) or len(packet) != 3:
+        raise HardwareSafetyError("cflib returned a malformed telemetry packet")
+    return packet
+
+
 def build_log_configs(modules, config: CrazyflieHardwareConfig):
     configs = []
     variables = tuple(config.logging.variables)
@@ -67,22 +92,58 @@ def build_log_configs(modules, config: CrazyflieHardwareConfig):
 
 
 def write_sync_log(scf, modules, config: CrazyflieHardwareConfig, output_path: str | Path, duration_s: float) -> int:
+    validate_log_duration(duration_s)
     log_config = with_available_log_variables(scf, config)
     variables = tuple(log_config.logging.variables)
+    if not variables:
+        raise HardwareSafetyError(
+            "none of the configured telemetry variables exist in the Crazyflie TOC"
+        )
     log_configs = build_log_configs(modules, log_config)
-    deadline = time() + duration_s
-    latest: dict[str, object] = {}
+    if not log_configs:
+        raise HardwareSafetyError("no telemetry log blocks were configured")
+    deadline = monotonic() + duration_s
+    pending_by_timestamp: dict[int, dict[str, object]] = {}
+    max_pending_timestamps = max(8, 2 * len(log_configs))
     count = 0
     with TelemetryCsvWriter(output_path, variables=variables) as writer:
         with modules.sync_logger_cls(scf, log_configs) as logger:
-            for crazyflie_time_ms, values, _logconf in logger:
-                latest.update(values)
-                if all(variable in latest for variable in variables):
-                    writer.write_sample(TelemetrySample(time(), int(crazyflie_time_ms), latest.copy()))
-                    count += 1
-                if time() >= deadline:
+            while (remaining := deadline - monotonic()) > 0.0:
+                packet = next_log_packet(logger, timeout_s=remaining)
+                if packet is None:
                     break
+                crazyflie_time_ms, values, _logconf = packet
+                if (
+                    type(crazyflie_time_ms) is not int
+                    or not 0 <= crazyflie_time_ms <= 0xFFFFFFFF
+                ):
+                    raise HardwareSafetyError(
+                        "Crazyflie telemetry timestamp must be uint32 milliseconds"
+                    )
+                if not isinstance(values, Mapping):
+                    raise HardwareSafetyError(
+                        "Crazyflie telemetry values must be a mapping"
+                    )
+                timestamp = crazyflie_time_ms
+                pending = pending_by_timestamp.setdefault(timestamp, {})
+                pending.update(values)
+                if all(variable in pending for variable in variables):
+                    writer.write_sample(
+                        TelemetrySample(time(), timestamp, pending.copy())
+                    )
+                    count += 1
+                    del pending_by_timestamp[timestamp]
+                while len(pending_by_timestamp) > max_pending_timestamps:
+                    oldest = next(iter(pending_by_timestamp))
+                    del pending_by_timestamp[oldest]
     return count
+
+
+def validate_log_duration(duration_s: float) -> None:
+    if isinstance(duration_s, bool) or not isinstance(duration_s, (int, float)):
+        raise ValueError("telemetry duration must be a finite number in (0, 600]")
+    if not isfinite(float(duration_s)) or not 0.0 < duration_s <= 600.0:
+        raise ValueError("telemetry duration must be a finite number in (0, 600]")
 
 
 def available_log_variables(scf, variables: Sequence[str]) -> tuple[str, ...]:

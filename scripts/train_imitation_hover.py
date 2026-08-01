@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from flightrl import load_config, make_env
+from flightrl import load_config
 from flightrl.training import create_env_and_policy
 
 

@@ -8,7 +8,9 @@ import subprocess
 import numpy as np
 import pytest
 
-from flightrl.puffer4_door_contract import CORRECTED_DOOR_ACTION_CONTRACT
+from flightrl.puffer4_door_contract import (
+    PRIVILEGED_DOOR_TEACHER_ACTION_CONTRACT,
+)
 from flightrl.sixdof.native import native_step
 
 
@@ -50,7 +52,7 @@ def test_native_door_action_uses_declared_yaw_scale_and_feedback(tmp_path) -> No
     setpoint = (ctypes.c_float * 4)()
     previous_action = (ctypes.c_float * 2)()
 
-    contract = CORRECTED_DOOR_ACTION_CONTRACT
+    contract = PRIVILEGED_DOOR_TEACHER_ACTION_CONTRACT
     action_mapper(
         policy_action,
         contract.max_yawrate_deg_s,

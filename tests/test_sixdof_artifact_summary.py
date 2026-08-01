@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_artifact_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     gate = tmp_path / "gate.json"
-    gap = tmp_path / "gap.json"
     parity = tmp_path / "parity.json"
     output = tmp_path / "summary.json"
     gate.write_text(
@@ -31,19 +30,7 @@ def test_artifact_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
             }
         )
     )
-    gap.write_text(
-        json.dumps(
-            {
-                "dataset": "dataset.npz",
-                "samples": 10,
-                "l2_mean": 0.01,
-                "l2_p95": 0.02,
-                "action_saturation_fraction": 0.0,
-                "per_task": {},
-            }
-        )
-    )
-    parity.write_text(json.dumps({"model": "model.ts", "parity": {"max_abs_error": 0.0, "mean_abs_error": 0.0}}))
+    parity.write_text(json.dumps({"evidence_scope": "desktop_cpu_only", "model": "model.ts", "parity": {"max_abs_error": 0.0, "mean_abs_error": 0.0}}))
     subprocess.run(
         [
             sys.executable,
@@ -54,9 +41,7 @@ def test_artifact_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
             "policy.pt",
             "--gate",
             str(gate),
-            "--action-gap",
-            str(gap),
-            "--edge-parity",
+            "--desktop-parity",
             str(parity),
             "--output",
             str(output),
@@ -69,4 +54,6 @@ def test_artifact_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
 
     summary = json.loads(output.read_text())
     assert summary["gate"]["passed"] is True
+    assert summary["desktop_parity"]["evidence_scope"] == "desktop_cpu_only"
+    assert "edge_parity" not in summary
     assert output.with_suffix(".md").exists()

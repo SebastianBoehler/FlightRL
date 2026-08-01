@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
+from .checkpoint_contract import build_checkpoint_payload
 from .evaluation import evaluate_policy
 from .policies import SixDofPolicy
 
@@ -173,23 +173,23 @@ def weighted_mse(prediction: torch.Tensor, target: torch.Tensor, action_weights:
 
 
 def payload(model, config: OfflineTrainConfig, metadata: dict, tasks: tuple[str, ...], val_loss: float, epoch: int, selection_metrics: dict | None) -> dict:
-    return {
-        "state_dict": {key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
-        "task": ",".join(tasks),
-        "tasks": list(tasks),
-        "task_conditioned": len(tasks) > 1,
-        "hidden_size": config.hidden_size,
-        "observation_dim": int(metadata["observation_dim"]),
-        "base_observation_dim": 28,
-        "action_dim": 4,
+    checkpoint = build_checkpoint_payload(
+        state_dict={key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
+        tasks=tasks,
+        hidden_size=config.hidden_size,
+        observation_mode=str(metadata.get("observation_mode", "base")),
+    )
+    if checkpoint["observation_dim"] != int(metadata["observation_dim"]):
+        raise ValueError("dataset observation dimension does not match the current six-DoF checkpoint contract")
+    checkpoint.update({
         "dataset": config.dataset,
         "selection_epoch": epoch,
         "selection_mode": "eval" if config.select_by_eval else "val_loss",
         "eval_reset_profile": config.eval_reset_profile or "broad",
-        "observation_mode": metadata.get("observation_mode", "base"),
         "action_weighting": config.action_weighting,
         "task_weights": config.task_weights or {},
         "selection_metrics": selection_metrics,
         "val_loss": val_loss,
         "note": "Offline teacher-imitation checkpoint; simulation-only and not approved for live hardware.",
-    }
+    })
+    return checkpoint

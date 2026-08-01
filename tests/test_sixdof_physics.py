@@ -9,14 +9,26 @@ from flightrl.sixdof.disturbance import SixDofDisturbanceProfile, configure_dist
 from flightrl.sixdof.physics import LINEAR_DRAG, MASS, MOTOR_TAU
 
 
-def test_crazyflie_training_randomization_changes_physics_rows() -> None:
+def test_body_rate_randomization_does_not_claim_behaviorless_mass_variation() -> None:
     env = SixDofCrazyflieEnv(num_envs=16, seed=7, physics_profile="crazyflie_brushless", domain_randomization="crazyflie_training")
     env.reset(seed=7)
 
     assert env.physics_params.shape == (16, 9)
-    assert np.ptp(env.physics_params[:, MASS]) > 0.0
+    assert np.ptp(env.physics_params[:, MASS]) == 0.0
     assert np.ptp(env.physics_params[:, LINEAR_DRAG]) > 0.0
     assert np.all(env.physics_params[:, MOTOR_TAU] > 0.0)
+
+
+def test_motor_rpm_randomization_keeps_behavioral_mass_variation() -> None:
+    env = SixDofCrazyflieEnv(
+        num_envs=16,
+        seed=7,
+        action_mode="motor_rpm",
+        physics_profile="crazyflie_brushless",
+        domain_randomization="crazyflie_training",
+    )
+
+    assert np.ptp(env.physics_params[:, MASS]) > 0.0
 
 
 def test_native_matches_python_with_randomized_crazyflie_physics() -> None:

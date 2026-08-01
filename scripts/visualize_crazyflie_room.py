@@ -6,7 +6,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from flightrl.hardware.ranger_map import points_from_rows, prepare_rows, trajectory_from_rows
+from flightrl.hardware.ranger_projection import points_from_rows, prepare_rows, trajectory_from_rows
 
 
 def main() -> None:

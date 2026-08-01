@@ -8,9 +8,10 @@ import sys
 import numpy as np
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy
+from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, build_checkpoint_payload
 from flightrl.sixdof.curriculum import ResetProfile
-from flightrl.sixdof.evaluation import aggregate_task_metrics, evaluate_one, gate_status, position_error_for_task
+from flightrl.sixdof.evaluation import aggregate_task_metrics, evaluate_one, position_error_for_task
+from flightrl.sixdof.gates import gate_status
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,13 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_checkpoint_eval_accepts_task_subset(tmp_path: Path) -> None:
     checkpoint = tmp_path / "multitask.pt"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16, input_dim=30).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 30,
-            "task": "position_yaw,obstacle_avoidance",
-            "tasks": ["position_yaw", "obstacle_avoidance"],
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16, input_dim=30).state_dict(),
+            tasks=("position_yaw", "obstacle_avoidance"),
+            hidden_size=16,
+        ),
         checkpoint,
     )
     report = tmp_path / "subset.json"
@@ -114,6 +113,37 @@ def test_gate_can_reject_open_space_horizontal_speed() -> None:
 
     assert gate["passed"] is False
     assert "open_space_horizontal_speed_p95" in gate["failures"]
+
+
+def test_gate_rejects_nonfinite_required_metric() -> None:
+    gate = gate_status(
+        {
+            "clearance_p01_m": float("nan"),
+            "mean_completed_fraction": 1.0,
+            "mean_position_error_m": 0.1,
+        },
+        min_clearance_m=0.08,
+        min_completed_fraction=0.9,
+        max_position_error_m=1.0,
+    )
+
+    assert gate["passed"] is False
+    assert "min_clearance_invalid" in gate["failures"]
+
+
+def test_gate_rejects_nonfinite_threshold() -> None:
+    gate = gate_status(
+        {
+            "clearance_p01_m": 0.5,
+            "mean_completed_fraction": 1.0,
+            "mean_position_error_m": 0.1,
+        },
+        min_clearance_m=float("nan"),
+        min_completed_fraction=0.9,
+        max_position_error_m=1.0,
+    )
+
+    assert gate == {"passed": False, "failures": ["thresholds_invalid"]}
 
 
 def test_open_space_speed_excludes_envs_that_started_close() -> None:

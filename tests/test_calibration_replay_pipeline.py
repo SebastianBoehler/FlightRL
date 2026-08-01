@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from flightrl.sixdof.signal_evidence import NATIVE_STATE_SIGNALS, RANGE_SIGNALS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -139,6 +141,9 @@ def room_report(tmp_path: Path) -> Path:
                     "z_min": 0.0,
                     "z_max": 2.5,
                     "max_range_m": 4.0,
+                    "width_m": 4.0,
+                    "depth_m": 4.0,
+                    "height_m": 2.5,
                 },
             }
         )
@@ -155,24 +160,48 @@ def profile_matrix(tmp_path: Path) -> Path:
 
 def candidate_matrix(tmp_path: Path) -> Path:
     path = tmp_path / "candidate-matrix.json"
-    path.write_text(json.dumps({"best_by_task": {}}) + "\n")
+    path.write_text(json.dumps({"evidence_scope": "desktop_development", "deployment_authority": False, "best_by_task": {}, "best_multitask": None}) + "\n")
     return path
 
 
 def native_parity(tmp_path: Path) -> Path:
     path = tmp_path / "native-parity.json"
+    aggregate = {
+        name: {
+            "samples": 2,
+            "rmse": 0.0,
+            "mae": 0.0,
+            "max_abs": 0.0,
+            "worst_profile": "broad",
+        }
+        for name in (*NATIVE_STATE_SIGNALS, *RANGE_SIGNALS)
+    }
     path.write_text(
         json.dumps(
             {
+                "reset_profiles": ["broad"],
                 "aligned": {
                     "samples": 2,
                     "overlap_duration_s": 1.0,
-                    "signals": {
-                        "range.front": {"rmse": 0.0},
-                        "stateEstimate.x": {"rmse": 0.0},
-                    },
+                    "signals": aggregate,
                 },
-                "profiles": [],
+                "profiles": [
+                    {
+                        "reset_profile": "broad",
+                        "samples": 2,
+                        "duration_s": 1.0,
+                        "terminal_mismatches": 0,
+                        "truncation_mismatches": 0,
+                        "signals": {
+                            name: {
+                                key: value
+                                for key, value in metrics.items()
+                                if key != "worst_profile"
+                            }
+                            for name, metrics in aggregate.items()
+                        },
+                    }
+                ],
             }
         )
         + "\n"

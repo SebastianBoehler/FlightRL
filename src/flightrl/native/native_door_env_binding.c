@@ -8,6 +8,8 @@
 #include "native_sixdof_setpoint.c"
 #include "native_door_action.h"
 #include "native_door_action.c"
+#include "native_door_mission.h"
+#include "native_door_mission.c"
 #include "native_door_episode_rng.c"
 #include "native_door_proprio.h"
 #include "native_door_proprio.c"
@@ -27,10 +29,8 @@
 
 #include "native_door_env_types.inc"
 
-static void c_reset(FlightRLDoorEnv *env);
-static void c_step(FlightRLDoorEnv *env);
-static void c_render(FlightRLDoorEnv *env);
-static void c_close(FlightRLDoorEnv *env);
+static void c_reset(FlightRLDoorEnv *env), c_step(FlightRLDoorEnv *env);
+static void c_render(FlightRLDoorEnv *env), c_close(FlightRLDoorEnv *env);
 
 #define Env FlightRLDoorEnv
 #include "vecenv.h"
@@ -42,14 +42,8 @@ static void write_door_observation(Env *env, uint8_t reset_temporal) {
     float grounding[4];
     float proprioception[SIXDOF_DOOR_PROPRIO_DIM] = {0};
     flightrl_door_proprioception(
-        env->position,
-        env->velocity,
-        env->quaternion,
-        env->body_rates,
-        env->room,
-        env->origin_position,
-        env->origin_yaw,
-        env->previous_action,
+        env->position, env->velocity, env->quaternion, env->body_rates,
+        env->room, env->origin_position, env->origin_yaw, env->previous_action,
         proprioception
     );
     flightrl_sixdof_door_observation_scene(
@@ -81,12 +75,8 @@ static void write_door_observation(Env *env, uint8_t reset_temporal) {
         memset(detector_grounding, 0, sizeof(detector_grounding));
     }
     flightrl_door_detector_update(
-        &env->detector,
-        detector_grounding,
-        env->control_step,
-        &env->appearance_rng,
-        env->control_dt,
-        env->maximum_evidence_age_s
+        &env->detector, detector_grounding, env->control_step,
+        &env->appearance_rng, env->control_dt, env->maximum_evidence_age_s
     );
     int detected = (
         env->detector.evidence[0] > 0.0f
@@ -106,7 +96,10 @@ static void write_door_observation(Env *env, uint8_t reset_temporal) {
         sizeof(env->detector.evidence)
     );
     float teacher[2];
-    flightrl_door_detector_teacher_action(&env->detector, teacher);
+    flightrl_door_teacher_action(
+        env->position, env->quaternion, &env->scene,
+        env->max_yawrate_deg_s, teacher
+    );
     env->observations[SIXDOF_DOOR_POLICY_OBS_DIM] = teacher[0];
     env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 1] = teacher[1];
     env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 2] = (float)visible;
@@ -142,13 +135,10 @@ static void c_reset(Env *env) {
         env->rng
     );
     flightrl_door_scene_sample(
-        env->position,
-        env->quaternion,
-        env->room,
-        &env->scene,
-        &env->rng,
-        env->obstacle_probability,
-        env->layout_diversity
+        env->position, env->quaternion, env->room, &env->scene, &env->rng,
+        env->obstacle_probability, env->layout_diversity,
+        env->mission.target_standoff_m,
+        fminf(env->mission.planar_position_tolerance_m, env->mission.standoff_tolerance_m)
     );
     memset(env->velocity, 0, sizeof(env->velocity));
     memset(env->body_rates, 0, sizeof(env->body_rates));
@@ -174,6 +164,7 @@ static void c_reset(Env *env) {
     env->control_step = 0;
     flightrl_door_detector_reset(&env->detector);
     env->visible_steps = 0;
+    env->mission_state.dwell_steps = 0;
     env->thrust_state = 1.0f;
     env->current_return = 0.0f;
     env->current_length = 0.0f;
@@ -248,7 +239,19 @@ static void c_step(Env *env) {
         env->room,
         &env->scene
     );
-    int success = visible && distance <= env->success_radius;
+    int success = flightrl_door_mission_step(
+        &env->mission,
+        &env->mission_state,
+        env->position,
+        env->velocity,
+        env->quaternion,
+        env->body_rates,
+        env->room,
+        (int)env->scene.door[0],
+        env->scene.target,
+        env->scene.target_yaw,
+        visible
+    );
     env->truncation = env->control_step >= env->max_episode_steps;
     env->terminal = collision || success;
     float action_cost = (

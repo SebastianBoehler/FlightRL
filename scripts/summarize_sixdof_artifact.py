@@ -4,14 +4,17 @@ import argparse
 import json
 from pathlib import Path
 
+from flightrl.evidence_scope import DESKTOP_DEVELOPMENT_SCOPE
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Summarize a 6-DoF policy checkpoint, gate, gap, and edge parity artifacts")
+    parser = argparse.ArgumentParser(
+        description="Summarize a 6-DoF simulation gate and desktop parity artifacts"
+    )
     parser.add_argument("--name", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--gate", required=True)
-    parser.add_argument("--action-gap", required=True)
-    parser.add_argument("--edge-parity", default=None)
+    parser.add_argument("--desktop-parity", default=None)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -27,10 +30,11 @@ def main() -> None:
 
 def build_summary(args) -> dict:
     gate = read_json(args.gate)
-    gap = read_json(args.action_gap)
-    parity = read_json(args.edge_parity) if args.edge_parity else None
+    parity = read_json(args.desktop_parity) if args.desktop_parity else None
     metrics = gate["metrics"]
     return {
+        "evidence_scope": DESKTOP_DEVELOPMENT_SCOPE,
+        "deployment_authority": False,
         "name": args.name,
         "checkpoint": args.checkpoint,
         "tasks": gate["tasks"],
@@ -43,16 +47,8 @@ def build_summary(args) -> dict:
             "teacher_action_l2_mean": metrics.get("teacher_action_l2_mean"),
             "teacher_action_l2_p95": metrics.get("teacher_action_l2_p95"),
         },
-        "action_gap": {
-            "dataset": gap["dataset"],
-            "samples": gap["samples"],
-            "l2_mean": gap["l2_mean"],
-            "l2_p95": gap["l2_p95"],
-            "action_saturation_fraction": gap["action_saturation_fraction"],
-            "per_task": gap["per_task"],
-        },
-        "edge_parity": parity,
-        "safety": "Simulation summary only; not approved for direct hardware control.",
+        "desktop_parity": parity,
+        "safety": "Simulation and desktop CPU summary only; not AI Deck deployment readiness or live-hardware authority.",
     }
 
 
@@ -65,7 +61,7 @@ def read_json(path: str | None) -> dict | None:
 def render_markdown(summary: dict) -> str:
     gate = summary["gate"]
     metrics = summary["gate_metrics"]
-    parity = summary["edge_parity"]
+    parity = summary["desktop_parity"]
     lines = [
         f"# {summary['name']}",
         "",
@@ -79,8 +75,6 @@ def render_markdown(summary: dict) -> str:
         f"- Action saturation: `{metrics['action_saturation_fraction']:.6f}`",
         f"- Teacher action L2 mean: `{metrics['teacher_action_l2_mean']:.6f}`",
         f"- Teacher action L2 p95: `{metrics['teacher_action_l2_p95']:.6f}`",
-        f"- Action-gap samples: `{summary['action_gap']['samples']}`",
-        f"- Action-gap L2 mean/p95: `{summary['action_gap']['l2_mean']:.6f}` / `{summary['action_gap']['l2_p95']:.6f}`",
         "",
         summary["safety"],
     ]
@@ -88,7 +82,7 @@ def render_markdown(summary: dict) -> str:
         lines.extend(
             [
                 "",
-                "## Edge Parity",
+                "## Desktop TorchScript Parity",
                 "",
                 f"- Model: `{parity['model']}`",
                 f"- Max abs error: `{parity['parity']['max_abs_error']:.8f}`",

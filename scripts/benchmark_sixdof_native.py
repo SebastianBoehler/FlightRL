@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("--num-envs", type=int, default=8192)
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--physics-profile", default="legacy", choices=("legacy", "crazyflie_brushless"))
+    parser.add_argument("--physics-profile", default="baseline", choices=("baseline", "crazyflie_brushless"))
     parser.add_argument("--domain-randomization", default="none", choices=("none", "crazyflie_training"))
     args = parser.parse_args()
 

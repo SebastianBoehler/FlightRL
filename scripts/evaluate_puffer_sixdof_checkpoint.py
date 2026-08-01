@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from flightrl.sixdof.checkpoint_contract import CHECKPOINT_CONTRACT_ID
 from flightrl.sixdof.puffer_evaluation import PufferEvalConfig, evaluate_puffer_backends
 from flightrl.sixdof.puffer_policy import load_puffer_sixdof_policy
 from flightrl.sixdof.tasks import parse_task_spec
@@ -23,7 +24,6 @@ def main() -> None:
     parser.add_argument("--physics-profile", default=None)
     parser.add_argument("--domain-randomization", default=None)
     parser.add_argument("--disturbance-profile", default=None)
-    parser.add_argument("--previous-action-observation-scale", type=float, default=1.0)
     parser.add_argument("--min-clearance-m", type=float, default=0.08)
     parser.add_argument("--min-completed-fraction", type=float, default=0.90)
     parser.add_argument("--max-position-error-m", type=float, default=1.00)
@@ -37,6 +37,8 @@ def main() -> None:
     if len(tasks) != 1:
         raise SystemExit("Puffer checkpoint gate currently supports one task per run; repeat the command for multi-task checks.")
     policy = load_puffer_sixdof_policy(args.checkpoint)
+    if policy.checkpoint_metadata is None or tasks != policy.checkpoint_metadata.tasks:
+        raise SystemExit("--task must exactly match the task contract stored in the Puffer checkpoint")
     config = PufferEvalConfig(
         task=tasks[0],
         backend=args.backend,
@@ -48,7 +50,6 @@ def main() -> None:
         physics_profile=args.physics_profile,
         domain_randomization=args.domain_randomization,
         disturbance_profile=args.disturbance_profile,
-        previous_action_observation_scale=args.previous_action_observation_scale,
         min_clearance_m=args.min_clearance_m,
         min_completed_fraction=args.min_completed_fraction,
         max_position_error_m=args.max_position_error_m,
@@ -58,6 +59,7 @@ def main() -> None:
     )
     report = {
         "checkpoint": str(Path(args.checkpoint).expanduser().resolve()),
+        "checkpoint_contract": CHECKPOINT_CONTRACT_ID,
         "policy": {
             "type": "pufferlib_mlp_mean",
             "observation_dim": policy.metadata.observation_dim,
@@ -73,7 +75,6 @@ def main() -> None:
         "physics_profile": args.physics_profile,
         "domain_randomization": args.domain_randomization,
         "disturbance_profile": args.disturbance_profile,
-        "previous_action_observation_scale": args.previous_action_observation_scale,
         "thresholds": thresholds(config),
         "reports": evaluate_puffer_backends(policy, config),
         "safety": "Offline simulation gate only; passing this report does not approve live hardware deployment.",

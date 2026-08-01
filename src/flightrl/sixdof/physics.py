@@ -6,6 +6,13 @@ from pathlib import Path
 
 import numpy as np
 
+from .validation import (
+    require_finite_real,
+    require_interval,
+    require_positive_int,
+    require_real_tuple,
+)
+
 
 PHYSICS_DIM = 9
 MASS = 0
@@ -29,6 +36,38 @@ class SixDofPhysicsProfile:
     max_rate_rad_s: tuple[float, float, float] = (6.0, 6.0, 4.0)
     motor_tau_s: float = 0.0
 
+    def __post_init__(self) -> None:
+        positive = ("mass_kg", "gravity_m_s2", "thrust_scale")
+        nonnegative = ("linear_drag", "rate_tau_s", "motor_tau_s")
+        for name in positive:
+            object.__setattr__(
+                self,
+                name,
+                require_finite_real(
+                    getattr(self, name),
+                    name,
+                    minimum=0.0,
+                    strictly_greater=True,
+                ),
+            )
+        for name in nonnegative:
+            object.__setattr__(
+                self,
+                name,
+                require_finite_real(getattr(self, name), name, minimum=0.0),
+            )
+        object.__setattr__(
+            self,
+            "max_rate_rad_s",
+            require_real_tuple(
+                self.max_rate_rad_s,
+                "max_rate_rad_s",
+                3,
+                minimum=0.0,
+                strictly_greater=True,
+            ),
+        )
+
     def as_array(self) -> np.ndarray:
         return np.asarray(
             [
@@ -49,19 +88,44 @@ class SixDofPhysicsProfile:
 
 @dataclass(frozen=True, slots=True)
 class SixDofDomainRandomization:
-    mass_scale: tuple[float, float] = (1.0, 1.0)
+    motor_rpm_mass_scale: tuple[float, float] = (1.0, 1.0)
     linear_drag_scale: tuple[float, float] = (1.0, 1.0)
     rate_tau_scale: tuple[float, float] = (1.0, 1.0)
     thrust_scale_scale: tuple[float, float] = (1.0, 1.0)
     max_rate_scale: tuple[float, float] = (1.0, 1.0)
     motor_tau_s: tuple[float, float] | None = None
 
+    def __post_init__(self) -> None:
+        requirements = {
+            "motor_rpm_mass_scale": True,
+            "linear_drag_scale": False,
+            "rate_tau_scale": False,
+            "thrust_scale_scale": True,
+            "max_rate_scale": True,
+        }
+        for name, strictly_positive in requirements.items():
+            object.__setattr__(
+                self,
+                name,
+                require_interval(
+                    getattr(self, name),
+                    name,
+                    strictly_positive=strictly_positive,
+                ),
+            )
+        if self.motor_tau_s is not None:
+            object.__setattr__(
+                self,
+                "motor_tau_s",
+                require_interval(self.motor_tau_s, "motor_tau_s"),
+            )
+
     @property
     def enabled(self) -> bool:
         return any(
             lo != hi
             for lo, hi in (
-                self.mass_scale,
+                self.motor_rpm_mass_scale,
                 self.linear_drag_scale,
                 self.rate_tau_scale,
                 self.thrust_scale_scale,
@@ -70,16 +134,18 @@ class SixDofDomainRandomization:
         ) or self.motor_tau_s is not None
 
 
-LEGACY_PHYSICS = SixDofPhysicsProfile()
+BASELINE_PHYSICS = SixDofPhysicsProfile()
 CRAZYFLIE_BRUSHLESS_PHYSICS = SixDofPhysicsProfile(linear_drag=0.08, motor_tau_s=0.035)
-PUFFER_DRONE_PHYSICS = SixDofPhysicsProfile(
+# These values mirror the pinned Puffer Drone constants, but FlightRL does not
+# implement Puffer's coupled angular equations or RK4 integrator.
+PUFFER_PARAMETER_PHYSICS = SixDofPhysicsProfile(
     mass_kg=0.027,
     linear_drag=0.0,
     max_rate_rad_s=(20.0, 20.0, 20.0),
     motor_tau_s=0.150,
 )
 CRAZYFLIE_TRAINING_RANDOMIZATION = SixDofDomainRandomization(
-    mass_scale=(0.92, 1.10),
+    motor_rpm_mass_scale=(0.92, 1.10),
     linear_drag_scale=(0.75, 1.75),
     rate_tau_scale=(0.75, 1.45),
     thrust_scale_scale=(0.88, 1.16),
@@ -89,19 +155,19 @@ CRAZYFLIE_TRAINING_RANDOMIZATION = SixDofDomainRandomization(
 
 
 def resolve_physics_profile(value: str | SixDofPhysicsProfile | None) -> SixDofPhysicsProfile:
-    if value is None or value == "legacy":
-        return LEGACY_PHYSICS
+    if value is None or value == "baseline":
+        return BASELINE_PHYSICS
     if value == "crazyflie_brushless":
         return CRAZYFLIE_BRUSHLESS_PHYSICS
-    if value == "puffer_drone":
-        return PUFFER_DRONE_PHYSICS
+    if value == "puffer_parameters":
+        return PUFFER_PARAMETER_PHYSICS
     if isinstance(value, SixDofPhysicsProfile):
         return value
     path = Path(value)
     if path.exists():
         data = json.loads(path.read_text())
         payload = data.get("physics_profile", data)
-        default = LEGACY_PHYSICS
+        default = BASELINE_PHYSICS
         rates = payload.get("max_rate_rad_s", default.max_rate_rad_s)
         return SixDofPhysicsProfile(
             mass_kg=float(payload.get("mass_kg", default.mass_kg)),
@@ -130,11 +196,20 @@ def sample_physics(
     randomization: SixDofDomainRandomization,
     rng: np.random.Generator,
     count: int,
+    *,
+    action_mode: str,
 ) -> np.ndarray:
+    count = require_positive_int(count, "physics sample count")
+    if action_mode not in {"body_rate", "motor_rpm"}:
+        raise ValueError(f"unknown 6-DoF action mode {action_mode!r}")
     base = np.repeat(profile.as_array()[None, :], count, axis=0)
     if not randomization.enabled:
         return base
-    base[:, MASS] *= rng.uniform(*randomization.mass_scale, size=count)
+    if action_mode == "motor_rpm":
+        base[:, MASS] *= rng.uniform(
+            *randomization.motor_rpm_mass_scale,
+            size=count,
+        )
     base[:, LINEAR_DRAG] *= rng.uniform(*randomization.linear_drag_scale, size=count)
     base[:, RATE_TAU] *= rng.uniform(*randomization.rate_tau_scale, size=count)
     base[:, THRUST_SCALE] *= rng.uniform(*randomization.thrust_scale_scale, size=count)

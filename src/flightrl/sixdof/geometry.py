@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .validation import require_finite_real
+
 
 SENSOR_NAMES = ("front", "back", "left", "right", "up", "down")
 BODY_RAYS = np.asarray(
@@ -27,6 +29,19 @@ class AxisAlignedObstacle:
     y_max: float = 2.0
     z_min: float = 0.0
     z_max: float = 2.5
+
+    def __post_init__(self) -> None:
+        for low_name, high_name in (
+            ("x_min", "x_max"),
+            ("y_min", "y_max"),
+            ("z_min", "z_max"),
+        ):
+            low = require_finite_real(getattr(self, low_name), low_name)
+            high = require_finite_real(getattr(self, high_name), high_name)
+            if low >= high:
+                raise ValueError(f"{low_name} must be below {high_name}")
+            object.__setattr__(self, low_name, low)
+            object.__setattr__(self, high_name, high)
 
     @property
     def bounds(self) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
@@ -71,6 +86,35 @@ class BoxRoom(AxisAlignedObstacle):
     max_range_m: float = 4.0
     obstacles: tuple[AxisAlignedObstacle, ...] = ()
 
+    def __post_init__(self) -> None:
+        AxisAlignedObstacle.__post_init__(self)
+        object.__setattr__(
+            self,
+            "max_range_m",
+            require_finite_real(
+                self.max_range_m,
+                "max_range_m",
+                minimum=0.0,
+                strictly_greater=True,
+            ),
+        )
+        if not isinstance(self.obstacles, (tuple, list)):
+            raise TypeError("room obstacles must be a sequence")
+        obstacles = tuple(self.obstacles)
+        for obstacle in obstacles:
+            if not isinstance(obstacle, AxisAlignedObstacle):
+                raise TypeError("room obstacles must be axis-aligned obstacles")
+            if (
+                obstacle.x_min < self.x_min
+                or obstacle.x_max > self.x_max
+                or obstacle.y_min < self.y_min
+                or obstacle.y_max > self.y_max
+                or obstacle.z_min < self.z_min
+                or obstacle.z_max > self.z_max
+            ):
+                raise ValueError("room obstacle bounds must remain inside the room")
+        object.__setattr__(self, "obstacles", obstacles)
+
     def contains(self, positions: np.ndarray, margin: float = 0.03) -> np.ndarray:
         inside_room = (
             (positions[:, 0] >= self.x_min + margin)
@@ -113,5 +157,12 @@ def quat_to_matrix(quaternions: np.ndarray) -> np.ndarray:
 
 
 def normalize_quat(quaternions: np.ndarray) -> np.ndarray:
-    norm = np.linalg.norm(quaternions, axis=1, keepdims=True)
-    return quaternions / np.maximum(norm, 1e-8)
+    values = np.asarray(quaternions)
+    if values.ndim != 2 or values.shape[1] != 4:
+        raise ValueError("quaternion batch must have shape (N, 4)")
+    if values.dtype.kind not in "fiu" or not np.all(np.isfinite(values)):
+        raise ValueError("quaternion batch must contain finite numeric values")
+    norm = np.linalg.norm(values, axis=1, keepdims=True)
+    if np.any(norm <= 1e-8):
+        raise ValueError("quaternion norm must be nonzero")
+    return values / norm

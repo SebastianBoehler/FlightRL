@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .dataset import merge_datasets, sample_task_indices, task_probability_vector, teacher_labels
+from .dataset import task_probability_vector, teacher_labels
+from .episode_tasks import EpisodeTaskAssignments
 from .env import SixDofCrazyflieEnv
 from .evaluation import checkpoint_tasks, load_policy_from_checkpoint
 from .observation import augment_observation
@@ -32,7 +33,14 @@ def collect_policy_dataset(
     sampling_probabilities = task_probability_vector(selected_tasks, task_probabilities)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
-    obs, _ = env.reset(seed=seed)
+    env.reset(seed=seed)
+    episode_tasks = EpisodeTaskAssignments.sample(
+        rng=rng,
+        num_envs=num_envs,
+        tasks=selected_tasks,
+        probabilities=sampling_probabilities,
+    )
+    obs = episode_tasks.apply(env)
     observations, actions, task_indices_all, terminals = [], [], [], []
     beta = float(np.clip(beta, 0.0, 1.0))
     observation_mode = str(checkpoint.get("observation_mode", "base"))
@@ -40,7 +48,8 @@ def collect_policy_dataset(
     previous_action = np.zeros((num_envs, 4), dtype=np.float32)
     fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
-        local_indices = sample_task_indices(rng, num_envs, selected_tasks, sampling_probabilities)
+        local_indices = episode_tasks.indices
+        obs = episode_tasks.apply(env)
         policy_indices = policy_task_indices(selected_tasks, policy_tasks, local_indices)
         labels = teacher_labels(env, selected_tasks, local_indices)
         model_obs = append_task_encoding(obs.copy(), policy_indices, len(policy_tasks))
@@ -53,6 +62,7 @@ def collect_policy_dataset(
         observations.append(policy_obs.copy())
         actions.append(labels.copy())
         task_indices_all.append(policy_indices.copy())
+        episode_tasks.apply(env)
         obs, _reward, terminal, truncation, _info = env.step(executed)
         terminals.append(terminal.copy())
         previous_obs = model_obs.copy()
@@ -61,6 +71,8 @@ def collect_policy_dataset(
         done = terminal | truncation
         if np.any(done):
             obs = env.reset_done(done)
+            episode_tasks.resample(done)
+            obs = episode_tasks.apply(env)
             previous_action[done.astype(bool)] = 0.0
             fresh = done.astype(bool)
     return build_dataset(

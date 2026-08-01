@@ -46,12 +46,12 @@ def test_wandb_helper_uses_optional_module(monkeypatch, tmp_path) -> None:
     assert ("log", {"loss": 1.0}, 2) in calls
 
 
-def test_wandb_is_enabled_by_default_and_can_be_disabled() -> None:
+def test_wandb_requires_explicit_opt_in() -> None:
     parser = argparse.ArgumentParser()
     add_wandb_args(parser)
 
-    assert parser.parse_args([]).wandb is True
-    assert parser.parse_args(["--no-wandb"]).wandb is False
+    assert parser.parse_args([]).wandb is False
+    assert parser.parse_args(["--wandb"]).wandb is True
 
 
 def test_wandb_mode_defaults_from_environment(monkeypatch) -> None:

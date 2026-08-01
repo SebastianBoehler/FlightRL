@@ -5,18 +5,21 @@ from pathlib import Path
 import shutil
 
 from flightrl.puffer4_config import Puffer4ExportSettings, render_puffer4_ini
-from flightrl.puffer4_door_sections import build_fixed_door_sections
+from flightrl.puffer4_door_sections import build_fixed_door_teacher_sections
 
 
 DOOR_NATIVE_FILES = (
     "native_sixdof.c",
     "native_sixdof.h",
     "native_sixdof_context.inc",
+    "native_sixdof_observation.inc",
     "native_sixdof_step.inc",
     "native_sixdof_setpoint.c",
     "native_sixdof_setpoint.h",
     "native_door_action.c",
     "native_door_action.h",
+    "native_door_mission.c",
+    "native_door_mission.h",
     "native_door_episode_rng.c",
     "native_door_episode_rng.h",
     "native_door_episode_groups.inc",
@@ -41,7 +44,7 @@ DOOR_NATIVE_FILES = (
 
 
 @dataclass(frozen=True, slots=True)
-class DoorPufferExportResult:
+class DoorTeacherExportResult:
     env_name: str
     env_dir: Path
     config_path: Path
@@ -50,7 +53,7 @@ class DoorPufferExportResult:
 def export_fixed_door_assets(
     pufferlib_root: str | Path,
     settings: Puffer4ExportSettings,
-) -> DoorPufferExportResult:
+) -> DoorTeacherExportResult:
     root = Path(pufferlib_root).expanduser().resolve()
     env_dir = root / "ocean" / settings.env_name
     config_path = root / "config" / f"{settings.env_name}.ini"
@@ -66,6 +69,6 @@ def export_fixed_door_assets(
     binding = dimensions + (native_dir / "native_door_env_binding.c").read_text()
     (env_dir / "binding.c").write_text(binding)
     config_path.write_text(
-        render_puffer4_ini(build_fixed_door_sections(settings))
+        render_puffer4_ini(build_fixed_door_teacher_sections(settings))
     )
-    return DoorPufferExportResult(settings.env_name, env_dir, config_path)
+    return DoorTeacherExportResult(settings.env_name, env_dir, config_path)

@@ -8,22 +8,27 @@ from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
 from flightrl.hardware.console_capture import CrazyflieConsoleCapture
 from flightrl.hardware.errors import HardwareError
-from flightrl.hardware.motion import reset_crazyflie_estimator
-from flightrl.hardware.telemetry import default_log_path, write_sync_log
-
-
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless.toml"
+from flightrl.hardware.telemetry import default_log_path, validate_log_duration, write_sync_log
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Record Crazyflie telemetry to replay-friendly CSV")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="explicit hardware/deck profile for the connected stack",
+    )
     parser.add_argument("--duration-s", type=float, default=10.0)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--console-output", type=Path)
     parser.add_argument("--dry-run", action="store_true", help="validate config without recording telemetry")
     args = parser.parse_args(argv)
+
+    try:
+        validate_log_duration(args.duration_s)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     try:
         config = load_hardware_config(args.config)
@@ -38,7 +43,6 @@ def main(argv: list[str] | None = None) -> int:
             console_capture = CrazyflieConsoleCapture(scf.cf, args.console_output)
             console_capture.start()
             try:
-                reset_crazyflie_estimator(scf.cf)
                 count = write_sync_log(scf, modules, config, output, args.duration_s)
             finally:
                 console_capture.close()

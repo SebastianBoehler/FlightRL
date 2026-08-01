@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "flightrl"
 version = "0.1.0"
-description = "High-throughput planar drone RL simulator built with C and PufferLib Ocean-style bindings."
+description = "Mac-first research stack for a small AI Deck indoor-navigation policy."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -21,6 +21,7 @@ dependencies = [
 dev = [
   "plotly>=6",
   "pytest>=8.0",
+  "torch>=2.8",
 ]
 hardware = [
   "cflib>=0.1.32,<0.2",
@@ -44,5 +45,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+flightrl = ["native/*.c", "native/*.h", "native/*.inc"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

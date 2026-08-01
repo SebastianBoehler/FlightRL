@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .config import FlightConfig, load_config
+
+if TYPE_CHECKING:
+    from .env import DronePlanarEnv
 
 
 def make_env(

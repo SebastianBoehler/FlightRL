@@ -1,0 +1,22 @@
+[radio]
+uri = "radio://0/80/2M/E7E7E7E7E7"
+cache_dir = "artifacts/cflib_cache"
+
+[safety]
+default_height_m = 0.3
+velocity_m_s = 0.15
+turn_rate_deg_s = 45.0
+turn_angle_deg = 20.0
+hover_s = 2.0
+max_flight_s = 20.0
+requires_manual_confirm = true
+
+[decks]
+expect_flow_deck = true
+expect_multiranger = false
+expect_ai_deck = true
+expect_zranger = true
+
+[logging]
+period_ms = 50
+output_dir = "artifacts/crazyflie_logs"

@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+#define FLIGHTRL_DOOR_COLLISION_MARGIN_M 0.07f
+#define FLIGHTRL_DOOR_DETOUR_RELEASE_RADIUS_M 0.22f
+/* Collision shell plus transient tracking reserve at the edge-v3 envelope. */
+#define FLIGHTRL_DOOR_ROUTE_CLEARANCE_M 0.18f
+
 typedef struct {
     float door[6];
     float obstacle[6];
@@ -17,6 +22,7 @@ typedef struct {
     unsigned char initial_outside_fov;
     unsigned char target_observed;
     unsigned char search_phase;
+    float settle_radius_m;
 } FlightRLDoorScene;
 
 void flightrl_door_scene_sample(
@@ -26,7 +32,9 @@ void flightrl_door_scene_sample(
     FlightRLDoorScene *scene,
     uint32_t *rng,
     float obstacle_probability,
-    float layout_diversity
+    float layout_diversity,
+    float target_standoff_m,
+    float settle_radius_m
 );
 
 float flightrl_door_scene_distance(

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from flightrl.evidence_values import exact_true, failure_strings
 from flightrl.sim2real.actuator import summarize_motor_bench
 
 
@@ -17,14 +18,18 @@ REQUIREMENTS = {
     "measured_dynamics": {
         "blockers": ["measured_dynamics_missing", "hardware_dynamics_incomplete"],
         "acceptance": "Hardware config is derived from measured mass, arm length, actuator RPM curve, and replay-fitted drag/lag.",
-        "command": "python scripts/build_sim2real_profile.py --hardware-config configs/hardware/measured_crazyflie.toml --motor-calibration artifacts/replay/motor_bench_calibration.json --stationary-noise artifacts/replay/stationary_noise_summary.json --hardware-latency artifacts/replay/hardware_latency_summary.json --output artifacts/replay/sim2real_profile.json\npython scripts/export_sim2real_config.py --profile artifacts/replay/sim2real_profile.json --base-config configs/tasks/crazyflie_hover.toml --output-config configs/hardware/measured_crazyflie_sim.toml --report artifacts/replay/sim2real_config_export.json\npython scripts/build_sim2real_audit.py --hardware-config configs/hardware/measured_crazyflie.toml --motor-bench artifacts/crazyflie_logs/motor_bench.csv --stationary-noise artifacts/replay/stationary_noise_summary.json --hardware-latency artifacts/replay/hardware_latency_summary.json",
-        "safety": "Treat manufacturer/default values as priors, not transfer evidence.",
+        "command": None,
+        "safety": (
+            "No reviewed producer currently creates a measured hardware dynamics "
+            "config. Treat manufacturer, simulator-alignment, and composed defaults "
+            "as priors rather than transfer evidence."
+        ),
     },
     "calibration_flight": {
         "blockers": ["calibration_quality_missing", "calibration_flight_not_ready"],
         "acceptance": "Calibration quality passes floor/ranger coverage, command modes, monotonic time, and sample-rate checks.",
-        "command": "python scripts/crazyflie_calibration_flight.py --pattern line_yaw_square --height-m 0.55 --confirm-flight --output artifacts/crazyflie_logs/calibration_flight.csv",
-        "safety": "Only after mechanical repair, guards/props inspection, clear room, and manual supervision.",
+        "command": None,
+        "safety": "Blocked until a telemetry-watchdogged, supervisor-gated capture runner is implemented and reviewed.",
     },
     "replay_fit": {
         "blockers": ["replay_comparison_missing", "replay_comparison_failed", "deployment_readiness_blocked"],
@@ -41,19 +46,22 @@ REQUIREMENTS = {
     "latency": {
         "blockers": ["latency_unmeasured", "latency_failed"],
         "acceptance": "Command-to-estimator and sensor logging delays are measured or bounded for replay alignment.",
-        "command": "python scripts/crazyflie_calibration_flight.py --dry-run --pattern yaw\npython scripts/summarize_hardware_latency.py --input artifacts/crazyflie_logs/calibration_flight.csv --output artifacts/replay/hardware_latency_summary.json",
-        "safety": "Start with dry-run; live latency measurement needs a dedicated scripted pulse after repair.",
+        "command": None,
+        "safety": "Blocked until a dedicated bounded pulse collector exists; do not infer latency from unrelated logs.",
     },
 }
 
 
 def build_data_plan(audit_path: Path, *, motor_bench: Path | None = None) -> dict[str, Any]:
     audit = json.loads(audit_path.read_text())
-    blockers = set(audit.get("blocking_items", []))
+    parsed_blockers = failure_strings(audit.get("blocking_items", []))
+    blockers = set(parsed_blockers or [])
+    if parsed_blockers is None:
+        blockers.add("audit_blockers_invalid")
     requirements = [requirement_record(name, spec, blockers) for name, spec in REQUIREMENTS.items()]
     report = {
         "audit": str(audit_path),
-        "transfer_ready": bool(audit.get("transfer_ready", False)),
+        "transfer_ready": exact_true(audit.get("transfer_ready")) and not blockers,
         "audit_blockers": sorted(blockers),
         "requirements": requirements,
         "partial_evidence": partial_evidence(motor_bench),
@@ -64,7 +72,7 @@ def build_data_plan(audit_path: Path, *, motor_bench: Path | None = None) -> dic
     return report
 
 
-def requirement_record(name: str, spec: dict[str, str | list[str]], blockers: set[str]) -> dict[str, Any]:
+def requirement_record(name: str, spec: dict[str, Any], blockers: set[str]) -> dict[str, Any]:
     matched = [blocker for blocker in spec["blockers"] if blocker in blockers]
     status = "blocked" if matched else "satisfied"
     if name in {"actuator_curve", "calibration_flight", "replay_fit"} and "m3_motor_issue" in blockers:
@@ -113,7 +121,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     lines.extend(["", "## Commands", ""])
     for record in report["next_actions"]:
-        lines.extend([f"### {record['name']}", "", "```bash", record["command"], "```", "", f"Safety: {record['safety']}", ""])
+        lines.extend([f"### {record['name']}", ""])
+        if record["command"] is None:
+            lines.append("No reviewed collection command is currently available.")
+        else:
+            lines.extend(["```bash", record["command"], "```"])
+        lines.extend(["", f"Safety: {record['safety']}", ""])
     motor = report["partial_evidence"].get("motor_bench", {})
     if motor.get("present"):
         lines.extend(["## Partial Evidence", "", f"- Motor bench passed: `{motor.get('passed')}`; failures: `{', '.join(motor.get('failures', [])) or 'none'}`."])

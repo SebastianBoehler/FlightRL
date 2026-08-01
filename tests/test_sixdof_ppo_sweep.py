@@ -29,6 +29,8 @@ def test_ppo_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
         [
             sys.executable,
             str(ROOT / "scripts" / "run_sixdof_ppo_sweep.py"),
+            "--init-checkpoint",
+            str(tmp_path / "init.pt"),
             "--max-variants",
             "1",
             "--report",

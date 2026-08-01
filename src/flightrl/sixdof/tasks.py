@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 
-TASKS = ("position_yaw", "obstacle_avoidance", "attitude", "circle")
+TASKS = ("position_yaw", "obstacle_avoidance", "circle")
 MULTITASK = "multitask"
 
 

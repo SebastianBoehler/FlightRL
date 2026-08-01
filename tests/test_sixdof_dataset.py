@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import torch
 
-from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof import SixDofPolicy, build_checkpoint_payload
 from flightrl.sixdof.dagger import collect_policy_dataset
 from flightrl.sixdof.dataset import collect_teacher_dataset, load_dataset, write_dataset
 from flightrl.sixdof.offline import OfflineTrainConfig, checkpoint_score
@@ -60,42 +60,6 @@ def test_collect_teacher_dataset_supports_history_observation_mode() -> None:
     )
     assert dataset["observations"].shape == (8, 60)
     assert dataset["metadata"]["observation_mode"] == "history1"
-
-
-def test_action_gap_cli_reports_per_task(tmp_path: Path) -> None:
-    dataset = collect_teacher_dataset(task_spec="position_yaw", num_envs=4, steps=2, seed=7, use_native_step=False)
-    dataset_path = write_dataset(tmp_path / "teacher.npz", dataset)
-    checkpoint = tmp_path / "policy.pt"
-    torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 28,
-            "task": "position_yaw",
-            "tasks": ["position_yaw"],
-        },
-        checkpoint,
-    )
-    report_path = tmp_path / "gap.json"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "evaluate_sixdof_action_gap.py"),
-            "--checkpoint",
-            str(checkpoint),
-            "--dataset",
-            str(dataset_path),
-            "--output",
-            str(report_path),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    report = json.loads(report_path.read_text())
-    assert report["samples"] == 8
-    assert "position_yaw" in report["per_task"]
 
 
 def test_offline_training_cli_writes_checkpoint(tmp_path: Path) -> None:
@@ -157,13 +121,11 @@ def test_eval_selected_checkpoint_score_uses_survival_for_failed_candidates() ->
 def test_collect_policy_dataset_roundtrip(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.pt"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 28,
-            "task": "position_yaw",
-            "tasks": ["position_yaw"],
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16).state_dict(),
+            tasks=("position_yaw",),
+            hidden_size=16,
+        ),
         checkpoint,
     )
     dataset = collect_policy_dataset(
@@ -201,13 +163,11 @@ def test_dagger_dataset_cli_appends_compatible_dataset(tmp_path: Path) -> None:
     base_path = write_dataset(tmp_path / "base.npz", base)
     checkpoint = tmp_path / "policy.pt"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 28,
-            "task": "position_yaw",
-            "tasks": ["position_yaw"],
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16).state_dict(),
+            tasks=("position_yaw",),
+            hidden_size=16,
+        ),
         checkpoint,
     )
     output = tmp_path / "merged.npz"
@@ -241,13 +201,11 @@ def test_dagger_training_cli_writes_iteration_report(tmp_path: Path) -> None:
     dataset_path = write_dataset(tmp_path / "seed.npz", dataset)
     initial = tmp_path / "initial.pt"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 28,
-            "task": "position_yaw",
-            "tasks": ["position_yaw"],
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16).state_dict(),
+            tasks=("position_yaw",),
+            hidden_size=16,
+        ),
         initial,
     )
     output_dir = tmp_path / "dagger"

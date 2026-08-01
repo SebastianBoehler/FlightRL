@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from flightrl.evidence_values import exact_nonnegative_int, exact_true, failure_strings, finite_number
+from flightrl.sim2real.audit_evidence import valid_hardware_parameters, valid_stationary_signals
+from flightrl.sim2real.noise import MIN_STATIONARY_ROWS, MIN_STATIONARY_SAMPLE_RATE_HZ
 from flightrl.sim2real.hardware_config import summarize_hardware_model
 
 
@@ -48,6 +51,8 @@ def read_evidence(path: Path | None, key: str) -> dict[str, Any]:
     if path is None or not path.exists():
         return {"present": False, "kind": key}
     data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        return {"present": True, "kind": key, "path": str(path), "invalid": True}
     data["present"] = True
     data["path"] = str(path)
     return data
@@ -59,52 +64,66 @@ def collect_failures(hardware: dict[str, Any], motor: dict[str, Any], noise: dic
         failures.append("hardware_config_missing")
     elif not hardware["measured"]:
         failures.append("measured_dynamics_missing")
-    if any(value is None for value in hardware.get("parameters", {}).values()):
+    parameters = hardware.get("parameters", {})
+    if not isinstance(parameters, dict) or any(value is None for value in parameters.values()):
         failures.append("hardware_dynamics_incomplete")
+    if not valid_hardware_parameters(parameters):
+        failures.append("hardware_dynamics_invalid")
     if not motor["present"]:
         failures.append("motor_calibration_missing")
-    elif not motor.get("summary", {}).get("passed"):
+    elif not evidence_passed(motor, "passed") or not valid_motor_evidence(motor):
         failures.append("motor_calibration_failed")
     if not noise["present"]:
         failures.append("stationary_noise_missing")
-    elif not noise.get("summary", {}).get("stationary_noise_ready"):
+    elif not evidence_passed(noise, "stationary_noise_ready") or not valid_noise_evidence(noise):
         failures.append("stationary_noise_failed")
     if not latency["present"]:
         failures.append("hardware_latency_missing")
-    elif not latency.get("summary", {}).get("latency_ready"):
+    elif not evidence_passed(latency, "latency_ready") or not valid_latency_evidence(latency):
         failures.append("hardware_latency_failed")
     return sorted(dict.fromkeys(failures))
 
 
 def compact_motor(report: dict[str, Any]) -> dict[str, Any]:
-    summary = report.get("summary", {})
+    raw_summary = report.get("summary", {})
+    failures = compact_failures(raw_summary, "motor_calibration")
+    if not valid_motor_evidence(report):
+        failures.append("motor_calibration_invalid_metrics")
     return {
         "present": report.get("present", False),
         "path": report.get("path"),
-        "passed": bool(summary.get("passed", False)),
-        "failures": summary.get("failures", []),
+        "passed": evidence_passed(report, "passed") and valid_motor_evidence(report),
+        "failures": sorted(dict.fromkeys(failures)),
         "simulator_priors": report.get("simulator_priors", {}),
     }
 
 
 def compact_noise(report: dict[str, Any]) -> dict[str, Any]:
-    summary = report.get("summary", {})
+    raw_summary = report.get("summary", {})
+    summary = raw_summary if isinstance(raw_summary, dict) else {}
+    failures = compact_failures(raw_summary, "stationary_noise")
+    if not valid_noise_evidence(report):
+        failures.append("stationary_noise_invalid_metrics")
     return {
         "present": report.get("present", False),
         "path": report.get("path"),
-        "passed": bool(summary.get("stationary_noise_ready", False)),
-        "failures": summary.get("failures", []),
+        "passed": evidence_passed(report, "stationary_noise_ready") and valid_noise_evidence(report),
+        "failures": sorted(dict.fromkeys(failures)),
         "duration_s": summary.get("duration_s"),
     }
 
 
 def compact_latency(report: dict[str, Any]) -> dict[str, Any]:
-    summary = report.get("summary", {})
+    raw_summary = report.get("summary", {})
+    summary = raw_summary if isinstance(raw_summary, dict) else {}
+    failures = compact_failures(raw_summary, "hardware_latency")
+    if not valid_latency_evidence(report):
+        failures.append("hardware_latency_invalid_metrics")
     return {
         "present": report.get("present", False),
         "path": report.get("path"),
-        "passed": bool(summary.get("latency_ready", False)),
-        "failures": summary.get("failures", []),
+        "passed": evidence_passed(report, "latency_ready") and valid_latency_evidence(report),
+        "failures": sorted(dict.fromkeys(failures)),
         "median_latency_s": summary.get("median_latency_s"),
     }
 
@@ -112,7 +131,7 @@ def compact_latency(report: dict[str, Any]) -> dict[str, Any]:
 def simulator_overlay(hardware: dict[str, Any], motor: dict[str, Any], noise: dict[str, Any], latency: dict[str, Any]) -> dict[str, Any]:
     return {
         "drone": hardware["parameters"],
-        "actuator": motor["simulator_priors"],
+        "actuator": compact_actuator_priors(motor),
         "sensors": {
             "state_noise_std": max_std(noise, STATE_COLUMNS),
             "attitude_noise_std_deg": max_std(noise, ATTITUDE_COLUMNS),
@@ -125,8 +144,9 @@ def simulator_overlay(hardware: dict[str, Any], motor: dict[str, Any], noise: di
 
 
 def recommend_randomization(motor: dict[str, Any], noise: dict[str, Any], latency: dict[str, Any]) -> dict[str, Any]:
-    gain_imbalance = motor.get("summary", {}).get("gain_imbalance") or 0.0
-    latency_s = latency.get("summary", {}).get("median_latency_s") or 0.0
+    gain_imbalance = finite_number(motor.get("summary", {}).get("gain_imbalance"))
+    latency_s = finite_number(latency.get("summary", {}).get("median_latency_s"))
+    assert gain_imbalance is not None and latency_s is not None
     return {
         "enabled": True,
         "motor_gain_scale": max(0.02, float(gain_imbalance)),
@@ -139,8 +159,83 @@ def recommend_randomization(motor: dict[str, Any], noise: dict[str, Any], latenc
 
 def max_std(report: dict[str, Any], columns: list[str]) -> float:
     signals = report.get("signals", {})
-    values = [signals[column]["std"] for column in columns if column in signals and signals[column].get("std") is not None]
-    return float(max(values, default=0.0))
+    values = [finite_number(signals[column].get("std")) for column in columns if isinstance(signals.get(column), dict)]
+    valid = [value for value in values if value is not None and value >= 0.0]
+    return max(valid, default=0.0)
+
+
+def evidence_passed(report: dict[str, Any], flag: str) -> bool:
+    summary = report.get("summary", {})
+    failures = failure_strings(summary.get("failures", [])) if isinstance(summary, dict) else None
+    return isinstance(summary, dict) and exact_true(summary.get(flag)) and failures == []
+
+
+def compact_failures(summary: object, label: str) -> list[str]:
+    if not isinstance(summary, dict):
+        return [f"{label}_invalid_summary"]
+    failures = failure_strings(summary.get("failures", []))
+    return failures if failures is not None else [f"{label}_invalid_failures"]
+
+
+def valid_motor_evidence(report: dict[str, Any]) -> bool:
+    summary = report.get("summary", {})
+    priors = report.get("simulator_priors", {})
+    gains = priors.get("relative_motor_gains", {}) if isinstance(priors, dict) else {}
+    gain_imbalance = finite_number(summary.get("gain_imbalance")) if isinstance(summary, dict) else None
+    slope = finite_number(priors.get("mean_slope_rpm_per_power")) if isinstance(priors, dict) else None
+    gain_values = [finite_number(gains.get(str(motor))) for motor in range(1, 5)] if isinstance(gains, dict) else []
+    return (
+        isinstance(priors, dict)
+        and exact_true(priors.get("present"))
+        and gain_imbalance is not None
+        and gain_imbalance >= 0.0
+        and slope is not None
+        and slope > 0.0
+        and len(gain_values) == 4
+        and all(value is not None and value > 0.0 for value in gain_values)
+    )
+
+
+def valid_noise_evidence(report: dict[str, Any]) -> bool:
+    summary = report.get("summary", {})
+    duration = finite_number(summary.get("duration_s")) if isinstance(summary, dict) else None
+    sample_rate = finite_number(summary.get("sample_rate_hz")) if isinstance(summary, dict) else None
+    rows = exact_nonnegative_int(summary.get("rows")) if isinstance(summary, dict) else None
+    signals = report.get("signals", {})
+    columns = STATE_COLUMNS + ATTITUDE_COLUMNS + IMU_COLUMNS + RANGE_COLUMNS
+    stds = [finite_number(signals.get(column, {}).get("std")) for column in columns if isinstance(signals.get(column), dict)] if isinstance(signals, dict) else []
+    return (
+        duration is not None
+        and duration > 0.0
+        and sample_rate is not None
+        and sample_rate >= MIN_STATIONARY_SAMPLE_RATE_HZ
+        and rows is not None
+        and rows >= MIN_STATIONARY_ROWS
+        and len(stds) == len(columns)
+        and all(value is not None and value >= 0.0 for value in stds)
+        and valid_stationary_signals(signals)
+    )
+
+
+def valid_latency_evidence(report: dict[str, Any]) -> bool:
+    summary = report.get("summary", {})
+    if not isinstance(summary, dict):
+        return False
+    accepted = exact_nonnegative_int(summary.get("accepted_pairs"))
+    latency = finite_number(summary.get("median_latency_s"))
+    return accepted is not None and accepted > 0 and latency is not None and latency >= 0.0
+
+
+def compact_actuator_priors(report: dict[str, Any]) -> dict[str, Any]:
+    priors = report["simulator_priors"]
+    return {
+        "present": True,
+        "mean_slope_rpm_per_power": finite_number(priors["mean_slope_rpm_per_power"]),
+        "relative_motor_gains": {
+            str(motor): finite_number(priors["relative_motor_gains"][str(motor)])
+            for motor in range(1, 5)
+        },
+    }
 
 
 def render_markdown(report: dict[str, Any]) -> str:

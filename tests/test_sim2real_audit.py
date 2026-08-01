@@ -5,7 +5,14 @@ import json
 import subprocess
 import sys
 
+from flightrl.evidence_scope import EDGE_DEPLOYMENT_VERIFIER_MISSING
 from flightrl.sim2real.audit import build_audit, render_markdown
+from sim2real_audit_test_support import (
+    replay_signals,
+    stationary_signals,
+    write_config,
+    write_live_sensor_profile,
+)
 
 
 def test_audit_blocks_placeholder_and_missing_evidence(tmp_path) -> None:
@@ -51,7 +58,17 @@ def test_audit_reports_failed_replay_and_calibration(tmp_path) -> None:
     calibration = tmp_path / "quality.json"
     replay = tmp_path / "replay.json"
     calibration.write_text(json.dumps({"summary": {"replay_calibration_ready": False, "failures": ["floor_range"]}}))
-    replay.write_text(json.dumps({"aligned": {"samples": 10, "signals": {"stateEstimate.x": {"rmse": 0.6}, "range.front": {"rmse": 1000.0}}}}))
+    replay.write_text(
+        json.dumps(
+            {
+                "aligned": {
+                    "samples": 10,
+                    "overlap_duration_s": 1.0,
+                    "signals": replay_signals(10, 0.6, 1000.0),
+                }
+            }
+        )
+    )
 
     report = build_audit(hardware_config=config, calibration_quality=calibration, replay_comparison=replay)
 
@@ -64,7 +81,22 @@ def test_audit_consumes_sensor_noise_and_latency_evidence(tmp_path) -> None:
     config = write_config(tmp_path, "crazyflie_measured.toml", measured=True)
     noise = tmp_path / "noise.json"
     latency = tmp_path / "latency.json"
-    noise.write_text(json.dumps({"summary": {"stationary_noise_ready": True, "failures": [], "duration_s": 60.0}}))
+    noise.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "stationary_noise_ready": True,
+                    "failures": [],
+                    "rows": 100,
+                    "duration_s": 60.0,
+                    "sample_rate_hz": 10.0,
+                    "max_position_span_m": 0.01,
+                    "max_attitude_span_deg": 0.2,
+                },
+                "signals": stationary_signals(),
+            }
+        )
+    )
     latency.write_text(json.dumps({"summary": {"latency_ready": True, "failures": [], "accepted_pairs": 2, "median_latency_s": 0.08}}))
 
     report = build_audit(hardware_config=config, stationary_noise=noise, hardware_latency=latency)
@@ -77,36 +109,38 @@ def test_audit_consumes_sensor_noise_and_latency_evidence(tmp_path) -> None:
 
 def test_audit_accepts_external_sensor_profile(tmp_path) -> None:
     config = write_config(tmp_path, "crazyflie_measured.toml", measured=True, include_noisy_state=False)
-    sensor_profile = tmp_path / "sensor_profile.json"
-    sensor_profile.write_text(
-        json.dumps(
-            {
-                "sensor_profile": {
-                    "name": "measured_unit",
-                    "range_noise_std_m": 0.012,
-                    "range_dropout_prob": 0.03,
-                    "action_lag_s": 0.04,
-                }
-            }
-        )
-    )
+    sensor_profile = write_live_sensor_profile(tmp_path)
 
     report = build_audit(hardware_config=config, sensor_profile=sensor_profile)
 
     assert report["sensor_profile"]["passed"] is True
-    assert report["sensor_profile"]["range_noise_std_m"] == 0.012
+    assert report["sensor_profile"]["action_lag_s"] > 0.0
     assert "sensor_model_incomplete" not in report["blocking_items"]
 
 
 def test_audit_blocks_empty_deployment_readiness(tmp_path) -> None:
     config = write_config(tmp_path, "crazyflie_measured.toml", measured=True)
     deployment = tmp_path / "deployment_readiness.json"
-    deployment.write_text(json.dumps({"summary": {"total": 0, "ready": 0, "blocked": 0}}))
+    deployment.write_text(
+        json.dumps(
+            {
+                "schema": "flightrl.edge_v3.deployment_readiness.v1",
+                "target": "ai_deck_gap8",
+                "evidence_scope": "edge_deployment",
+                "deployment_authority": True,
+                "summary": {"total": 0, "ready": 0, "blocked": 0},
+                "records": [],
+            }
+        )
+    )
 
     report = build_audit(hardware_config=config, deployment_readiness=deployment)
 
     assert report["deployment_readiness"]["passed"] is False
-    assert report["deployment_readiness"]["failures"] == ["no_candidates"]
+    assert report["deployment_readiness"]["failures"] == [
+        EDGE_DEPLOYMENT_VERIFIER_MISSING,
+        "no_candidates",
+    ]
     assert "deployment_readiness_blocked" in report["blocking_items"]
 
 
@@ -132,37 +166,3 @@ def test_cli_writes_json_and_markdown(tmp_path) -> None:
     assert "transfer_ready=False" in result.stdout
     assert output.exists()
     assert output.with_suffix(".md").exists()
-
-
-def write_config(tmp_path, name: str, *, measured: bool, include_noisy_state: bool = True):
-    path = tmp_path / name
-    path.write_text(
-        f"""
-[environment]
-dt = 0.02
-action_mode = "motor_quad"
-
-[sim2real]
-measured = {str(measured).lower()}
-source = "test_fixture"
-
-[drone]
-mass = 1.15
-inertia = 0.09
-arm_length = 0.23
-drag = 0.14
-angular_drag = 0.09
-hover_thrust = 10.6
-thrust_gain = 4.2
-max_total_thrust = 19.5
-max_pitch_torque = 2.2
-actuator_tau = 0.11
-
-[sensors]
-include_noisy_state = {str(include_noisy_state).lower()}
-
-[domain_randomization]
-enabled = true
-""".strip()
-    )
-    return path

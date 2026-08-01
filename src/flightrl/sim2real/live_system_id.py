@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import math
 from pathlib import Path
@@ -8,18 +7,27 @@ from typing import Any
 
 import numpy as np
 
+from flightrl.sim2real.live_system_id_input import finite_float, read_tracking_rows
+
+MIN_TRACKING_SAMPLES = 20
+
 
 def build_live_system_id_report(*, flight_logs: list[Path], base_profile: Path | None = None, name: str) -> dict[str, Any]:
     run_reports = [analyze_run(path) for path in flight_logs]
-    response = aggregate_response(run_reports)
+    tracking_runs = [run for run in run_reports if tracking_ready(run)]
+    response = aggregate_response(tracking_runs)
     sensor_profile = calibrated_sensor_profile(base_profile, response, name)
+    failures = [] if tracking_runs else ["no_valid_tracking_samples"]
     return {
         "name": name,
         "inputs": {"flight_logs": [str(path) for path in flight_logs], "base_profile": str(base_profile) if base_profile else None},
         "summary": {
             "runs": len(run_reports),
             "rows": int(sum(run["rows"] for run in run_reports)),
-            "profile_ready": bool(run_reports),
+            "tracking_runs": len(tracking_runs),
+            "tracking_samples": int(sum(run["tracking"]["samples"] for run in tracking_runs)),
+            "profile_ready": not failures,
+            "failures": failures,
             "battery_v_min": min((run["battery"]["min_v"] for run in run_reports if run["battery"]["min_v"] is not None), default=None),
             "battery_level_min": min((run["battery"]["min_level"] for run in run_reports if run["battery"]["min_level"] is not None), default=None),
         },
@@ -31,7 +39,7 @@ def build_live_system_id_report(*, flight_logs: list[Path], base_profile: Path |
 
 
 def analyze_run(path: Path) -> dict[str, Any]:
-    rows = read_rows(path)
+    rows = read_tracking_rows(path)
     time_s = np.asarray([value(row, "host_time_s") for row in rows], dtype=np.float64)
     command = np.asarray([[value(row, "vx_m_s"), value(row, "vy_m_s")] for row in rows], dtype=np.float64)
     velocity = np.asarray([body_velocity(row) for row in rows], dtype=np.float64)
@@ -117,15 +125,29 @@ def aggregate_response(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def read_rows(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="") as handle:
-        return list(csv.DictReader(handle))
+def tracking_ready(run: dict[str, Any]) -> bool:
+    tracking = run.get("tracking", {})
+    samples = tracking.get("samples")
+    required = ("lag_s", "gain", "rmse_m_s", "tau_s")
+    values = {key: finite_float(tracking.get(key)) for key in required}
+    return (
+        type(samples) is int
+        and samples >= MIN_TRACKING_SAMPLES
+        and all(value is not None for value in values.values())
+        and values["lag_s"] >= 0.0
+        and values["gain"] > 0.0
+        and values["rmse_m_s"] >= 0.0
+        and values["tau_s"] >= 0.0
+    )
 
 
 def body_velocity(row: dict[str, str]) -> tuple[float, float]:
     vx = value(row, "stateEstimate.vx")
     vy = value(row, "stateEstimate.vy")
-    yaw = math.radians(value(row, "stabilizer.yaw", "stateEstimate.yaw"))
+    yaw_deg = finite_float(row.get("stabilizer.yaw"))
+    if yaw_deg is None:
+        yaw_deg = value(row, "stateEstimate.yaw")
+    yaw = math.radians(yaw_deg)
     cy, sy = math.cos(yaw), math.sin(yaw)
     return cy * vx + sy * vy, -sy * vx + cy * vy
 
@@ -198,22 +220,15 @@ def load_sensor_profile(path: Path | None) -> dict[str, Any]:
     return dict(data.get("sensor_profile", data))
 
 
-def value(row: dict[str, str], key: str, fallback: str | None = None) -> float:
-    raw = row.get(key)
-    if (raw is None or raw == "") and fallback is not None:
-        raw = row.get(fallback)
-    try:
-        return float(raw if raw not in {None, ""} else 0.0)
-    except (TypeError, ValueError):
-        return 0.0
+def value(row: dict[str, str], key: str) -> float:
+    parsed = finite_float(row.get(key))
+    if parsed is None:
+        raise ValueError(f"invalid required tracking value for {key}")
+    return parsed
 
 
 def maybe_value(row: dict[str, str], key: str) -> float | None:
-    raw = row.get(key)
-    try:
-        return float(raw) if raw not in {None, ""} else None
-    except (TypeError, ValueError):
-        return None
+    return finite_float(row.get(key))
 
 
 def render_markdown(report: dict[str, Any]) -> str:

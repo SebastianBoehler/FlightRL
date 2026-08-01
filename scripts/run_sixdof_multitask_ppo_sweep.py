@@ -31,8 +31,8 @@ class MultitaskPpoVariant:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run profile-gated multitask 6-DoF PPO sweeps")
-    parser.add_argument("--init-checkpoint", default="artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt")
-    parser.add_argument("--baseline-checkpoint", default="artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt")
+    parser.add_argument("--init-checkpoint", required=True)
+    parser.add_argument("--baseline-checkpoint", default=None)
     parser.add_argument("--output-dir", default="artifacts/ppo/multitask_profile_sweep")
     parser.add_argument("--report", default="artifacts/replay/sixdof_multitask_ppo_sweep.json")
     parser.add_argument("--run", action="store_true")

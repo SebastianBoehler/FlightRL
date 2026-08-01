@@ -25,8 +25,8 @@ class ProbabilityVariant:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run 6-DoF DAgger task-probability sweeps")
-    parser.add_argument("--seed-dataset", default="artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.npz")
-    parser.add_argument("--initial-checkpoint", default="artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.pt")
+    parser.add_argument("--seed-dataset", required=True)
+    parser.add_argument("--initial-checkpoint", required=True)
     parser.add_argument("--output-dir", default="artifacts/task_probability_sweep/safe_tasks")
     parser.add_argument("--report", default="artifacts/replay/sixdof_task_probability_sweep.json")
     parser.add_argument("--run", action="store_true")

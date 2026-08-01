@@ -46,6 +46,34 @@ def test_position_yaw_observation_keeps_reset_target_yaw() -> None:
     assert abs(obs[0, 17]) < 1e-5
 
 
+def test_multitask_observation_uses_each_episode_task_yaw_reference() -> None:
+    env = SixDofCrazyflieEnv(num_envs=2, seed=39, task="position_yaw")
+    env.position[:] = np.asarray(
+        [[0.75, 0.0, 0.65], [0.75, 0.0, 0.65]],
+        dtype=np.float32,
+    )
+    env.target_position[:] = np.asarray(
+        [[0.0, 0.0, 0.65], [0.0, 0.0, 0.65]],
+        dtype=np.float32,
+    )
+    env.target_yaw[:] = 0.0
+    env.quaternion[:] = euler_to_quat(
+        np.zeros(2),
+        np.zeros(2),
+        np.full(2, np.pi / 2.0, dtype=np.float32),
+    )
+    env.set_native_context(
+        task_indices=np.asarray([0, 1]),
+        tasks=("position_yaw", "circle"),
+    )
+
+    obs = env.observation()
+
+    assert abs(obs[0, 16] + 1.0) < 1e-5
+    assert abs(obs[1, 16]) < 1e-5
+    assert abs(obs[1, 17] - 1.0) < 1e-5
+
+
 def test_native_circle_step_recomputes_tangent_yaw_observation() -> None:
     env = SixDofCrazyflieEnv(num_envs=1, seed=41, task="circle", use_native_step=True)
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)

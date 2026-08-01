@@ -9,9 +9,12 @@ from typing import Any
 DEFAULT_WANDB_ENV = Path(".secrets/wandb.env")
 
 
-def add_wandb_args(parser: argparse.ArgumentParser, *, default_project: str = "FlightRL", default_enabled: bool = True) -> None:
-    parser.add_argument("--wandb", dest="wandb", action="store_true", default=default_enabled, help="Track this training run with Weights & Biases.")
-    parser.add_argument("--no-wandb", dest="wandb", action="store_false", help="Disable Weights & Biases for this run.")
+def add_wandb_args(parser: argparse.ArgumentParser, *, default_project: str = "FlightRL") -> None:
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Opt in to tracking this run with Weights & Biases.",
+    )
     parser.add_argument("--wandb-project", default=default_project)
     parser.add_argument("--wandb-entity")
     parser.add_argument("--wandb-env-file", default=str(DEFAULT_WANDB_ENV))

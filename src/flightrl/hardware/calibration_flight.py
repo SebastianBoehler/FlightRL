@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 
 CALIBRATION_PATTERNS = ("line", "yaw", "square", "line_yaw_square", "full_yaw_square")
@@ -47,10 +48,10 @@ def build_calibration_sequence(
     speed_m_s: float = 0.12,
     yawrate_deg_s: float = 20.0,
 ) -> list[CalibrationCommand]:
-    if segment_s <= 0.0 or hover_s < 0.0:
-        raise ValueError("segment_s must be positive and hover_s must be non-negative")
-    if speed_m_s <= 0.0 or yawrate_deg_s <= 0.0:
-        raise ValueError("speed_m_s and yawrate_deg_s must be positive")
+    _bounded("segment_s", segment_s, 0.1, 10.0)
+    _bounded("hover_s", hover_s, 0.0, 10.0)
+    _bounded("speed_m_s", speed_m_s, 0.05, 0.5)
+    _bounded("yawrate_deg_s", yawrate_deg_s, 5.0, 120.0)
     sequence = [CalibrationCommand("hover_start", hover_s)]
     if pattern == "full_yaw_square":
         sequence.append(
@@ -112,3 +113,10 @@ def command_row(command: CalibrationCommand) -> dict[str, float | str]:
         "vz_m_s": command.vz_m_s,
         "yawrate_deg_s": command.yawrate_deg_s,
     }
+
+
+def _bounded(name: str, value: float, low: float, high: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number in [{low}, {high}]")
+    if not isfinite(float(value)) or not low <= value <= high:
+        raise ValueError(f"{name} must be a finite number in [{low}, {high}]")

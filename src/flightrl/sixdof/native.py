@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from flightrl import _binding
-from flightrl.sixdof.physics import LEGACY_PHYSICS
+from flightrl.sixdof.physics import BASELINE_PHYSICS
 
 
 def native_step(
@@ -20,7 +20,7 @@ def native_step(
 ) -> None:
     num_envs = position.shape[0]
     resolved_thrust = thrust_state if thrust_state is not None else np.ones(num_envs, dtype=np.float32)
-    resolved_physics = physics_params if physics_params is not None else np.repeat(LEGACY_PHYSICS.as_array()[None, :], num_envs, axis=0)
+    resolved_physics = physics_params if physics_params is not None else np.repeat(BASELINE_PHYSICS.as_array()[None, :], num_envs, axis=0)
     _binding.sixdof_step(
         _float32(position),
         _float32(velocity),
@@ -36,6 +36,8 @@ def native_step(
 
 
 def native_step_env(env, actions: np.ndarray) -> None:
+    if env.room.obstacles:
+        raise ValueError("native 6-DoF stepping does not support BoxRoom interior obstacles")
     if not env.native_context_required:
         _binding.sixdof_step_env(
             _float32(env.position),

@@ -8,7 +8,15 @@ from .puffer4_config import Puffer4ExportSettings, render_puffer4_ini
 from .puffer4_sixdof_sections import build_sixdof_sections
 
 
-SIXDOF_NATIVE_FILES = ("native_sixdof.c", "native_sixdof.h", "native_sixdof_context.inc", "native_sixdof_step.inc")
+SIXDOF_NATIVE_FILES = (
+    "native_puffer_contract.h",
+    "native_puffer_sixdof_reset.inc",
+    "native_sixdof.c",
+    "native_sixdof.h",
+    "native_sixdof_context.inc",
+    "native_sixdof_observation.inc",
+    "native_sixdof_step.inc",
+)
 
 
 @dataclass(slots=True)
@@ -23,6 +31,7 @@ def render_sixdof_puffer4_binding() -> str:
 #include <stdint.h>
 #include <string.h>
 
+#include "native_puffer_contract.h"
 #include "native_sixdof.h"
 #include "native_sixdof.c"
 
@@ -72,13 +81,21 @@ typedef struct {
 	    float near_wall_min_clearance_m;
 	    float near_wall_max_clearance_m;
 	    float near_wall_yaw_jitter_rad;
+	    float initial_xy_abs;
+	    float target_xy_abs;
 	    float reset_z_min;
 	    float reset_z_max;
+	    float reset_z_margin;
 	    float target_z_min;
 	    float target_z_max;
+	    float attitude_std;
 	    float target_xy_offset_abs;
 	    float target_z_offset_abs;
 	    float target_yaw_offset_abs;
+	    float target_radius_min;
+	    float target_radius_max;
+	    float initial_velocity_xy_std;
+	    float initial_velocity_z_std;
 	    int step_count;
 	    unsigned char terminal;
 	    unsigned char truncation;
@@ -93,11 +110,13 @@ typedef struct {
 
 #define Env FlightRLSixDofEnv
 #include "vecenv.h"
+#include "native_puffer_sixdof_reset.inc"
 
 void my_init(Env* env, Dict* kwargs) {
+    const uint32_t env_index = env->rng;
     env->num_agents = 1;
     env->dt = (float)dict_get(kwargs, "dt")->value;
-    env->rng = (uint32_t)dict_get(kwargs, "seed")->value + 0x9e3779b9u;
+    env->rng = flightrl_puffer_seed32((uint32_t)dict_get(kwargs, "seed")->value, env_index);
     env->room[0] = (float)dict_get(kwargs, "room_x_min")->value;
     env->room[1] = (float)dict_get(kwargs, "room_x_max")->value;
     env->room[2] = (float)dict_get(kwargs, "room_y_min")->value;
@@ -127,13 +146,21 @@ void my_init(Env* env, Dict* kwargs) {
 	    env->near_wall_min_clearance_m = (float)dict_get(kwargs, "near_wall_min_clearance_m")->value;
 	    env->near_wall_max_clearance_m = (float)dict_get(kwargs, "near_wall_max_clearance_m")->value;
 	    env->near_wall_yaw_jitter_rad = (float)dict_get(kwargs, "near_wall_yaw_jitter_rad")->value;
+	    env->initial_xy_abs = (float)dict_get(kwargs, "initial_xy_abs")->value;
+	    env->target_xy_abs = (float)dict_get(kwargs, "target_xy_abs")->value;
 	    env->reset_z_min = (float)dict_get(kwargs, "reset_z_min")->value;
 	    env->reset_z_max = (float)dict_get(kwargs, "reset_z_max")->value;
+	    env->reset_z_margin = (float)dict_get(kwargs, "reset_z_margin")->value;
 	    env->target_z_min = (float)dict_get(kwargs, "target_z_min")->value;
 	    env->target_z_max = (float)dict_get(kwargs, "target_z_max")->value;
+	    env->attitude_std = (float)dict_get(kwargs, "attitude_std")->value;
 	    env->target_xy_offset_abs = (float)dict_get(kwargs, "target_xy_offset_abs")->value;
 	    env->target_z_offset_abs = (float)dict_get(kwargs, "target_z_offset_abs")->value;
 	    env->target_yaw_offset_abs = (float)dict_get(kwargs, "target_yaw_offset_abs")->value;
+	    env->target_radius_min = (float)dict_get(kwargs, "target_radius_min")->value;
+	    env->target_radius_max = (float)dict_get(kwargs, "target_radius_max")->value;
+	    env->initial_velocity_xy_std = (float)dict_get(kwargs, "initial_velocity_xy_std")->value;
+	    env->initial_velocity_z_std = (float)dict_get(kwargs, "initial_velocity_z_std")->value;
 	}
 
 void my_log(Log* log, Dict* out) {
@@ -177,10 +204,14 @@ void my_log(Log* log, Dict* out) {
     env->log.episode_return += env->rewards[0];
     env->log.episode_length += 1.0f;
     env->log.reward += env->rewards[0];
-    if (env->terminals[0]) {
-        env->log.n += 1.0f;
-        c_reset(env);
-    }
+	    if (env->terminals[0]) {
+	        float transition_reward = env->rewards[0];
+	        float transition_terminal = env->terminals[0];
+	        env->log.n += 1.0f;
+	        c_reset(env);
+	        env->rewards[0] = transition_reward;
+	        env->terminals[0] = transition_terminal;
+	    }
 }
 
 	static void c_render(Env* env) { (void)env; }
@@ -217,35 +248,6 @@ void my_log(Log* log, Dict* out) {
 	    }
 	}
 
-	static void apply_reset_profile(Env* env) {
-	    if (env->near_wall_probability > 0.0f && rnd(&env->rng, 0.0f, 1.0f) < env->near_wall_probability) {
-	        float clearance = rnd(&env->rng, env->near_wall_min_clearance_m, env->near_wall_max_clearance_m);
-	        int side = (int)rnd(&env->rng, 0.0f, 3.999f);
-	        if (side == 0) env->position[0] = env->room[1] - clearance;
-	        else if (side == 1) env->position[0] = env->room[0] + clearance;
-	        else if (side == 2) env->position[1] = env->room[3] - clearance;
-	        else env->position[1] = env->room[2] + clearance;
-	        float yaw = rnd(&env->rng, -env->near_wall_yaw_jitter_rad, env->near_wall_yaw_jitter_rad);
-	        env->quaternion[0] = cosf(0.5f * yaw);
-	        env->quaternion[1] = 0.0f;
-	        env->quaternion[2] = 0.0f;
-	        env->quaternion[3] = sinf(0.5f * yaw);
-	    }
-	    env->position[2] = clampf(rnd(&env->rng, env->reset_z_min, env->reset_z_max), env->room[4] + 0.12f, env->room[5] - 0.12f);
-	    if (env->target_xy_offset_abs >= 0.0f) {
-	        env->target_position[0] = clampf(env->position[0] + rnd(&env->rng, -env->target_xy_offset_abs, env->target_xy_offset_abs), env->room[0] + 0.25f, env->room[1] - 0.25f);
-	        env->target_position[1] = clampf(env->position[1] + rnd(&env->rng, -env->target_xy_offset_abs, env->target_xy_offset_abs), env->room[2] + 0.25f, env->room[3] - 0.25f);
-	    }
-	    if (env->target_z_offset_abs >= 0.0f) {
-	        env->target_position[2] = clampf(env->position[2] + rnd(&env->rng, -env->target_z_offset_abs, env->target_z_offset_abs), env->room[4] + 0.35f, env->room[5] - 0.25f);
-	    } else {
-	        env->target_position[2] = clampf(rnd(&env->rng, env->target_z_min, env->target_z_max), env->room[4] + 0.35f, env->room[5] - 0.25f);
-	    }
-	    if (env->target_yaw_offset_abs >= 0.0f) {
-	        env->target_yaw = wrap_angle(yaw_from_quat(env->quaternion) + rnd(&env->rng, -env->target_yaw_offset_abs, env->target_yaw_offset_abs));
-	    }
-	    update_ranges(env->position, env->quaternion, env->ranges, env->room);
-	}
 	"""
 
 

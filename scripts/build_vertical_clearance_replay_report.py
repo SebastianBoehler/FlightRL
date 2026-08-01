@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -9,8 +10,17 @@ from typing import Any
 
 import numpy as np
 
-from flightrl.hardware.avoidance_policy import reading_from_telemetry
 from flightrl.vertical_clearance import LIVE_VERTICAL_BOTTOM_CLEARANCE_M, LIVE_VERTICAL_TOP_CLEARANCE_M, vertical_velocity_from_clearance
+
+
+@dataclass(frozen=True, slots=True)
+class RangerReading:
+    front_m: float
+    back_m: float
+    left_m: float
+    right_m: float
+    up_m: float
+    zrange_m: float
 
 
 def main() -> None:
@@ -132,6 +142,24 @@ def parse_float(raw: str) -> float:
 def value(row: dict[str, float], key: str) -> float:
     raw = row.get(key, 0.0)
     return raw if math.isfinite(raw) else 0.0
+
+
+def reading_from_telemetry(values: dict[str, float]) -> RangerReading:
+    return RangerReading(*(_range_m(values, key) for key in (
+        "range.front",
+        "range.back",
+        "range.left",
+        "range.right",
+        "range.up",
+        "range.zrange",
+    )))
+
+
+def _range_m(values: dict[str, float], key: str) -> float:
+    raw = value(values, key)
+    if raw >= 32000.0:
+        return 4.0
+    return raw / 1000.0
 
 
 def count(records: list[dict[str, float]], key: str, predicate) -> int:

@@ -3,14 +3,15 @@ from __future__ import annotations
 from dataclasses import replace
 
 from flightrl.puffer4_config import Puffer4ExportSettings
-from flightrl.puffer4_door_contract import CORRECTED_DOOR_ACTION_CONTRACT
+from flightrl.puffer4_door_contract import PRIVILEGED_DOOR_TEACHER_ACTION_CONTRACT
 from flightrl.puffer4_door_evidence_age_contract import (
     FIXED_DOOR_EVIDENCE_AGE_CONTRACT,
 )
+from flightrl.puffer4_door_mission import FIXED_DOOR_MISSION_METRIC_V1
 from flightrl.puffer4_sixdof_sections import build_sixdof_sections
 
 
-def build_fixed_door_sections(
+def build_fixed_door_teacher_sections(
     settings: Puffer4ExportSettings,
 ) -> dict[str, dict[str, int | float | str]]:
     resolved = replace(
@@ -20,12 +21,13 @@ def build_fixed_door_sections(
         reward_mode="progress",
     )
     sections = build_sixdof_sections(resolved)
-    action = CORRECTED_DOOR_ACTION_CONTRACT
+    action = PRIVILEGED_DOOR_TEACHER_ACTION_CONTRACT
     sections["env"].update(
         {
             "physics_substeps": 2,
-            "max_episode_steps": 1300,
-            "success_radius_m": 0.80,
+            # The edge-v3 0.25 m/s envelope needs a 40 s mission budget for
+            # the longest room-diagonal plus a full outside-FOV search.
+            "max_episode_steps": 2600,
             "max_vertical_speed_m_s": 0.10,
             "velocity_gain": 3.0,
             "attitude_gain": 6.0,
@@ -41,27 +43,8 @@ def build_fixed_door_sections(
         }
     )
     action.apply_to_env(sections["env"])
+    sections["env"].update(FIXED_DOOR_MISSION_METRIC_V1.env_values())
     FIXED_DOOR_EVIDENCE_AGE_CONTRACT.apply_to_env(sections["env"])
-    sections["policy"].update(
-        {
-            "hidden_size": settings.policy_hidden_size or 96,
-            "num_layers": 1,
-        }
-    )
-    sections["torch"].update(
-        {
-            "network": "MinGRU",
-            "encoder": "FlightRLDoorEncoder",
-        }
-    )
-    sections["train"].update(
-        {
-            "total_timesteps": 8_388_608,
-            "learning_rate": 0.001,
-            "minibatch_size": 4096,
-            "horizon": 64,
-            "replay_ratio": 4,
-            "ent_coef": 0.002,
-        }
-    )
+    sections["base"]["env_name"] = settings.env_name
+    sections["train"]["total_timesteps"] = 0
     return sections

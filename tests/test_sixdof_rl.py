@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
-
 import numpy as np
 import torch
 
@@ -11,9 +7,6 @@ from flightrl.sixdof import SixDofCrazyflieEnv
 from flightrl.sixdof.env import euler_to_quat
 from flightrl.sixdof.policies import teacher_actions
 from flightrl.sixdof.rl import PpoConfig, SixDofActorCritic, collect_rollout, compute_advantages, position_error_for_task_indices, ppo_update, rollout_reward
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_compute_advantages_shapes_match_rollout() -> None:
@@ -34,6 +27,7 @@ def test_ppo_update_runs_on_short_rollout() -> None:
     model = SixDofActorCritic(input_dim=28, hidden_size=16)
     rollout = collect_rollout(env, model, horizon=3, action_std=0.2)
     assert rollout["teacher_actions"].shape == rollout["actions"].shape
+    assert rollout["pre_tanh_actions"].shape == rollout["actions"].shape
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     reference = SixDofActorCritic(input_dim=28, hidden_size=16).actor
     stats = ppo_update(model, optimizer, rollout, PpoConfig(hidden_size=16, minibatch_size=4, update_epochs=1, action_std=0.2, imitation_coef=0.1, reference_coef=0.2), reference)
@@ -136,6 +130,58 @@ def test_circle_progress_reward_uses_orbit_error_not_center_error() -> None:
     assert np.linalg.norm(env.target_position - env.position, axis=1)[0] > 0.7
 
 
+def test_circle_reward_and_teacher_use_sampled_target_altitude() -> None:
+    env = SixDofCrazyflieEnv(
+        num_envs=1,
+        seed=10,
+        task="circle",
+        reset_profile="circle_recovery",
+    )
+    env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
+    env.target_position[:] = np.asarray([[0.0, 0.0, 0.82]], dtype=np.float32)
+    task_indices = np.zeros(1, dtype=np.int64)
+
+    error_below_target = position_error_for_task_indices(
+        env,
+        ("circle",),
+        task_indices,
+    )
+    teacher_below_target = teacher_actions(env, task="circle")
+    env.position[:, 2] = env.target_position[:, 2]
+    error_at_target = position_error_for_task_indices(
+        env,
+        ("circle",),
+        task_indices,
+    )
+
+    assert np.allclose(error_below_target, [0.17])
+    assert error_at_target[0] < 1e-6
+    assert teacher_below_target[0, 0] > 0.02
+
+
+def test_default_circle_reward_uses_orbit_error_and_tangent_yaw() -> None:
+    env = SixDofCrazyflieEnv(
+        num_envs=1,
+        seed=10,
+        task="circle",
+        reset_profile="circle_recovery",
+    )
+    env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
+    env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
+    env.quaternion[:] = euler_to_quat(
+        np.zeros(1),
+        np.zeros(1),
+        np.asarray([np.pi / 2.0], dtype=np.float32),
+    )
+    env.target_yaw[:] = 0.0
+    env.velocity[:] = 0.0
+    env._update_ranges()
+
+    reward = env._reward(np.zeros((1, 4), dtype=np.float32))
+
+    assert reward[0] > 0.99
+
+
 def test_collect_rollout_supports_history_observation_mode() -> None:
     env = SixDofCrazyflieEnv(num_envs=4, seed=11, reset_profile="position_yaw_easy")
     model = SixDofActorCritic(input_dim=60, hidden_size=16)
@@ -157,165 +203,90 @@ def test_collect_rollout_supports_task_conditioned_observations() -> None:
     assert np.any(task_bits[:, :, 1] == 1.0)
 
 
-def test_train_sixdof_ppo_cli_smoke(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "ppo.pt"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "train_sixdof_ppo.py"),
-            "--checkpoint",
-            str(checkpoint),
-            "--updates",
-            "1",
-            "--num-envs",
-            "8",
-            "--horizon",
-            "4",
-            "--hidden-size",
-            "16",
-            "--minibatch-size",
-            "8",
-            "--update-epochs",
-            "1",
-            "--eval-steps",
-            "4",
-            "--eval-num-envs",
-            "4",
-            "--imitation-coef",
-            "0.1",
-            "--reference-coef",
-            "0.2",
-            "--reward-mode",
-            "progress_clearance",
-            "--observation-mode",
-            "history1",
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+def test_collect_rollout_keeps_task_assignment_until_episode_reset() -> None:
+    seed = 123
+    tasks = ("position_yaw", "obstacle_avoidance")
+    env = SixDofCrazyflieEnv(
+        num_envs=6,
+        seed=12,
+        reset_profile="position_yaw_easy",
     )
-    saved = torch.load(checkpoint, map_location="cpu")
-    assert saved["trainer"] == "ppo"
-    assert saved["imitation_coef"] == 0.1
-    assert saved["reference_coef"] == 0.2
-    assert saved["reward_mode"] == "progress_clearance"
-    assert saved["observation_mode"] == "history1"
-    assert saved["observation_dim"] == 60
-    assert checkpoint.with_suffix(".report.json").exists()
+    model = SixDofActorCritic(input_dim=30, hidden_size=16)
+
+    rollout = collect_rollout(
+        env,
+        model,
+        horizon=3,
+        action_std=0.2,
+        tasks=tasks,
+        rng=np.random.default_rng(seed),
+    )
+
+    task_bits = rollout["observations"][:, :, -len(tasks) :]
+    np.testing.assert_array_equal(task_bits[1], task_bits[0])
+    np.testing.assert_array_equal(task_bits[2], task_bits[0])
 
 
-def test_train_sixdof_ppo_cli_supports_task_conditioned_init(tmp_path: Path) -> None:
-    initial = tmp_path / "initial.pt"
-    torch.save(
-        {
-            "state_dict": SixDofActorCritic(input_dim=30, hidden_size=16).actor.state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 30,
-            "observation_mode": "base",
-            "tasks": ["position_yaw", "obstacle_avoidance"],
-            "task_conditioned": True,
-        },
-        initial,
+def test_collect_rollout_applies_initial_task_yaw_context() -> None:
+    tasks = ("position_yaw", "circle")
+    env = SixDofCrazyflieEnv(num_envs=2, seed=12, task="position_yaw")
+    env.position[:] = np.asarray(
+        [[0.75, 0.0, 0.65], [0.75, 0.0, 0.65]],
+        dtype=np.float32,
     )
-    checkpoint = tmp_path / "ppo_multitask.pt"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "train_sixdof_ppo.py"),
-            "--init-checkpoint",
-            str(initial),
-            "--checkpoint",
-            str(checkpoint),
-            "--task",
-            "position_yaw",
-            "--updates",
-            "1",
-            "--num-envs",
-            "8",
-            "--horizon",
-            "4",
-            "--minibatch-size",
-            "8",
-            "--update-epochs",
-            "1",
-            "--eval-steps",
-            "4",
-            "--eval-num-envs",
-            "4",
-            "--task-probability",
-            "position_yaw=3.0",
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+    env.target_position[:] = np.asarray(
+        [[0.0, 0.0, 0.65], [0.0, 0.0, 0.65]],
+        dtype=np.float32,
     )
-    saved = torch.load(checkpoint, map_location="cpu")
-    assert saved["task_conditioned"] is True
-    assert saved["tasks"] == ["position_yaw", "obstacle_avoidance"]
-    assert saved["observation_dim"] == 30
-    assert saved["task_sampling_probabilities"]["position_yaw"] == 0.75
+    env.target_yaw[:] = 0.0
+    env.quaternion[:] = euler_to_quat(
+        np.zeros(2),
+        np.zeros(2),
+        np.full(2, np.pi / 2.0, dtype=np.float32),
+    )
+    env.observations[:] = env.observation()
+
+    rollout = collect_rollout(
+        env,
+        SixDofActorCritic(input_dim=30, hidden_size=16),
+        horizon=1,
+        action_std=0.2,
+        tasks=tasks,
+        rng=np.random.default_rng(1),
+        task_probabilities=np.asarray([0.0, 1.0]),
+    )
+
+    assert np.all(np.abs(rollout["observations"][0, :, 16]) < 1e-5)
+    assert np.all(np.abs(rollout["observations"][0, :, 17] - 1.0) < 1e-5)
 
 
-def test_train_sixdof_ppo_cli_supports_teacher_residual_controller(tmp_path: Path) -> None:
-    initial = tmp_path / "residual.pt"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "create_sixdof_residual_checkpoint.py"),
-            "--checkpoint",
-            str(initial),
-            "--task",
-            "circle",
-            "--hidden-size",
-            "16",
-            "--residual-scale",
-            "0.1",
-            "--zero-weights",
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+def test_collect_rollout_resamples_only_when_episode_resets() -> None:
+    seed = 321
+    tasks = ("position_yaw", "obstacle_avoidance")
+    env = SixDofCrazyflieEnv(
+        num_envs=6,
+        seed=13,
+        reset_profile="position_yaw_easy",
     )
-    checkpoint = tmp_path / "residual_ppo.pt"
-    subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "train_sixdof_ppo.py"),
-            "--init-checkpoint",
-            str(initial),
-            "--checkpoint",
-            str(checkpoint),
-            "--task",
-            "circle",
-            "--updates",
-            "1",
-            "--num-envs",
-            "8",
-            "--horizon",
-            "4",
-            "--minibatch-size",
-            "8",
-            "--update-epochs",
-            "1",
-            "--eval-steps",
-            "4",
-            "--eval-num-envs",
-            "4",
-            "--controller",
-            "teacher_residual",
-            "--residual-scale",
-            "0.1",
-            "--reward-mode",
-            "progress_yaw_clearance",
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+    env.step_count[:] = 799
+    model = SixDofActorCritic(input_dim=30, hidden_size=16)
+
+    rollout = collect_rollout(
+        env,
+        model,
+        horizon=3,
+        action_std=0.2,
+        tasks=tasks,
+        rng=np.random.default_rng(seed),
     )
-    saved = torch.load(checkpoint, map_location="cpu")
-    assert saved["controller"] == "teacher_residual"
-    assert saved["residual_scale"] == 0.1
+
+    expected_rng = np.random.default_rng(seed)
+    expected_initial = expected_rng.choice(len(tasks), size=6, p=(0.5, 0.5))
+    expected_after_reset = expected_rng.choice(len(tasks), size=6, p=(0.5, 0.5))
+    task_bits = rollout["observations"][:, :, -len(tasks) :]
+    np.testing.assert_array_equal(np.argmax(task_bits[0], axis=1), expected_initial)
+    np.testing.assert_array_equal(
+        np.argmax(task_bits[1], axis=1),
+        expected_after_reset,
+    )
+    np.testing.assert_array_equal(task_bits[2], task_bits[1])

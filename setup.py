@@ -11,8 +11,6 @@ ROOT = Path(__file__).parent.resolve()
 DEBUG = os.environ.get("DEBUG", "0") == "1"
 
 common_args = ["-O0", "-g"] if DEBUG else ["-O3"]
-if os.name != "nt" and not DEBUG:
-    common_args.extend(["-ffast-math"])
 
 extension = Extension(
     "flightrl._binding",
@@ -31,6 +29,7 @@ extension = Extension(
         "src/flightrl/native/native_sixdof.c",
         "src/flightrl/native/native_sixdof_setpoint.c",
         "src/flightrl/native/native_sixdof_vision.c",
+        "src/flightrl/native/native_door_self_mask.c",
     ],
     include_dirs=[
         str(ROOT / "src" / "flightrl" / "native"),

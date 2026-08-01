@@ -14,15 +14,72 @@ static float flightrl_norm_range(float value, float max_range) {
     return flightrl_clamp(value / max_range, 0.0f, 1.0f);
 }
 
+static void flightrl_range_values(DronePlanarEnv *env, float ranges[6]) {
+    RuntimeDynamics *dyn = &env->runtime_dynamics;
+    ranges[0] = dyn->x_limit - env->drone.x;
+    ranges[1] = env->drone.x + dyn->x_limit;
+    ranges[2] = 4.0f;
+    ranges[3] = 4.0f;
+    ranges[4] = dyn->z_limit - env->drone.z;
+    ranges[5] = env->drone.z - dyn->floor_z;
+}
+
+static void flightrl_range_rates(DronePlanarEnv *env, float rates[6]) {
+    rates[0] = -env->drone.vx;
+    rates[1] = env->drone.vx;
+    rates[2] = 0.0f;
+    rates[3] = 0.0f;
+    rates[4] = -env->drone.vz;
+    rates[5] = env->drone.vz;
+}
+
 static void flightrl_push_range(DronePlanarEnv *env, int *idx) {
     float *obs = env->observations;
-    RuntimeDynamics *dyn = &env->runtime_dynamics;
-    const float max_range = 4.0f;
-    flightrl_push(obs, idx, flightrl_norm_range(dyn->x_limit - env->drone.x, max_range));
-    flightrl_push(obs, idx, flightrl_norm_range(env->drone.x + dyn->x_limit, max_range));
-    flightrl_push(obs, idx, 1.0f);
-    flightrl_push(obs, idx, 1.0f);
-    flightrl_push(obs, idx, flightrl_norm_range(dyn->z_limit - env->drone.z, max_range));
+    float ranges[6];
+    flightrl_range_values(env, ranges);
+    for (int i = 0; i < 5; ++i) {
+        flightrl_push(obs, idx, flightrl_norm_range(ranges[i], 4.0f));
+    }
+}
+
+static float flightrl_ttc(float distance, float rate) {
+    float closing_speed = fmaxf(-rate, 0.0f);
+    if (closing_speed <= 1e-6f) {
+        return 1e30f;
+    }
+    return fmaxf(distance, 0.0f) / closing_speed;
+}
+
+static void flightrl_push_range_rate(DronePlanarEnv *env, int *idx) {
+    float rates[6];
+    flightrl_range_rates(env, rates);
+    for (int i = 0; i < 6; ++i) {
+        flightrl_push(env->observations, idx, flightrl_clamp(rates[i] / 4.0f, -1.0f, 1.0f));
+    }
+}
+
+static void flightrl_push_ttc(DronePlanarEnv *env, int *idx) {
+    const float horizon_s = 0.7f;
+    float ranges[6];
+    float rates[6];
+    float min_range;
+    float min_ttc;
+    flightrl_range_values(env, ranges);
+    flightrl_range_rates(env, rates);
+    min_range = ranges[0];
+    min_ttc = flightrl_ttc(ranges[0], rates[0]);
+    for (int i = 1; i < 4; ++i) {
+        min_range = fminf(min_range, ranges[i]);
+        min_ttc = fminf(min_ttc, flightrl_ttc(ranges[i], rates[i]));
+    }
+    flightrl_push(env->observations, idx, flightrl_norm_range(min_range, 4.0f));
+    flightrl_push(
+        env->observations,
+        idx,
+        min_ttc < horizon_s
+            ? flightrl_clamp((horizon_s - fmaxf(min_ttc, 0.0f)) / horizon_s, 0.0f, 1.0f)
+            : 0.0f
+    );
 }
 
 static void flightrl_push_crazyflie_telemetry(DronePlanarEnv *env, int *idx, float rel_x, float rel_z) {
@@ -49,7 +106,7 @@ static void flightrl_push_crazyflie_telemetry(DronePlanarEnv *env, int *idx, flo
     flightrl_push(obs, idx, 0.0f);
     flightrl_push(obs, idx, flightrl_noisy(env, env->last_az / dyn->gravity, scale));
     flightrl_push_range(env, idx);
-    flightrl_push(obs, idx, flightrl_norm_range(env->drone.z, 4.0f));
+    flightrl_push(obs, idx, flightrl_norm_range(env->drone.z - dyn->floor_z, 4.0f));
     flightrl_push(obs, idx, 1.0f);
     flightrl_push(obs, idx, rel_x);
     flightrl_push(obs, idx, 0.0f);
@@ -122,13 +179,10 @@ void flightrl_fill_observation(DronePlanarEnv *env) {
         flightrl_push_range(env, &idx);
     }
     if (flags & FLIGHT_OBS_RANGE_RATE) {
-        for (int i = 0; i < 6; ++i) {
-            flightrl_push(obs, &idx, 0.0f);
-        }
+        flightrl_push_range_rate(env, &idx);
     }
     if (flags & FLIGHT_OBS_TTC) {
-        flightrl_push(obs, &idx, 0.0f);
-        flightrl_push(obs, &idx, 0.0f);
+        flightrl_push_ttc(env, &idx);
     }
     if (flags & FLIGHT_OBS_CRAZYFLIE_TELEMETRY) {
         flightrl_push_crazyflie_telemetry(env, &idx, rel_x, rel_z);

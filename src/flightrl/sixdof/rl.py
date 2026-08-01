@@ -7,15 +7,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .circle import circle_orbit_error_from_arrays
+from flightrl.bounded_action import BoundedNormal
+
 from .controller import executed_action_for_controller, imitation_target_for_controller, validate_controller
-from .env import ACTION_DIM, quat_to_yaw, wrap_angle
-from .geometry import quat_to_matrix
-from .dataset import sample_task_indices, task_probability_vector, teacher_labels
+from .env import ACTION_DIM
+from .dataset import task_probability_vector, teacher_labels
+from .episode_tasks import sample_task_indices
 from .observation import augment_observation
 from .policies import SixDofPolicy
+from .ppo_reward import (
+    position_error_for_task_indices,
+    rollout_reward,
+)
 from .tasks import append_task_encoding
-from .yaw import yaw_error_for_task_indices
 
 
 REWARD_MODES = ("env", "progress", "progress_clearance", "progress_yaw_clearance", "live_clearance", "live_stable_clearance")
@@ -51,24 +55,22 @@ class SixDofActorCritic(nn.Module):
         )
         self.log_std = nn.Parameter(torch.zeros(ACTION_DIM))
 
-    def act(self, observations: torch.Tensor, action_std: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        mean = self.actor(observations)
+    def act(self, observations: torch.Tensor, action_std: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        location = self.actor.action_location(observations)
         std = torch.exp(self.log_std).clamp(0.05, 2.0) * action_std
-        dist = torch.distributions.Normal(mean, std)
-        raw_action = dist.rsample()
-        action = raw_action.clamp(-1.0, 1.0)
-        log_prob = dist.log_prob(action).sum(dim=1)
-        entropy = dist.entropy().sum(dim=1)
+        dist = BoundedNormal(location, std)
+        action, pre_tanh = dist.rsample_with_pre_tanh()
+        log_prob = dist.log_prob_from_pre_tanh(pre_tanh)
+        entropy = dist.entropy()
         value = self.critic(observations).squeeze(1)
-        return action, log_prob, entropy, value
+        return action, pre_tanh, log_prob, entropy, value
 
-    def evaluate_actions(self, observations: torch.Tensor, actions: torch.Tensor, action_std: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        mean = self.actor(observations)
+    def evaluate_actions(self, observations: torch.Tensor, pre_tanh_actions: torch.Tensor, action_std: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        location = self.actor.action_location(observations)
         std = torch.exp(self.log_std).clamp(0.05, 2.0) * action_std
-        dist = torch.distributions.Normal(mean, std)
-        clipped_actions = actions.clamp(-0.999, 0.999)
-        log_prob = dist.log_prob(clipped_actions).sum(dim=1)
-        entropy = dist.entropy().sum(dim=1)
+        dist = BoundedNormal(location, std)
+        log_prob = dist.log_prob_from_pre_tanh(pre_tanh_actions)
+        entropy = dist.entropy()
         value = self.critic(observations).squeeze(1)
         return log_prob, entropy, value
 
@@ -100,11 +102,24 @@ def collect_rollout(
     tasks = tasks or (env.task,)
     rng = rng or np.random.default_rng(0)
     task_probabilities = task_probabilities if task_probabilities is not None else task_probability_vector(tasks)
-    task_indices = np.zeros(env.num_envs, dtype=np.int64)
+    task_indices = sample_task_indices(
+        rng,
+        env.num_envs,
+        tasks,
+        task_probabilities,
+    )
+    if hasattr(env, "set_native_context"):
+        env.set_native_context(
+            task_indices=task_indices,
+            tasks=tasks,
+            reward_mode=reward_mode,
+        )
+        obs = env.observations.copy()
     first_model_obs = append_task_encoding(obs, task_indices, len(tasks))
     first_policy_obs = augment_observation(first_model_obs, first_model_obs, previous_action, observation_mode)
     observations = np.empty((horizon, env.num_envs, first_policy_obs.shape[1]), dtype=np.float32)
     actions = np.empty((horizon, env.num_envs, ACTION_DIM), dtype=np.float32)
+    pre_tanh_actions = np.empty_like(actions)
     executed_actions = np.empty_like(actions)
     teacher = np.empty_like(actions)
     log_probs = np.empty((horizon, env.num_envs), dtype=np.float32)
@@ -112,7 +127,6 @@ def collect_rollout(
     dones = np.empty((horizon, env.num_envs), dtype=np.float32)
     values = np.empty((horizon, env.num_envs), dtype=np.float32)
     for step_idx in range(horizon):
-        task_indices = sample_task_indices(rng, env.num_envs, tasks, task_probabilities)
         model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
         if previous_obs is None:
             previous_obs = model_obs.copy()
@@ -120,7 +134,7 @@ def collect_rollout(
         policy_obs = augment_observation(model_obs, previous_obs, previous_action, observation_mode)
         obs_tensor = torch.from_numpy(policy_obs).float()
         with torch.no_grad():
-            action, log_prob, _entropy, value = model.act(obs_tensor, action_std)
+            action, pre_tanh, log_prob, _entropy, value = model.act(obs_tensor, action_std)
         teacher_action = teacher_labels(env, tasks, task_indices).copy()
         previous_error = position_error_for_task_indices(env, tasks, task_indices)
         action_np = action.cpu().numpy()
@@ -131,6 +145,7 @@ def collect_rollout(
         done = terminal | truncation
         observations[step_idx] = policy_obs
         actions[step_idx] = action_np.astype(np.float32)
+        pre_tanh_actions[step_idx] = pre_tanh.cpu().numpy().astype(np.float32)
         executed_actions[step_idx] = executed_action.astype(np.float32)
         teacher[step_idx] = imitation_target_for_controller(controller, teacher_action)
         log_probs[step_idx] = log_prob.cpu().numpy().astype(np.float32)
@@ -142,8 +157,22 @@ def collect_rollout(
         fresh[:] = False
         obs = env.reset_done(done).copy() if np.any(done) else next_obs.copy()
         if np.any(done):
-            previous_action[done.astype(bool)] = 0.0
-            fresh = done.astype(bool)
+            reset_mask = done.astype(bool)
+            previous_action[reset_mask] = 0.0
+            fresh = reset_mask
+            task_indices[reset_mask] = sample_task_indices(
+                rng,
+                int(np.sum(reset_mask)),
+                tasks,
+                task_probabilities,
+            )
+            if hasattr(env, "set_native_context"):
+                env.set_native_context(
+                    task_indices=task_indices,
+                    tasks=tasks,
+                    reward_mode=reward_mode,
+                )
+                obs = env.observations.copy()
     with torch.no_grad():
         model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
         previous_obs[fresh] = model_obs[fresh]
@@ -152,6 +181,7 @@ def collect_rollout(
     return {
         "observations": observations,
         "actions": actions,
+        "pre_tanh_actions": pre_tanh_actions,
         "executed_actions": executed_actions,
         "teacher_actions": teacher,
         "log_probs": log_probs,
@@ -160,168 +190,6 @@ def collect_rollout(
         "values": values,
         "next_value": next_value,
     }
-
-
-def position_error(env) -> np.ndarray:
-    return np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)
-
-
-def position_error_for_task_indices(env, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
-    errors = np.zeros(env.num_envs, dtype=np.float32)
-    default_error = position_error(env)
-    for index, task in enumerate(tasks):
-        mask = task_indices == index
-        if not np.any(mask):
-            continue
-        errors[mask] = circle_position_error(env)[mask] if task == "circle" else default_error[mask]
-    return errors
-
-
-def circle_position_error(env, target_radius_m: float = 0.75, target_z_m: float = 0.65) -> np.ndarray:
-    return circle_orbit_error_from_arrays(env.position, env.target_position, target_radius_m, target_z_m)
-
-
-def rollout_reward(
-    env,
-    base_reward: np.ndarray,
-    done: np.ndarray,
-    previous_error: np.ndarray,
-    actions: np.ndarray,
-    mode: str,
-    *,
-    tasks: tuple[str, ...] | None = None,
-    task_indices: np.ndarray | None = None,
-) -> np.ndarray:
-    if mode == "env":
-        return base_reward.copy()
-    if mode == "progress":
-        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.25, clearance_weight=1.0, yaw_weight=0.1, tasks=tasks, task_indices=task_indices)
-    if mode == "progress_clearance":
-        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.1, tasks=tasks, task_indices=task_indices)
-    if mode == "progress_yaw_clearance":
-        return shaped_progress_reward(env, done, previous_error, actions, clearance_threshold=0.45, clearance_weight=2.5, yaw_weight=0.6, tasks=tasks, task_indices=task_indices)
-    if mode == "live_clearance":
-        return shaped_progress_reward(
-            env,
-            done,
-            previous_error,
-            actions,
-            clearance_threshold=0.65,
-            clearance_weight=5.0,
-            yaw_weight=0.1,
-            clearance_bonus_weight=0.15,
-            tasks=tasks,
-            task_indices=task_indices,
-        )
-    if mode == "live_stable_clearance":
-        return shaped_progress_reward(
-            env,
-            done,
-            previous_error,
-            actions,
-            clearance_threshold=0.65,
-            clearance_weight=5.0,
-            yaw_weight=0.1,
-            clearance_bonus_weight=0.15,
-            speed_weight=0.12,
-            open_space_speed_weight=0.35,
-            open_space_action_weight=0.10,
-            escape_velocity_weight=1.20,
-            escape_action_weight=0.80,
-            vertical_clearance_threshold=0.45,
-            vertical_clearance_weight=3.00,
-            vertical_escape_velocity_weight=0.50,
-            vertical_escape_action_weight=0.25,
-            terminal_penalty=2.0,
-            tasks=tasks,
-            task_indices=task_indices,
-        )
-    raise ValueError(f"unknown PPO reward mode {mode!r}")
-
-
-def shaped_progress_reward(
-    env,
-    done: np.ndarray,
-    previous_error: np.ndarray,
-    actions: np.ndarray,
-    *,
-    clearance_threshold: float,
-    clearance_weight: float,
-    yaw_weight: float,
-    tasks: tuple[str, ...] | None,
-    task_indices: np.ndarray | None,
-    clearance_bonus_weight: float = 0.0,
-    speed_weight: float = 0.02,
-    open_space_speed_weight: float = 0.0,
-    open_space_action_weight: float = 0.0,
-    escape_velocity_weight: float = 0.0,
-    escape_action_weight: float = 0.0,
-    vertical_clearance_threshold: float = 0.0,
-    vertical_clearance_weight: float = 0.0,
-    vertical_escape_velocity_weight: float = 0.0,
-    vertical_escape_action_weight: float = 0.0,
-    terminal_penalty: float = 1.0,
-) -> np.ndarray:
-    current_error = position_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else position_error(env)
-    progress = previous_error - current_error
-    speed = np.linalg.norm(env.velocity, axis=1)
-    yaw_error = yaw_error_for_task_indices(env, tasks, task_indices) if tasks is not None and task_indices is not None else np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion)))
-    min_clearance = np.min(env.ranges_m[:, :4], axis=1)
-    clearance_penalty = np.maximum(0.0, clearance_threshold - min_clearance)
-    clearance_bonus = clearance_bonus_weight * np.minimum(min_clearance, clearance_threshold)
-    control = np.linalg.norm(actions, axis=1)
-    open_space = np.clip((min_clearance - 0.45) / 0.20, 0.0, 1.0)
-    horizontal_speed = np.linalg.norm(env.velocity[:, :2], axis=1)
-    tilt_action = np.linalg.norm(actions[:, 1:3], axis=1)
-    stable_penalty = open_space * (open_space_speed_weight * horizontal_speed + open_space_action_weight * tilt_action)
-    escape_reward = clearance_escape_reward(env, actions, clearance_threshold, escape_velocity_weight, escape_action_weight)
-    vertical_reward = vertical_clearance_reward(
-        env,
-        actions,
-        vertical_clearance_threshold,
-        vertical_clearance_weight,
-        vertical_escape_velocity_weight,
-        vertical_escape_action_weight,
-    )
-    reward = (
-        0.2 + 3.0 * progress - 0.05 * current_error - speed_weight * speed - yaw_weight * yaw_error
-        - clearance_weight * clearance_penalty + clearance_bonus - 0.01 * control - stable_penalty
-        + escape_reward + vertical_reward
-    )
-    reward -= terminal_penalty * done.astype(np.float32)
-    return reward.astype(np.float32)
-
-
-def clearance_escape_reward(env, actions: np.ndarray, threshold: float, velocity_weight: float, action_weight: float) -> np.ndarray:
-    if velocity_weight == 0.0 and action_weight == 0.0:
-        return np.zeros(env.num_envs, dtype=np.float32)
-    body_push_x = np.maximum(0.0, threshold - env.ranges_m[:, 1]) - np.maximum(0.0, threshold - env.ranges_m[:, 0])
-    body_push_y = np.maximum(0.0, threshold - env.ranges_m[:, 3]) - np.maximum(0.0, threshold - env.ranges_m[:, 2])
-    rotation = quat_to_matrix(env.quaternion)
-    body_velocity = np.einsum("nij,ni->nj", rotation, env.velocity, optimize=True)
-    velocity_alignment = body_push_x * body_velocity[:, 0] + body_push_y * body_velocity[:, 1]
-    action_alignment = body_push_x * actions[:, 2] - body_push_y * actions[:, 1]
-    return (velocity_weight * velocity_alignment + action_weight * action_alignment).astype(np.float32)
-
-
-def vertical_clearance_reward(
-    env,
-    actions: np.ndarray,
-    threshold: float,
-    clearance_weight: float,
-    velocity_weight: float,
-    action_weight: float,
-) -> np.ndarray:
-    if threshold <= 0.0:
-        return np.zeros(env.num_envs, dtype=np.float32)
-    top_pressure = np.maximum(0.0, threshold - env.ranges_m[:, 4])
-    bottom_pressure = np.maximum(0.0, threshold - env.ranges_m[:, 5])
-    vertical_push = bottom_pressure - top_pressure
-    return (
-        -clearance_weight * (top_pressure + bottom_pressure)
-        + velocity_weight * vertical_push * env.velocity[:, 2]
-        + action_weight * vertical_push * actions[:, 0]
-    ).astype(np.float32)
 
 
 def compute_advantages(rollout: dict[str, np.ndarray], gamma: float, gae_lambda: float) -> tuple[np.ndarray, np.ndarray]:
@@ -343,7 +211,7 @@ def compute_advantages(rollout: dict[str, np.ndarray], gamma: float, gae_lambda:
 
 def ppo_update(model: SixDofActorCritic, optimizer, rollout: dict[str, np.ndarray], config: PpoConfig, reference_actor: SixDofPolicy | None = None) -> dict[str, float]:
     observations = torch.from_numpy(rollout["observations"].reshape(-1, rollout["observations"].shape[-1])).float()
-    actions = torch.from_numpy(rollout["actions"].reshape(-1, ACTION_DIM)).float()
+    pre_tanh_actions = torch.from_numpy(rollout["pre_tanh_actions"].reshape(-1, ACTION_DIM)).float()
     teacher = torch.from_numpy(rollout["teacher_actions"].reshape(-1, ACTION_DIM)).float()
     old_log_probs = torch.from_numpy(rollout["log_probs"].reshape(-1)).float()
     advantages_np, returns_np = compute_advantages(rollout, config.gamma, config.gae_lambda)
@@ -355,7 +223,7 @@ def ppo_update(model: SixDofActorCritic, optimizer, rollout: dict[str, np.ndarra
         order = order[torch.randperm(len(order))]
         for start in range(0, len(order), config.minibatch_size):
             idx = order[start : start + config.minibatch_size]
-            log_prob, entropy, value = model.evaluate_actions(observations[idx], actions[idx], config.action_std)
+            log_prob, entropy, value = model.evaluate_actions(observations[idx], pre_tanh_actions[idx], config.action_std)
             ratio = (log_prob - old_log_probs[idx]).exp()
             policy_loss = -torch.min(ratio * advantages[idx], ratio.clamp(1.0 - config.clip_coef, 1.0 + config.clip_coef) * advantages[idx]).mean()
             value_loss = F.mse_loss(value, returns[idx])

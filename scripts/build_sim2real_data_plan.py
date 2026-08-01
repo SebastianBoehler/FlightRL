@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the next-data plan for closing sim-to-real audit blockers")
-    parser.add_argument("--audit", type=Path, default=ROOT / "artifacts/replay/sim2real_audit_current_2026-05-20.json")
+    parser.add_argument("--audit", type=Path, required=True)
     parser.add_argument("--motor-bench", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/replay/sim2real_data_plan_current.json")
     args = parser.parse_args()

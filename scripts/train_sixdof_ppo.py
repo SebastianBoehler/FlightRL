@@ -8,7 +8,8 @@ from time import perf_counter
 
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv, checkpoint_tasks, evaluate_checkpoint_policy, evaluate_policy, gate_status
+from flightrl.sixdof import SixDofCrazyflieEnv, build_checkpoint_payload, evaluate_checkpoint_policy, evaluate_policy, gate_status, require_current_checkpoint
+from flightrl.sixdof.checkpoint_contract import require_matching_override
 from flightrl.sixdof.controller import CONTROLLERS
 from flightrl.sixdof.dataset import parse_task_probabilities, task_probability_vector
 from flightrl.sixdof.observation import OBSERVATION_MODES, observation_dim
@@ -45,17 +46,31 @@ def main() -> None:
     parser.add_argument("--max-yaw-error-rad", type=float, default=None)
     parser.add_argument("--max-yaw-p95-error-rad", type=float, default=None)
     parser.add_argument("--seed", type=int, default=919)
+    parser.add_argument("--selection-seed", type=int, default=None)
+    parser.add_argument("--evaluation-seed", type=int, default=None)
     parser.add_argument("--native-step", action="store_true")
     parser.add_argument("--sensor-profile", default=None)
     add_wandb_args(parser, default_project="FlightRL")
     args = parser.parse_args()
+    args.selection_seed = args.seed + 1_000 if args.selection_seed is None else args.selection_seed
+    args.evaluation_seed = args.seed + 2_000 if args.evaluation_seed is None else args.evaluation_seed
+    if args.selection_seed == args.evaluation_seed:
+        parser.error("selection and final evaluation seeds must differ")
     init_checkpoint = torch.load(args.init_checkpoint, map_location="cpu") if args.init_checkpoint else None
-    args.policy_tasks = resolve_policy_tasks(args, init_checkpoint)
+    init_metadata = require_current_checkpoint(init_checkpoint) if init_checkpoint else None
+    if init_metadata:
+        requested_tasks = parse_task_spec(args.train_tasks) if args.train_tasks else None
+        require_matching_override(requested_tasks, init_metadata.tasks, "--train-tasks")
+        require_matching_override(args.observation_mode, init_metadata.observation_mode, "--observation-mode")
+        require_matching_override(args.controller, init_metadata.controller, "--controller")
+        require_matching_override(args.residual_scale, init_metadata.residual_scale, "--residual-scale")
+        require_matching_override(args.hidden_size, init_metadata.hidden_size, "--hidden-size")
+    args.policy_tasks = init_metadata.tasks if init_metadata else parse_task_spec(args.train_tasks or args.task)
     args.task_probabilities = task_probability_vector(args.policy_tasks, parse_task_probabilities(args.task_probability))
-    args.observation_mode = args.observation_mode or (init_checkpoint or {}).get("observation_mode") or "base"
-    args.controller = args.controller or str((init_checkpoint or {}).get("controller", "policy"))
-    args.residual_scale = float(args.residual_scale if args.residual_scale is not None else (init_checkpoint or {}).get("residual_scale", 0.0))
-    args.hidden_size = args.hidden_size or int((init_checkpoint or {}).get("hidden_size", 128))
+    args.observation_mode = init_metadata.observation_mode if init_metadata else args.observation_mode or "base"
+    args.controller = init_metadata.controller if init_metadata else args.controller or "policy"
+    args.residual_scale = init_metadata.residual_scale if init_metadata else float(args.residual_scale or 0.0)
+    args.hidden_size = init_metadata.hidden_size if init_metadata else args.hidden_size or 128
     input_dim = observation_dim(28 + task_observation_dim(args.policy_tasks), args.observation_mode)
 
     torch.manual_seed(args.seed)
@@ -78,7 +93,6 @@ def main() -> None:
     )
     model = SixDofActorCritic(input_dim=input_dim, hidden_size=args.hidden_size)
     if init_checkpoint:
-        validate_init_checkpoint(init_checkpoint, input_dim)
         load_actor_checkpoint(model, init_checkpoint)
     reference_actor = frozen_actor(model) if args.reference_coef > 0.0 else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
@@ -103,7 +117,7 @@ def main() -> None:
         )
         losses = ppo_update(model, optimizer, rollout, config, reference_actor)
         if update == 1 or update == args.updates or update % max(1, args.updates // 4) == 0:
-            metrics = eval_actor(model, args)
+            metrics = eval_actor(model, args, seed=args.selection_seed)
             score = score_metrics(metrics)
             candidate = payload(model, args, metrics, score, update)
             if best is None or candidate["selection_score"] > best["selection_score"]:
@@ -118,6 +132,7 @@ def main() -> None:
                 flush=True,
             )
     assert best is not None
+    best = finalize_best(model, best, args)
     best["history"] = history
     best["elapsed_s"] = perf_counter() - start
     output = Path(args.checkpoint)
@@ -129,12 +144,17 @@ def main() -> None:
     print(f"report={output.with_suffix('.report.json')}")
 
 
-def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
+def eval_actor(
+    model: SixDofActorCritic,
+    args: argparse.Namespace,
+    *,
+    seed: int,
+) -> dict:
     model.actor.eval()
     if args.controller == "teacher_residual":
         return evaluate_checkpoint_policy(
             transient_checkpoint(model, args),
-            seed=args.seed + 1000,
+            seed=seed,
             steps=args.eval_steps,
             num_envs=args.eval_num_envs,
             use_native_step=args.native_step,
@@ -145,7 +165,7 @@ def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
     return evaluate_policy(
         model.actor,
         args.policy_tasks,
-        seed=args.seed + 1000,
+        seed=seed,
         steps=args.eval_steps,
         num_envs=args.eval_num_envs,
         use_native_step=args.native_step,
@@ -154,6 +174,24 @@ def eval_actor(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
         sensor_profile=args.sensor_profile,
         observation_mode=args.observation_mode,
     )
+
+
+def finalize_best(
+    model: SixDofActorCritic,
+    best: dict,
+    args: argparse.Namespace,
+) -> dict:
+    model.actor.load_state_dict(best["state_dict"])
+    best["selection_metrics"] = best["metrics"]
+    best["metrics"] = eval_actor(
+        model,
+        args,
+        seed=args.evaluation_seed,
+    )
+    best["selection_seed"] = int(args.selection_seed)
+    best["evaluation_seed"] = int(args.evaluation_seed)
+    best["evaluation_score"] = score_metrics(best["metrics"])
+    return best
 
 
 def score_metrics(metrics: dict) -> float:
@@ -176,18 +214,18 @@ def wandb_metrics(metrics: dict, losses: dict, score: float) -> dict[str, float]
 
 
 def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, score: float, update: int) -> dict:
-    return {
-        "state_dict": {key: value.detach().cpu().clone() for key, value in model.actor.state_dict().items()},
-        "task": ",".join(args.policy_tasks),
-        "tasks": list(args.policy_tasks),
-        "task_conditioned": len(args.policy_tasks) > 1,
-        "hidden_size": args.hidden_size,
-        "observation_dim": observation_dim(28 + task_observation_dim(args.policy_tasks), args.observation_mode),
-        "base_observation_dim": 28,
-        "observation_mode": args.observation_mode,
-        "action_dim": 4,
+    checkpoint = build_checkpoint_payload(
+        state_dict={key: value.detach().cpu().clone() for key, value in model.actor.state_dict().items()},
+        tasks=args.policy_tasks,
+        hidden_size=args.hidden_size,
+        observation_mode=args.observation_mode,
+        controller=args.controller,
+        residual_scale=args.residual_scale,
+    )
+    checkpoint.update({
         "selection_update": update,
         "selection_score": score,
+        "selection_seed": args.selection_seed,
         "metrics": metrics,
         "trainer": "ppo",
         "controller": args.controller,
@@ -201,7 +239,8 @@ def payload(model: SixDofActorCritic, args: argparse.Namespace, metrics: dict, s
         "task_sampling_probabilities": {task: float(probability) for task, probability in zip(args.policy_tasks, args.task_probabilities, strict=True)},
         "use_native_step": args.native_step,
         "note": "Closed-loop PPO simulation checkpoint; not approved for live hardware.",
-    }
+    })
+    return checkpoint
 
 
 def report(checkpoint: dict, args: argparse.Namespace) -> dict:
@@ -217,10 +256,13 @@ def report(checkpoint: dict, args: argparse.Namespace) -> dict:
         "checkpoint": args.checkpoint,
         "gate": gate,
         "metrics": checkpoint["metrics"],
+        "selection_metrics": checkpoint["selection_metrics"],
         "history": checkpoint["history"],
         "controller": args.controller,
         "residual_scale": args.residual_scale,
         "sensor_profile": args.sensor_profile,
+        "selection_seed": checkpoint["selection_seed"],
+        "evaluation_seed": checkpoint["evaluation_seed"],
         "thresholds": {
             "max_yaw_error_rad": args.max_yaw_error_rad,
             "max_yaw_p95_error_rad": args.max_yaw_p95_error_rad,
@@ -229,16 +271,17 @@ def report(checkpoint: dict, args: argparse.Namespace) -> dict:
 
 
 def transient_checkpoint(model: SixDofActorCritic, args: argparse.Namespace) -> dict:
-    return {
-        "state_dict": {key: value.detach().cpu().clone() for key, value in model.actor.state_dict().items()},
-        "task": ",".join(args.policy_tasks),
-        "tasks": list(args.policy_tasks),
-        "hidden_size": args.hidden_size,
-        "observation_dim": observation_dim(28 + task_observation_dim(args.policy_tasks), args.observation_mode),
-        "observation_mode": args.observation_mode,
-        "controller": args.controller,
-        "residual_scale": args.residual_scale,
-    }
+    return build_checkpoint_payload(
+        state_dict={
+            key: value.detach().cpu().clone()
+            for key, value in model.actor.state_dict().items()
+        },
+        tasks=args.policy_tasks,
+        hidden_size=args.hidden_size,
+        observation_mode=args.observation_mode,
+        controller=args.controller,
+        residual_scale=args.residual_scale,
+    )
 
 
 def frozen_actor(model: SixDofActorCritic):
@@ -247,19 +290,6 @@ def frozen_actor(model: SixDofActorCritic):
     for parameter in actor.parameters():
         parameter.requires_grad_(False)
     return actor
-
-
-def validate_init_checkpoint(checkpoint: dict, input_dim: int) -> None:
-    if int(checkpoint.get("observation_dim", 28)) != input_dim:
-        raise ValueError("init checkpoint observation_dim does not match --observation-mode")
-
-
-def resolve_policy_tasks(args: argparse.Namespace, checkpoint: dict | None) -> tuple[str, ...]:
-    if args.train_tasks:
-        return parse_task_spec(args.train_tasks)
-    if checkpoint:
-        return checkpoint_tasks(checkpoint)
-    return parse_task_spec(args.task)
 
 
 if __name__ == "__main__":

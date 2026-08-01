@@ -6,6 +6,7 @@ import numpy as np
 
 from .env import ACTION_DIM, OBSERVATION_DIM, SixDofCrazyflieEnv, quat_to_yaw, wrap_angle
 from .geometry import quat_to_matrix
+from .tasks import TASKS
 from .yaw import circle_tangent_yaw
 from flightrl.vertical_clearance import vertical_clearance_push_np
 
@@ -27,7 +28,13 @@ class SixDofPolicy(nn.Module):
         )
 
     def forward(self, observations):
-        return self.net(torch.as_tensor(observations, dtype=torch.float32))
+        return torch.tanh(self.action_location(observations))
+
+    def action_location(self, observations):
+        hidden = torch.as_tensor(observations, dtype=torch.float32)
+        for layer in tuple(self.net.children())[:-1]:
+            hidden = layer(hidden)
+        return hidden
 
 
 def teacher_actions(env: SixDofCrazyflieEnv, task: str = "position_yaw") -> np.ndarray:
@@ -35,9 +42,9 @@ def teacher_actions(env: SixDofCrazyflieEnv, task: str = "position_yaw") -> np.n
         return obstacle_teacher(env, profile=getattr(env, "teacher_profile", "default"))
     if task == "circle":
         return circle_teacher(env)
-    if task == "attitude":
-        return attitude_teacher(env)
-    return position_yaw_teacher(env)
+    if task == "position_yaw":
+        return position_yaw_teacher(env)
+    raise ValueError(f"unknown 6-DoF teacher task {task!r}; expected one of {TASKS}")
 
 
 def position_yaw_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
@@ -101,37 +108,16 @@ def obstacle_teacher_from_gains(
     return action_from_desired_acc(env, desired_acc, yaw_rate, max_lean_rad=max_lean_rad, attitude_rate_gain=attitude_rate_gain)
 
 
-def attitude_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
-    yaw = quat_to_yaw(env.quaternion)
-    target_roll = 0.35 * np.tanh(env.target_position[:, 1])
-    target_pitch = 0.35 * np.tanh(env.target_position[:, 0])
-    roll, pitch = roll_pitch_from_quat(env.quaternion)
-    rates = np.stack(
-        [
-            3.0 * (target_roll - roll),
-            3.0 * (target_pitch - pitch),
-            1.6 * wrap_angle(env.target_yaw - yaw),
-        ],
-        axis=1,
-    )
-    thrust = 1.0 / np.maximum(quat_to_matrix(env.quaternion)[:, 2, 2], 0.35)
-    vertical = 1.5 * (env.target_position[:, 2] - env.position[:, 2]) - 0.5 * env.velocity[:, 2]
-    action = np.zeros((env.num_envs, ACTION_DIM), dtype=np.float32)
-    action[:, 0] = np.clip((thrust + 0.12 * vertical - 1.0) / 0.75, -1.0, 1.0)
-    action[:, 1:4] = np.clip(rates / env.max_rate, -1.0, 1.0)
-    return action
-
-
 def circle_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
-    center = env.target_position.copy()
-    center[:, 2] = 0.65
-    radial = env.position - center
+    radial = env.position - env.target_position
     radial[:, 2] = 0.0
     radius = np.maximum(np.linalg.norm(radial[:, :2], axis=1, keepdims=True), 0.2)
     tangent = np.concatenate([-radial[:, 1:2], radial[:, 0:1], np.zeros((env.num_envs, 1), dtype=np.float32)], axis=1)
     tangent /= radius
     desired_velocity = 0.45 * tangent - 0.6 * (radius - 0.75) * radial / radius
-    desired_velocity[:, 2] = 0.7 * (0.65 - env.position[:, 2])
+    desired_velocity[:, 2] = 0.7 * (
+        env.target_position[:, 2] - env.position[:, 2]
+    )
     desired_acc = 2.0 * (desired_velocity - env.velocity)
     yaw_rate = 1.8 * wrap_angle(circle_tangent_yaw(env) - quat_to_yaw(env.quaternion))
     return action_from_desired_acc(env, desired_acc, yaw_rate)

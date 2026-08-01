@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from time import time
+from math import isfinite
+from time import monotonic
 from typing import Mapping
 
 from .config import CrazyflieHardwareConfig
 from .errors import HardwareSafetyError
-from .telemetry import available_log_variables, build_log_configs
+from .telemetry import available_log_variables, build_log_configs, next_log_packet
 
 
 SUPERVISOR_INFO_FLAGS = (
@@ -23,6 +24,8 @@ SUPERVISOR_INFO_FLAGS = (
     "HL control is disabled",
 )
 BLOCKING_SUPERVISOR_FLAGS = {"Is tumbled", "Is locked", "Is crashed"}
+PREARM_REQUIRED_SUPERVISOR_FLAGS = {"Can be armed"}
+POSTARM_REQUIRED_SUPERVISOR_FLAGS = {"Is armed", "Can fly"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +41,10 @@ def expected_deck_params(config: CrazyflieHardwareConfig) -> tuple[str, ...]:
         params.append("deck.bcFlow2")
     if config.decks.expect_multiranger:
         params.append("deck.bcMultiranger")
+    if config.decks.expect_ai_deck:
+        params.append("deck.bcAI")
+    if config.decks.expect_zranger:
+        params.append("deck.bcZRanger2")
     return tuple(params)
 
 
@@ -48,7 +55,7 @@ def inspect_decks(scf, config: CrazyflieHardwareConfig) -> PreflightReport:
     getter = getattr(param, "get_value", None)
     if getter is None:
         return PreflightReport(
-            ok=True,
+            ok=False,
             warnings=("deck parameters could not be read through this cflib object",),
         )
 
@@ -98,6 +105,8 @@ def inspect_log_variables(scf, config: CrazyflieHardwareConfig) -> PreflightRepo
 
 
 def decode_supervisor_info(value: int) -> tuple[str, ...]:
+    if type(value) is not int or value < 0:
+        raise ValueError("supervisor.info must be a non-negative integer bitfield")
     return tuple(name for index, name in enumerate(SUPERVISOR_INFO_FLAGS) if value & (1 << index))
 
 
@@ -111,20 +120,66 @@ def read_supervisor_info(scf, modules, config: CrazyflieHardwareConfig, *, timeo
     read_config = replace(config, logging=logging)
     latest: dict[str, float] = {}
     with modules.sync_logger_cls(scf, build_log_configs(modules, read_config)) as logger:
-        deadline = time() + timeout_s
-        while time() < deadline:
-            _timestamp, values, _conf = next(logger)
+        deadline = monotonic() + timeout_s
+        while (remaining := deadline - monotonic()) > 0.0:
+            packet = next_log_packet(logger, timeout_s=remaining)
+            if packet is None:
+                return None
+            _timestamp, values, _conf = packet
             latest.update({key: float(value) for key, value in values.items()})
             if "supervisor.info" in latest:
-                return int(latest["supervisor.info"])
+                raw = latest["supervisor.info"]
+                if not isfinite(raw) or raw < 0.0 or raw > 65535.0 or not raw.is_integer():
+                    raise HardwareSafetyError(f"invalid supervisor.info value: {raw!r}")
+                return int(raw)
     return None
 
 
 def require_supervisor_allows_flight(scf, modules, config: CrazyflieHardwareConfig) -> None:
+    _require_supervisor_state(
+        scf,
+        modules,
+        config,
+        required=PREARM_REQUIRED_SUPERVISOR_FLAGS,
+        phase="before arming",
+    )
+
+
+def require_expected_decks(scf, config: CrazyflieHardwareConfig) -> None:
+    report = inspect_decks(scf, config)
+    if report.ok:
+        return
+    detail = "; ".join(report.warnings) or "configured deck check failed"
+    raise HardwareSafetyError(f"Crazyflie deck preflight failed: {detail}")
+
+
+def require_supervisor_is_armed_and_can_fly(scf, modules, config: CrazyflieHardwareConfig) -> None:
+    _require_supervisor_state(
+        scf,
+        modules,
+        config,
+        required=POSTARM_REQUIRED_SUPERVISOR_FLAGS,
+        phase="after arming",
+    )
+
+
+def _require_supervisor_state(
+    scf,
+    modules,
+    config: CrazyflieHardwareConfig,
+    *,
+    required: set[str],
+    phase: str,
+) -> None:
     info = read_supervisor_info(scf, modules, config)
     if info is None:
-        return
+        raise HardwareSafetyError(f"supervisor.info was not received {phase}")
+    flags = set(decode_supervisor_info(info))
     blocking = blocking_supervisor_flags(info)
     if blocking:
-        flags = ", ".join(blocking)
-        raise HardwareSafetyError(f"Crazyflie supervisor blocks flight: {flags} (supervisor.info={info})")
+        names = ", ".join(blocking)
+        raise HardwareSafetyError(f"Crazyflie supervisor blocks flight: {names} (supervisor.info={info})")
+    missing = sorted(required - flags)
+    if missing:
+        names = ", ".join(missing)
+        raise HardwareSafetyError(f"Crazyflie supervisor lacks {names} {phase} (supervisor.info={info})")

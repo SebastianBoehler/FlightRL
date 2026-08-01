@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+from math import inf, nan
 from pathlib import Path
 import subprocess
 import sys
+
+import pytest
 
 from flightrl.hardware.calibration_flight import build_calibration_sequence, sequence_duration_s
 from flightrl.hardware.calibration_quality import summarize_calibration_log
@@ -46,6 +49,24 @@ def test_full_yaw_square_uses_independent_turn_duration() -> None:
     assert sequence_duration_s(sequence) == 15.0
 
 
+@pytest.mark.parametrize(
+    ("keyword", "value"),
+    [
+        ("segment_s", nan),
+        ("hover_s", inf),
+        ("speed_m_s", inf),
+        ("yawrate_deg_s", nan),
+        ("segment_s", 10.1),
+        ("hover_s", 10.1),
+        ("speed_m_s", 0.51),
+        ("yawrate_deg_s", 121.0),
+    ],
+)
+def test_calibration_sequence_rejects_nonfinite_or_unbounded_values(keyword: str, value: float) -> None:
+    with pytest.raises(ValueError):
+        build_calibration_sequence(**{keyword: value})
+
+
 def test_calibration_summary_marks_complete_log_ready() -> None:
     rows = sample_rows()
 
@@ -77,17 +98,36 @@ def test_calibration_summary_rejects_non_monotonic_time() -> None:
     assert "time_monotonic" in summary["failures"]
 
 
-def test_calibration_flight_dry_run_runs_without_cflib() -> None:
-    result = subprocess.run(
-        [sys.executable, "scripts/crazyflie_calibration_flight.py", "--dry-run", "--segment-s", "0.2"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+@pytest.mark.parametrize("value", ("nan", "inf", "not-a-number"))
+def test_calibration_summary_rejects_corrupt_numeric_evidence(value: str) -> None:
+    rows = sample_rows()
+    rows[4]["stateEstimate.x"] = value
+
+    summary = summarize_calibration_log(
+        rows,
+        min_rows=10,
+        min_duration_s=1.0,
+        min_floor_valid_ratio=0.9,
+        min_yaw_span_deg=20.0,
     )
 
-    assert "dry_run calibration sequence" in result.stdout
-    assert "line_x_pos" in result.stdout
+    assert summary["replay_calibration_ready"] is False
+    assert summary["invalid_numeric_values"] == 1
+    assert "nonfinite_values" in summary["failures"]
+
+
+@pytest.mark.parametrize(
+    "thresholds",
+    (
+        {"min_duration_s": float("nan")},
+        {"min_rows": True},
+        {"min_floor_valid_ratio": 1.1},
+        {"min_yaw_span_deg": float("inf")},
+    ),
+)
+def test_calibration_summary_rejects_invalid_thresholds(thresholds: dict) -> None:
+    with pytest.raises(ValueError):
+        summarize_calibration_log(sample_rows(), **thresholds)
 
 
 def test_calibration_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:

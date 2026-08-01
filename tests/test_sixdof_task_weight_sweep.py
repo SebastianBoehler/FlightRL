@@ -30,6 +30,8 @@ def test_task_weight_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
         [
             sys.executable,
             str(ROOT / "scripts" / "run_sixdof_task_weight_sweep.py"),
+            "--dataset",
+            str(tmp_path / "dataset.npz"),
             "--max-variants",
             "2",
             "--report",

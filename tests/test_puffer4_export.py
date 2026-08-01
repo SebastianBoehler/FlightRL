@@ -161,13 +161,13 @@ def test_export_sixdof_puffer4_assets_supports_stable_live_reward(tmp_path: Path
     assert "reward_mode = 5" in result.config_path.read_text()
 
 
-def test_export_sixdof_puffer4_assets_supports_deckless_sensor_profile(tmp_path: Path) -> None:
+def test_export_sixdof_puffer4_assets_supports_no_ranger_sensor_profile(tmp_path: Path) -> None:
     pufferlib_root = tmp_path / "PufferLib-4.0"
     result = export_sixdof_puffer4_assets(
         pufferlib_root,
         settings=Puffer4ExportSettings(
-            env_name="flightrl_deckless",
-            sim_profile="deckless",
+            env_name="flightrl_no_ranger",
+            sim_profile="no_ranger",
             task="position_yaw",
             reward_mode="env",
         ),
@@ -180,11 +180,23 @@ def test_export_sixdof_puffer4_assets_supports_deckless_sensor_profile(tmp_path:
     assert "env->observations[18 + i] = 1.0f" in binding_text
 
 
-def test_export_sixdof_puffer4_assets_rejects_deckless_obstacle_training(tmp_path: Path) -> None:
+def test_export_sixdof_puffer4_assets_rejects_no_ranger_obstacle_training(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="requires ranger data"):
         export_sixdof_puffer4_assets(
             tmp_path / "PufferLib-4.0",
-            settings=Puffer4ExportSettings(env_name="flightrl_bad", sim_profile="deckless", task="obstacle_avoidance"),
+            settings=Puffer4ExportSettings(env_name="flightrl_bad", sim_profile="no_ranger", task="obstacle_avoidance"),
+        )
+
+
+@pytest.mark.parametrize("task", ("attitude", "2", "unknown"))
+def test_export_rejects_retired_or_numeric_task_ids(
+    tmp_path: Path,
+    task: str,
+) -> None:
+    with pytest.raises(ValueError, match="unknown task"):
+        export_sixdof_puffer4_assets(
+            tmp_path / "PufferLib-4.0",
+            settings=Puffer4ExportSettings(env_name="flightrl_bad", task=task),
         )
 
 

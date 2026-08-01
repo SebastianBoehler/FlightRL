@@ -19,6 +19,7 @@ def test_load_crazyflie_hardware_config() -> None:
     assert config.safety.requires_manual_confirm is True
     assert config.decks.expect_flow_deck is True
     assert config.decks.expect_multiranger is True
+    assert config.decks.expect_ai_deck is False
 
 
 def test_default_hardware_config_uses_comprehensive_log_profile() -> None:
@@ -64,6 +65,20 @@ def test_load_flow_only_hardware_config_does_not_require_multiranger() -> None:
     assert "sys.canfly" in config.logging.variables
     assert "range.front" not in config.logging.variables
     assert len(config.logging.variables) <= 80
+
+
+def test_load_aideck_flow2_profile_binds_exact_deck_stack() -> None:
+    config = load_hardware_config(
+        ROOT
+        / "configs"
+        / "hardware"
+        / "crazyflie_2_1_brushless_aideck_flow2.toml"
+    )
+
+    assert config.decks.expect_ai_deck is True
+    assert config.decks.expect_flow_deck is True
+    assert config.decks.expect_zranger is True
+    assert config.decks.expect_multiranger is False
 
 
 def test_invalid_demo_height_is_rejected(tmp_path: Path) -> None:

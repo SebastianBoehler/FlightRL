@@ -5,7 +5,7 @@ from .sixdof.curriculum import resolve_reset_profile
 from .sixdof.sensor_model import resolve_sensor_profile
 
 
-TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "attitude": 2, "circle": 3}
+TASK_IDS = {"position_yaw": 0, "obstacle_avoidance": 1, "circle": 3}
 REWARD_MODE_IDS = {
     "env": 0,
     "progress": 1,
@@ -101,26 +101,31 @@ def validate_sensor_task_contract(
 def reset_profile_values(name: str) -> dict[str, float]:
     profile = resolve_reset_profile(name)
     near_wall = profile.near_wall_clearance_range or (0.0, 0.0)
+    target_radius = profile.target_radius_range or (-1.0, -1.0)
     return {
         "near_wall_probability": profile.near_wall_probability,
         "near_wall_min_clearance_m": near_wall[0],
         "near_wall_max_clearance_m": near_wall[1],
         "near_wall_yaw_jitter_rad": profile.near_wall_yaw_jitter_rad,
+        "initial_xy_abs": profile.initial_xy_abs,
+        "target_xy_abs": profile.target_xy_abs,
         "reset_z_min": profile.z_range[0],
         "reset_z_max": profile.z_range[1],
+        "reset_z_margin": profile.z_margin,
         "target_z_min": profile.target_z_range[0],
         "target_z_max": profile.target_z_range[1],
+        "attitude_std": profile.attitude_std,
         "target_xy_offset_abs": -1.0 if profile.target_xy_offset_abs is None else profile.target_xy_offset_abs,
         "target_z_offset_abs": -1.0 if profile.target_z_offset_abs is None else profile.target_z_offset_abs,
         "target_yaw_offset_abs": -1.0 if profile.target_yaw_offset_abs is None else profile.target_yaw_offset_abs,
+        "target_radius_min": target_radius[0],
+        "target_radius_max": target_radius[1],
+        "initial_velocity_xy_std": profile.initial_velocity_xy_std,
+        "initial_velocity_z_std": profile.initial_velocity_z_std,
     }
 
 
 def resolve_id(value: str, choices: dict[str, int], label: str) -> int:
-    try:
-        return int(value)
-    except ValueError:
-        pass
     if value not in choices:
         raise ValueError(f"unknown {label} {value!r}; expected one of {sorted(choices)}")
     return choices[value]

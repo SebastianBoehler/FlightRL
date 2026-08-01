@@ -4,24 +4,48 @@ import argparse
 import json
 from pathlib import Path
 
-from flightrl.sixdof.readiness import compact_puffer_export, compact_residual_sweep, compact_training_throughput, puffer_export_failures, read_json, render_markdown, summary, training_throughput_failures
+from flightrl.evidence_scope import DESKTOP_DEVELOPMENT_SCOPE
+from flightrl.evidence_values import exact_true, failure_strings, finite_number
+from flightrl.sixdof.candidate_evidence import (
+    validate_desktop_identities,
+    validate_readiness_candidate,
+)
+from flightrl.sixdof.native_readiness import compact_native_parity
+from flightrl.sixdof.puffer_readiness import (
+    compact_puffer_export,
+    puffer_export_failures,
+)
+from flightrl.sixdof.profile_readiness import compact_profile_matrix, profile_record
+from flightrl.sixdof.readiness import (
+    compact_residual_sweep,
+    compact_training_throughput,
+    read_json,
+    render_markdown,
+    summary,
+    training_throughput_failures,
+)
+from flightrl.sixdof.readiness_evidence import compact_replay_comparison, compact_room
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Promote 6-DoF checkpoint candidates using sim, edge, room, and native parity evidence")
+    parser = argparse.ArgumentParser(description="Build Mac/desktop development readiness from simulation, desktop CPU, room, and native parity evidence")
     parser.add_argument("--matrix", required=True)
     parser.add_argument("--room-report", default=None)
     parser.add_argument("--native-parity", default=None)
     parser.add_argument("--profile-matrix", default=None, help="Optional build_sixdof_profile_matrix.py JSON report.")
     parser.add_argument("--replay-comparison", default=None, help="Optional compare_crazyflie_replay.py JSON report with aligned real/sim signals.")
-    parser.add_argument("--residual-sweep", default=None, help="Optional run_sixdof_residual_ppo_sweep.py JSON report.")
+    parser.add_argument(
+        "--residual-sweep",
+        default=None,
+        help="Optional desktop residual-policy sweep JSON report.",
+    )
     parser.add_argument("--training-throughput", default=None, help="Optional benchmark_sixdof_training_throughput.py JSON report.")
     parser.add_argument("--puffer-export", default=None, help="Optional build_sixdof_puffer_export_report.py JSON report.")
     parser.add_argument("--require-replay-comparison", action="store_true")
     parser.add_argument("--require-training-throughput", action="store_true")
     parser.add_argument("--require-puffer-export", action="store_true")
     parser.add_argument("--output", default="artifacts/replay/sixdof_readiness_report.json")
-    parser.add_argument("--max-latency-us", type=float, default=50.0)
+    parser.add_argument("--max-desktop-latency-us", type=float, default=50.0)
     parser.add_argument("--max-native-state-rmse", type=float, default=1e-5)
     parser.add_argument("--max-native-range-rmse", type=float, default=1.0)
     parser.add_argument("--max-replay-state-rmse", type=float, default=0.5)
@@ -30,7 +54,10 @@ def main() -> None:
     parser.add_argument("--min-training-total-sps", type=float, default=0.0)
     args = parser.parse_args()
 
-    report = build_report(args)
+    try:
+        report = build_report(args)
+    except ValueError as error:
+        parser.error(str(error))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -40,7 +67,9 @@ def main() -> None:
 
 
 def build_report(args: argparse.Namespace) -> dict:
+    validate_thresholds(args)
     matrix = read_json(args.matrix)
+    validate_matrix(matrix)
     room = read_json(args.room_report) if args.room_report else None
     native = read_json(args.native_parity) if args.native_parity else None
     profile = read_json(args.profile_matrix) if args.profile_matrix else None
@@ -61,7 +90,7 @@ def build_report(args: argparse.Namespace) -> dict:
         evaluate_record(
             record,
             global_evidence,
-            args.max_latency_us,
+            args.max_desktop_latency_us,
             args.require_training_throughput,
             args.min_training_total_sps,
             args.require_puffer_export,
@@ -70,6 +99,8 @@ def build_report(args: argparse.Namespace) -> dict:
         for record in readiness_candidates(matrix)
     ]
     return {
+        "evidence_scope": DESKTOP_DEVELOPMENT_SCOPE,
+        "deployment_authority": False,
         "matrix": args.matrix,
         "room_report": args.room_report,
         "native_parity": args.native_parity,
@@ -79,7 +110,7 @@ def build_report(args: argparse.Namespace) -> dict:
         "training_throughput": args.training_throughput,
         "puffer_export": args.puffer_export,
         "thresholds": {
-            "max_latency_us": args.max_latency_us,
+            "max_desktop_latency_us": args.max_desktop_latency_us,
             "max_native_state_rmse": args.max_native_state_rmse,
             "max_native_range_rmse": args.max_native_range_rmse,
             "max_replay_state_rmse": args.max_replay_state_rmse,
@@ -92,52 +123,77 @@ def build_report(args: argparse.Namespace) -> dict:
         "global_evidence": global_evidence,
         "records": records,
         "summary": summary(records),
-        "safety": "Readiness is for simulation/edge bench promotion only; it is not approval for autonomous live flight.",
+        "safety": "Mac/desktop development readiness only; not AI Deck deployment readiness or autonomous live-flight authority.",
     }
 
 
 def evaluate_record(
     task_and_record: tuple[str, dict],
     global_evidence: dict,
-    max_latency_us: float,
+    max_desktop_latency_us: float,
     require_training_throughput: bool = False,
     min_training_total_sps: float = 0.0,
     require_puffer_export: bool = False,
     require_checkpoint_file: bool = False,
 ) -> dict:
     task, record = task_and_record
+    reject_legacy_edge_evidence(record)
+    latency_limit = finite_number(max_desktop_latency_us)
+    if latency_limit is None or latency_limit < 0.0:
+        raise ValueError("max_desktop_latency_us must be a finite nonnegative number")
+    validate_readiness_candidate(record)
+    if task != "multitask" and task not in record["tasks"]:
+        raise ValueError(f"candidate task key {task!r} is not bound to its task list")
     failures = []
     checkpoint = record["checkpoint"]
     checkpoint_exists = Path(checkpoint).exists()
     if require_checkpoint_file and not checkpoint_exists:
         failures.append("checkpoint_missing")
-    if not record.get("passed", False):
+    elif require_checkpoint_file:
+        validate_desktop_identities(record, checkpoint)
+    declared_failures = failure_strings(record.get("failures", []))
+    if not exact_true(record.get("passed")) or declared_failures != []:
         failures.append("sim_gate")
-    parity = record.get("edge_parity", {})
-    if not parity.get("passed", False):
-        failures.append("edge_parity")
-    latency = record.get("edge_latency", {})
-    latency_us = latency.get("per_sample_us")
-    if latency_us is None:
-        failures.append("edge_latency_missing")
-    elif latency_us > max_latency_us:
-        failures.append("edge_latency_slow")
-    if not global_evidence["room"]["mapping_ready"]:
+    parity = record.get("desktop_parity", {})
+    if not isinstance(parity, dict) or not exact_true(parity.get("passed")):
+        failures.append("desktop_parity")
+    latency = record.get("desktop_latency", {})
+    latency_us = finite_number(latency.get("per_sample_us")) if isinstance(latency, dict) else None
+    latency_sps = finite_number(latency.get("samples_per_second")) if isinstance(latency, dict) else None
+    if not exact_true(latency.get("present")) or latency_us is None or latency_us <= 0.0 or latency_sps is None or latency_sps <= 0.0:
+        failures.append("desktop_latency_missing")
+    elif latency_us > latency_limit:
+        failures.append("desktop_latency_slow")
+    if not exact_true(global_evidence["room"].get("mapping_ready")):
         failures.append("room_map")
-    if not global_evidence["native_parity"]["passed"]:
+    if not exact_true(global_evidence["native_parity"].get("passed")):
         failures.append("native_parity")
     profile = profile_record(record, global_evidence.get("profile_matrix", {"present": False}))
-    if global_evidence.get("profile_matrix", {}).get("present") and "position_yaw" in record.get("tasks", [task]) and not profile.get("present"):
+    if exact_true(global_evidence.get("profile_matrix", {}).get("present")) and "position_yaw" in record.get("tasks", [task]) and not exact_true(profile.get("present")):
         failures.append("profile_matrix_missing")
-    elif profile.get("present") and not profile.get("passed_all_profiles", False):
+    elif exact_true(profile.get("present")) and not exact_true(profile.get("passed_all_profiles")):
         failures.append("profile_matrix")
     replay = global_evidence["replay_comparison"]
-    if replay.get("required") and not replay.get("present"):
+    if exact_true(replay.get("required")) and not exact_true(replay.get("present")):
         failures.append("replay_comparison_missing")
-    elif replay.get("present") and not replay.get("passed"):
+    elif exact_true(replay.get("present")) and not exact_true(replay.get("passed")):
         failures.append("replay_comparison")
-    failures.extend(training_throughput_failures(global_evidence.get("training_throughput", {}), require=require_training_throughput, min_total_sps=min_training_total_sps))
-    failures.extend(puffer_export_failures(global_evidence.get("puffer_export", {}), require=require_puffer_export))
+    failures.extend(
+        training_throughput_failures(
+            global_evidence.get("training_throughput", {}),
+            require=require_training_throughput,
+            min_total_sps=min_training_total_sps,
+            controller=record["controller"],
+            tasks=record["tasks"],
+        )
+    )
+    failures.extend(
+        puffer_export_failures(
+            global_evidence.get("puffer_export", {}),
+            require=require_puffer_export,
+            candidate=record,
+        )
+    )
     return {
         "task": task,
         "label": record["label"],
@@ -147,7 +203,7 @@ def evaluate_record(
         "ready": not failures,
         "failures": failures,
         "sim": {
-            "passed": record.get("passed", False),
+            "passed": exact_true(record.get("passed")) and declared_failures == [],
             "mean_completed_fraction": record.get("mean_completed_fraction"),
             "mean_position_error_m": record.get("mean_position_error_m"),
             "mean_yaw_error_rad": record.get("mean_yaw_error_rad"),
@@ -155,10 +211,17 @@ def evaluate_record(
             "clearance_p01_m": record.get("clearance_p01_m"),
             "per_task_gate": record.get("per_task_gate", {}),
         },
-        "edge_parity": parity,
-        "edge_latency": latency,
+        "desktop_parity": parity,
+        "desktop_latency": latency,
         "profile_matrix": profile,
     }
+
+
+def reject_legacy_edge_evidence(record: dict) -> None:
+    fields = [field for field in ("edge_parity", "edge_latency") if field in record]
+    if fields:
+        joined = ", ".join(fields)
+        raise ValueError(f"legacy {joined} evidence is non-authoritative; regenerate the candidate matrix with desktop_* fields")
 
 
 def readiness_candidates(matrix: dict) -> list[tuple[str, dict]]:
@@ -169,113 +232,33 @@ def readiness_candidates(matrix: dict) -> list[tuple[str, dict]]:
     return candidates
 
 
-def compact_room(report: dict | None) -> dict:
-    if not report:
-        return {"present": False, "mapping_ready": False}
-    summary = report.get("summary", {})
-    estimate = report.get("room_estimate", {})
-    return {
-        "present": True,
-        "mapping_ready": bool(summary.get("mapping_ready", False)),
-        "failures": summary.get("failures", []),
-        "point_count": summary.get("point_count"),
-        "duration_s": summary.get("duration_s"),
-        "width_m": estimate.get("width_m"),
-        "depth_m": estimate.get("depth_m"),
-        "height_m": estimate.get("height_m"),
-        "warnings": estimate.get("warnings", []),
-    }
+def validate_matrix(matrix: object) -> None:
+    if not isinstance(matrix, dict):
+        raise ValueError("candidate matrix must be a JSON object")
+    if matrix.get("evidence_scope") != DESKTOP_DEVELOPMENT_SCOPE or matrix.get("deployment_authority") is not False:
+        raise ValueError("candidate matrix scope is invalid; regenerate desktop evidence")
+    if not isinstance(matrix.get("best_by_task"), dict):
+        raise ValueError("candidate matrix best_by_task is missing or invalid")
+    multitask = matrix.get("best_multitask")
+    if multitask is not None and not isinstance(multitask, dict):
+        raise ValueError("candidate matrix best_multitask is invalid")
 
 
-def compact_native_parity(report: dict | None, max_state_rmse: float, max_range_rmse: float) -> dict:
-    if not report:
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    signals = report.get("aligned", {}).get("signals", {})
-    failures = []
-    worst_state = worst_rmse(signals, "stateEstimate.")
-    worst_range = worst_rmse(signals, "range.")
-    if worst_state is None or worst_state > max_state_rmse:
-        failures.append("state_rmse")
-    if worst_range is None or worst_range > max_range_rmse:
-        failures.append("range_rmse")
-    mismatches = native_mismatch_count(report)
-    if mismatches:
-        failures.append("termination_mismatch")
-    return {
-        "present": True,
-        "passed": not failures,
-        "failures": failures,
-        "samples": report.get("aligned", {}).get("samples", 0),
-        "overlap_duration_s": report.get("aligned", {}).get("overlap_duration_s", 0.0),
-        "worst_state_rmse": worst_state,
-        "worst_range_rmse": worst_range,
-        "termination_mismatches": mismatches,
-    }
-
-
-def compact_profile_matrix(report: dict | None) -> dict:
-    if not report:
-        return {"present": False, "profiles": [], "by_checkpoint": {}, "by_label": {}}
-    records = [compact_profile_record(record) for record in report.get("records", [])]
-    return {
-        "present": True,
-        "profiles": report.get("profiles", []),
-        "by_checkpoint": {record["checkpoint"]: record for record in records},
-        "by_label": {record["label"]: record for record in records},
-    }
-def compact_profile_record(record: dict) -> dict:
-    return {
-        "present": True, "label": record["label"], "checkpoint": record["checkpoint"],
-        "passed_all_profiles": record["passed_all_profiles"], "missing_profiles": record["missing_profiles"],
-        "failures_by_profile": record["failures_by_profile"], "worst_survival_fraction": record["worst_survival_fraction"],
-        "worst_completed_fraction": record["worst_completed_fraction"], "worst_position_error_m": record["worst_position_error_m"],
-        "worst_clearance_p01_m": record["worst_clearance_p01_m"],
-        "worst_yaw_error_rad": record.get("worst_yaw_error_rad"),
-    }
-
-def profile_record(record: dict, profile_matrix: dict) -> dict:
-    if not profile_matrix.get("present"):
-        return {"present": False}
-    return profile_matrix["by_checkpoint"].get(record["checkpoint"]) or profile_matrix["by_label"].get(record["label"]) or {"present": False}
-
-def compact_replay_comparison(report: dict | None, args: argparse.Namespace) -> dict:
-    if not report:
-        return {"present": False, "required": args.require_replay_comparison, "passed": not args.require_replay_comparison}
-    aligned = report.get("aligned", {})
-    signals = aligned.get("signals", {})
-    worst_state = worst_rmse(signals, "stateEstimate.")
-    worst_range = worst_rmse(signals, "range.")
-    failures = []
-    if aligned.get("overlap_duration_s", 0.0) < args.min_replay_overlap_s:
-        failures.append("overlap")
-    if worst_state is None or worst_state > args.max_replay_state_rmse:
-        failures.append("state_rmse")
-    if worst_range is None or worst_range > args.max_replay_range_rmse_mm:
-        failures.append("range_rmse")
-    return {
-        "present": True,
-        "required": args.require_replay_comparison,
-        "passed": not failures,
-        "failures": failures,
-        "samples": aligned.get("samples", 0),
-        "overlap_duration_s": aligned.get("overlap_duration_s", 0.0),
-        "worst_state_rmse": worst_state,
-        "worst_range_rmse_mm": worst_range,
-    }
-
-
-def worst_rmse(signals: dict, prefix: str) -> float | None:
-    values = [metrics["rmse"] for key, metrics in signals.items() if key.startswith(prefix) and "rmse" in metrics]
-    return max(values) if values else None
-
-
-def native_mismatch_count(report: dict) -> int:
-    return int(
-        sum(
-            int(profile.get("terminal_mismatches", 0)) + int(profile.get("truncation_mismatches", 0))
-            for profile in report.get("profiles", [])
-        )
+def validate_thresholds(args: argparse.Namespace) -> None:
+    names = (
+        "max_desktop_latency_us",
+        "max_native_state_rmse",
+        "max_native_range_rmse",
+        "max_replay_state_rmse",
+        "max_replay_range_rmse_mm",
+        "min_replay_overlap_s",
+        "min_training_total_sps",
     )
+    if any((value := finite_number(getattr(args, name))) is None or value < 0.0 for name in names):
+        raise ValueError("readiness thresholds must be finite nonnegative numbers")
+    for name in ("require_replay_comparison", "require_training_throughput", "require_puffer_export"):
+        if type(getattr(args, name)) is not bool:
+            raise ValueError(f"{name} must be a boolean")
 
 
 if __name__ == "__main__":

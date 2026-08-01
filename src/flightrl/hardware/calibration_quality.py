@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import isfinite
 from typing import Mapping
 
 import numpy as np
@@ -34,6 +35,12 @@ def summarize_calibration_log(
     min_floor_valid_ratio: float = 0.5,
     min_yaw_span_deg: float = 45.0,
 ) -> dict:
+    validate_thresholds(
+        min_duration_s=min_duration_s,
+        min_rows=min_rows,
+        min_floor_valid_ratio=min_floor_valid_ratio,
+        min_yaw_span_deg=min_yaw_span_deg,
+    )
     columns = set(rows[0]) if rows else set()
     missing_columns = [column for column in REQUIRED_COLUMNS if column not in columns]
     modes = sorted({str(row.get("mode", "")) for row in rows if row.get("mode")})
@@ -43,6 +50,9 @@ def summarize_calibration_log(
     yaw_span = angular_span_deg([_float(row, "stabilizer.yaw") for row in rows])
     command_axes = commanded_axes(rows)
     failures = []
+    invalid_values = invalid_numeric_value_count(rows)
+    if invalid_values:
+        failures.append("nonfinite_values")
     if len(rows) < min_rows:
         failures.append("rows")
     if duration < min_duration_s:
@@ -67,6 +77,7 @@ def summarize_calibration_log(
         "modes": modes,
         "missing_modes": missing_modes,
         "command_axes": command_axes,
+        "invalid_numeric_values": invalid_values,
         "floor_valid_ratio": floor_ratio,
         "front_valid_ratio": valid_range_ratio(rows, "range.front"),
         "left_valid_ratio": valid_range_ratio(rows, "range.left"),
@@ -137,6 +148,44 @@ def xy_span(rows: list[Mapping[str, str]]) -> float:
 
 def _float(row: Mapping[str, str], key: str) -> float:
     try:
-        return float(row.get(key, 0.0))
+        value = float(row.get(key, 0.0))
     except (TypeError, ValueError):
         return 0.0
+    return value if isfinite(value) else 0.0
+
+
+def invalid_numeric_value_count(rows: list[Mapping[str, str]]) -> int:
+    numeric_columns = tuple(column for column in REQUIRED_COLUMNS if column != "mode")
+    invalid = 0
+    for row in rows:
+        for column in numeric_columns:
+            try:
+                value = float(row.get(column, ""))
+            except (TypeError, ValueError):
+                invalid += 1
+                continue
+            invalid += int(not isfinite(value))
+    return invalid
+
+
+def validate_thresholds(
+    *,
+    min_duration_s: float,
+    min_rows: int,
+    min_floor_valid_ratio: float,
+    min_yaw_span_deg: float,
+) -> None:
+    if type(min_rows) is not int or min_rows < 1:
+        raise ValueError("min_rows must be a positive integer")
+    values = (min_duration_s, min_floor_valid_ratio, min_yaw_span_deg)
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError("calibration thresholds must be finite numbers")
+    if min_duration_s < 0.0 or min_yaw_span_deg < 0.0:
+        raise ValueError("calibration duration and yaw span must be nonnegative")
+    if not 0.0 <= min_floor_valid_ratio <= 1.0:
+        raise ValueError("min_floor_valid_ratio must be in [0, 1]")

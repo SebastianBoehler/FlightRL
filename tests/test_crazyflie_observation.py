@@ -56,3 +56,48 @@ def test_ttc_range_rate_observation_shape_tracks_schema() -> None:
     )
 
     assert config.observation_dim == CRAZYFLIE_TELEMETRY_BASE_DIM + RANGE_SENSOR_DIM + RANGE_RATE_SENSOR_DIM + TTC_SENSOR_DIM + config.action_dim
+
+
+def test_native_range_rate_and_ttc_observations_are_physical() -> None:
+    config = load_config(
+        ROOT / "configs" / "tasks" / "hover.toml",
+        overrides={
+            "environment": {
+                "num_envs": 1,
+                "action_mode": "hover_command",
+                "reset_mode": "deterministic",
+            },
+            "sensors": {
+                "include_position": False,
+                "include_velocity": False,
+                "include_attitude": False,
+                "include_angular_velocity": False,
+                "include_target_vector": False,
+                "include_previous_action": False,
+                "include_health": False,
+                "include_imu": False,
+                "include_range_rate_sensor": True,
+                "include_ttc_sensor": True,
+            },
+            "task": {
+                "fixed_start": [7.0, 2.0],
+                "fixed_target": [7.0, 2.0],
+                "target_bounds": [7.0, 7.0, 2.0, 2.0],
+            },
+        },
+    )
+    env = make_env(config, seed=37)
+    observations, _ = env.reset(seed=37)
+
+    assert observations[0, 6] == np.float32(0.25)
+    for _ in range(22):
+        observations, *_ = env.step(
+            np.asarray([[-1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        )
+    snapshot = env.snapshot()
+    env.close()
+
+    assert snapshot["vx"] > 0.0
+    assert observations[0, 0] < 0.0
+    assert observations[0, 1] > 0.0
+    assert observations[0, 7] > 0.0

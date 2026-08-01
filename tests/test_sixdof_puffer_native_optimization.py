@@ -4,7 +4,7 @@ import numpy as np
 
 from flightrl.puffer4_sixdof_export import render_sixdof_puffer4_binding
 from flightrl.sixdof import SixDofCrazyflieEnv
-from flightrl.sixdof.rl import PpoConfig, SixDofActorCritic, collect_rollout, position_error_for_task_indices, rollout_reward
+from flightrl.sixdof.rl import SixDofActorCritic, collect_rollout, position_error_for_task_indices, rollout_reward
 
 
 def test_native_reset_is_deterministic_and_within_room_bounds() -> None:
@@ -61,6 +61,50 @@ def test_native_progress_reward_matches_python_reward() -> None:
     _, native_reward, *_ = native_env.step(actions)
 
     np.testing.assert_allclose(native_reward, expected, rtol=1e-5, atol=1e-5)
+
+
+def test_native_default_circle_reward_matches_task_aware_python_reward() -> None:
+    py_env = SixDofCrazyflieEnv(
+        num_envs=8,
+        seed=12,
+        task="circle",
+        reset_profile="circle_recovery",
+        use_native_step=False,
+    )
+    native_env = SixDofCrazyflieEnv(
+        num_envs=8,
+        seed=12,
+        task="circle",
+        reset_profile="circle_recovery",
+        use_native_step=True,
+    )
+    actions = np.zeros((8, 4), dtype=np.float32)
+
+    _, py_reward, *_ = py_env.step(actions)
+    _, native_reward, *_ = native_env.step(actions)
+
+    np.testing.assert_allclose(native_reward, py_reward, rtol=1e-5, atol=1e-5)
+
+
+def test_native_circle_reward_uses_sampled_target_altitude() -> None:
+    env = SixDofCrazyflieEnv(
+        num_envs=1,
+        seed=13,
+        task="circle",
+        reset_profile="circle_recovery",
+        use_native_step=True,
+    )
+    env.position[:] = np.asarray([[0.75, 0.0, 0.82]], dtype=np.float32)
+    env.target_position[:] = np.asarray([[0.0, 0.0, 0.82]], dtype=np.float32)
+    env.velocity[:] = 0.0
+    env.body_rates[:] = 0.0
+    env.target_yaw[:] = np.pi / 2.0
+    env.quaternion[:] = np.asarray([[0.70710677, 0.0, 0.0, 0.70710677]], dtype=np.float32)
+    env._update_ranges()
+
+    _, reward, *_ = env.step(np.zeros((1, 4), dtype=np.float32))
+
+    assert reward[0] > 0.99
 
 
 def test_native_live_clearance_reward_matches_python_reward() -> None:

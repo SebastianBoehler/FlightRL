@@ -6,13 +6,13 @@ import numpy as np
 import torch
 
 from .circle import circle_orbit_error_from_arrays
+from .checkpoint_contract import require_current_checkpoint
 from .controller import executed_action_for_controller
 from .disturbance import configure_disturbance
 from .env import SixDofCrazyflieEnv
-from .gates import gate_status
 from .observation import augment_observation
 from .policies import SixDofPolicy, roll_pitch_from_quat, teacher_actions
-from .tasks import append_task_encoding, parse_task_spec
+from .tasks import append_task_encoding
 from .yaw import yaw_error_for_task
 
 
@@ -26,17 +26,15 @@ class ControllerPolicy:
     residual_scale: float
 
 
-def checkpoint_tasks(checkpoint: dict, fallback: str = "position_yaw") -> tuple[str, ...]:
-    tasks = tuple(checkpoint.get("tasks", ()))
-    if tasks:
-        return tasks
-    return parse_task_spec(str(checkpoint.get("task", fallback)))
+def checkpoint_tasks(checkpoint: dict) -> tuple[str, ...]:
+    return require_current_checkpoint(checkpoint).tasks
 
 
 def load_policy_from_checkpoint(checkpoint: dict) -> SixDofPolicy:
+    metadata = require_current_checkpoint(checkpoint)
     model = SixDofPolicy(
-        hidden_size=int(checkpoint.get("hidden_size", 128)),
-        input_dim=int(checkpoint.get("observation_dim", 28)),
+        hidden_size=metadata.hidden_size,
+        input_dim=metadata.observation_dim,
     )
     model.load_state_dict(checkpoint["state_dict"])
     model.eval()
@@ -44,10 +42,11 @@ def load_policy_from_checkpoint(checkpoint: dict) -> SixDofPolicy:
 
 
 def load_controller_from_checkpoint(checkpoint: dict) -> ControllerPolicy:
+    metadata = require_current_checkpoint(checkpoint)
     return ControllerPolicy(
         model=load_policy_from_checkpoint(checkpoint),
-        controller=str(checkpoint.get("controller", "policy")),
-        residual_scale=float(checkpoint.get("residual_scale", 0.0)),
+        controller=metadata.controller,
+        residual_scale=metadata.residual_scale,
     )
 
 
@@ -66,7 +65,7 @@ def evaluate_checkpoint_policy(
     controller = load_controller_from_checkpoint(checkpoint)
     tasks = checkpoint_tasks(checkpoint)
     action_fn = residual_model_actions if controller.controller == "teacher_residual" else model_actions
-    observation_mode = str(checkpoint.get("observation_mode", "base"))
+    observation_mode = require_current_checkpoint(checkpoint).observation_mode
     selected_tasks = eval_tasks or tasks
     validate_task_subset(selected_tasks, tasks)
     per_task = {

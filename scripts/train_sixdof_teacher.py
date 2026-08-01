@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, evaluate_policy, teacher_actions
+from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, build_checkpoint_payload, evaluate_policy, teacher_actions
+from flightrl.sixdof.episode_tasks import EpisodeTaskAssignments
 from flightrl.sixdof.tasks import MULTITASK, TASKS, append_task_encoding, parse_task_spec, select_task_actions, task_observation_dim
 
 
@@ -37,17 +38,26 @@ def main() -> None:
     input_dim = 28 + task_observation_dim(tasks)
     model = SixDofPolicy(hidden_size=args.hidden_size, input_dim=input_dim)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
-    obs, _ = env.reset(seed=args.seed)
+    env.reset(seed=args.seed)
+    episode_tasks = EpisodeTaskAssignments.sample(
+        rng=rng,
+        num_envs=env.num_envs,
+        tasks=tasks,
+    )
+    obs = episode_tasks.apply(env)
 
     best_metric = -float("inf")
     best_payload = None
     for update in range(1, args.updates + 1):
         if args.reset_each_update:
-            obs, _ = env.reset(seed=args.seed + update)
+            env.reset(seed=args.seed + update)
+            episode_tasks.resample_all()
+            obs = episode_tasks.apply(env)
         obs_batch: list[np.ndarray] = []
         act_batch: list[np.ndarray] = []
         for _ in range(args.steps_per_update):
-            task_indices = sample_task_indices(rng, env.num_envs, tasks)
+            task_indices = episode_tasks.indices
+            obs = episode_tasks.apply(env)
             labels = teacher_labels(env, tasks, task_indices)
             model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
             obs_batch.append(model_obs)
@@ -56,9 +66,13 @@ def main() -> None:
             if update >= args.student_rollout_after and np.random.random() < args.student_rollout_prob:
                 with torch.no_grad():
                     actions = model(torch.from_numpy(model_obs).float()).cpu().numpy()
+            episode_tasks.apply(env)
             obs, _rewards, terminals, truncations, _info = env.step(actions)
             if np.any(terminals) or np.any(truncations):
-                obs = env.reset_done(terminals | truncations)
+                done = terminals | truncations
+                obs = env.reset_done(done)
+                episode_tasks.resample(done)
+                obs = episode_tasks.apply(env)
 
         loss = train_epoch(model, optimizer, np.concatenate(obs_batch), np.concatenate(act_batch), args.batch_size)
         if update == 1 or update % max(1, args.updates // 10) == 0:
@@ -88,12 +102,6 @@ def main() -> None:
     torch.save(payload, checkpoint)
     print(f"checkpoint={checkpoint}")
     print(f"metrics={payload['metrics']}")
-
-
-def sample_task_indices(rng: np.random.Generator, num_envs: int, tasks: tuple[str, ...]) -> np.ndarray:
-    if len(tasks) == 1:
-        return np.zeros(num_envs, dtype=np.int64)
-    return rng.integers(0, len(tasks), size=num_envs, dtype=np.int64)
 
 
 def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
@@ -129,21 +137,21 @@ def checkpoint_score(metrics: dict) -> float:
 
 
 def checkpoint_payload(model, args, tasks: tuple[str, ...], input_dim: int, metrics: dict, update: int, score: float) -> dict:
-    return {
-        "state_dict": {key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
-        "task": args.task,
-        "tasks": list(tasks),
-        "task_conditioned": len(tasks) > 1,
-        "hidden_size": args.hidden_size,
-        "observation_dim": input_dim,
-        "base_observation_dim": 28,
-        "action_dim": 4,
+    payload = build_checkpoint_payload(
+        state_dict={key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
+        tasks=tasks,
+        hidden_size=args.hidden_size,
+    )
+    if payload["observation_dim"] != input_dim:
+        raise ValueError("teacher checkpoint input dimension does not match the current six-DoF contract")
+    payload.update({
         "metrics": metrics,
         "selection_update": update,
         "selection_score": score,
         "use_native_step": args.native_step,
         "note": "Simulation-only 6-DoF teacher imitation checkpoint; not approved for live hardware.",
-    }
+    })
+    return payload
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ def summarize_hardware_model(path: Path | None) -> dict[str, Any]:
     sim2real = data.get("sim2real", {})
     parameters = {key: data.get("drone", {}).get(key) for key in DYNAMICS_KEYS}
     missing = [key for key, value in parameters.items() if value is None]
-    measured = bool(sim2real.get("measured", False)) and not missing
+    measured = sim2real.get("measured") is True and not missing
     return {
         "present": True,
         "path": str(path),

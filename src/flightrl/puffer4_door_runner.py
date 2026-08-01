@@ -12,7 +12,6 @@ import tempfile
 import torch
 
 from flightrl.puffer4_door_export import DOOR_NATIVE_FILES
-from flightrl.puffer4_door_policy import FlightRLDoorEncoder
 
 
 BUILD_FINGERPRINT_SCHEMA_VERSION = 1
@@ -199,7 +198,7 @@ def load_puffer(puffer_root: Path, env_name: str):
     root_text = str(root)
     sys.path[:] = [item for item in sys.path if item != root_text]
     sys.path.insert(0, root_text)
-    from pufferlib import models, pufferl, torch_pufferl
+    from pufferlib import pufferl, torch_pufferl
 
     extension = native_extension_path(root)
     loaded_path = getattr(torch_pufferl._C, "__file__", None)
@@ -214,10 +213,9 @@ def load_puffer(puffer_root: Path, env_name: str):
             f"PufferLib native extension is built for {compiled_env!r}, "
             f"not {env_name!r}"
         )
-    models.FlightRLDoorEncoder = FlightRLDoorEncoder
     old_argv = sys.argv
     try:
-        sys.argv = ["train_puffer_fixed_door"]
+        sys.argv = ["evaluate_puffer_fixed_door_teacher"]
         args = pufferl.load_config(env_name)
     finally:
         sys.argv = old_argv
@@ -266,29 +264,3 @@ def _write_json_atomic(path: Path, value: dict) -> None:
     finally:
         if temporary_name is not None:
             Path(temporary_name).unlink(missing_ok=True)
-
-
-def accepted_observability(
-    *,
-    root: Path,
-    checkpoint: Path,
-    gate_report: Path,
-) -> dict:
-    report = json.loads(gate_report.read_text())
-    if (
-        report.get("status") != "passed"
-        or report.get("gate", {}).get("status") != "passed"
-    ):
-        raise ValueError("combined synthetic and real observability gate has not passed")
-    if Path(report["checkpoint"]).resolve() != checkpoint.resolve():
-        raise ValueError("real observability gate references a different checkpoint")
-    expected = (
-        root
-        / "artifacts/semantic/door-observability-64x48-r128-20260729"
-        / "report.json"
-    )
-    synthetic = json.loads(expected.read_text())
-    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    if synthetic["checkpoint"]["sha256"] != digest:
-        raise ValueError("observability checkpoint hash does not match its report")
-    return torch.load(checkpoint, map_location="cpu", weights_only=True)

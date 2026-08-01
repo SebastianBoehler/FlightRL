@@ -27,7 +27,8 @@ typedef struct {
     float maximum_evidence_age_s;
     int physics_substeps;
     int max_episode_steps;
-    float success_radius;
+    FlightRLDoorMissionConfig mission;
+    FlightRLDoorMissionState mission_state;
     float max_horizontal_speed;
     float max_vertical_speed;
     float max_yawrate_deg_s;

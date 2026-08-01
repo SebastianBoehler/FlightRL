@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 
+from flightrl.evidence_scope import EDGE_DEPLOYMENT_VERIFIER_MISSING
 from flightrl.sim2real.evidence_gap import build_evidence_gap_report
 
 
@@ -26,7 +27,7 @@ def test_gap_report_blocks_current_missing_evidence(tmp_path) -> None:
     assert report["pipeline"]["sha256"]
 
 
-def test_gap_report_approves_only_when_gate_and_checkpoint_pass(tmp_path) -> None:
+def test_gap_report_requires_edge_v3_bundle_even_when_old_fields_claim_approval(tmp_path) -> None:
     pipeline = write_json(
         tmp_path / "pipeline.json",
         {"transfer_approved": True, "hardware_approved_checkpoints": 1, "blocking_items": []},
@@ -34,9 +35,14 @@ def test_gap_report_approves_only_when_gate_and_checkpoint_pass(tmp_path) -> Non
 
     report = build_evidence_gap_report(pipeline)
 
-    assert report["enough_for_one_step_transfer"] is True
-    assert report["decision"] == "ready_for_supervised_transfer_test"
-    assert report["action_items"] == []
+    assert report["enough_for_one_step_transfer"] is False
+    assert report["decision"] == "blocked"
+    assert report["transfer_approved"] is False
+    assert report["hardware_approved_checkpoints"] == 0
+    assert report["claimed_transfer_approved"] is True
+    assert report["categories"]["policy_deployment"] == [
+        EDGE_DEPLOYMENT_VERIFIER_MISSING
+    ]
 
 
 def test_gap_report_cli_writes_json_and_markdown(tmp_path) -> None:

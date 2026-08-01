@@ -35,13 +35,14 @@ class MissionState:
     agent_id: str = "drone_0"
     step: int = 0
     reason: str = "initial"
+    resume_phase: MissionPhase | None = None
 
 
 @dataclass(frozen=True)
 class PhaseLimits:
     max_speed_m_s: float
     max_yawrate_deg_s: float
-    allow_learned_policy: bool
+    learned_policy_phase_eligible: bool
     command_source: str
 
 
@@ -50,9 +51,6 @@ TRANSITIONS: dict[tuple[MissionPhase, MissionEvent], MissionPhase] = {
     (MissionPhase.TAKEOFF, MissionEvent.TAKEOFF_READY): MissionPhase.SEARCH,
     (MissionPhase.SEARCH, MissionEvent.TARGET_ACQUIRED): MissionPhase.NAVIGATE,
     (MissionPhase.NAVIGATE, MissionEvent.TARGET_LOST): MissionPhase.SEARCH,
-    (MissionPhase.NAVIGATE, MissionEvent.BLOCKED): MissionPhase.RECOVER,
-    (MissionPhase.SEARCH, MissionEvent.BLOCKED): MissionPhase.RECOVER,
-    (MissionPhase.RECOVER, MissionEvent.RECOVERED): MissionPhase.NAVIGATE,
     (MissionPhase.NAVIGATE, MissionEvent.GOAL_REACHED): MissionPhase.HOLD,
     (MissionPhase.HOLD, MissionEvent.LANDING_REQUESTED): MissionPhase.LAND,
     (MissionPhase.LAND, MissionEvent.LANDED): MissionPhase.PRE_FLIGHT,
@@ -72,16 +70,50 @@ LIMITS: dict[MissionPhase, PhaseLimits] = {
 
 
 def next_state(state: MissionState, event: MissionEvent) -> MissionState:
+    if not isinstance(state, MissionState) or not isinstance(event, MissionEvent):
+        raise TypeError("mission transitions require typed state and event values")
     if event is MissionEvent.ABORT_REQUESTED:
+        if state.phase is MissionPhase.ABORT:
+            return state
         return replace_phase(state, MissionPhase.ABORT, event.value)
     if event is MissionEvent.TIMEOUT:
+        if state.phase is MissionPhase.ABORT:
+            return state
         return replace_phase(state, MissionPhase.ABORT, event.value)
-    next_phase = TRANSITIONS.get((state.phase, event), state.phase)
+    if event is MissionEvent.BLOCKED and state.phase in {
+        MissionPhase.SEARCH,
+        MissionPhase.NAVIGATE,
+    }:
+        return MissionState(
+            phase=MissionPhase.RECOVER,
+            agent_id=state.agent_id,
+            step=state.step + 1,
+            reason=event.value,
+            resume_phase=state.phase,
+        )
+    if event is MissionEvent.RECOVERED and state.phase is MissionPhase.RECOVER:
+        if state.resume_phase not in {
+            MissionPhase.SEARCH,
+            MissionPhase.NAVIGATE,
+        }:
+            raise ValueError("recovery state has no valid phase to resume")
+        return replace_phase(state, state.resume_phase, event.value)
+    try:
+        next_phase = TRANSITIONS[(state.phase, event)]
+    except KeyError as exc:
+        raise ValueError(
+            f"invalid mission transition {state.phase.value} + {event.value}"
+        ) from exc
     return replace_phase(state, next_phase, event.value)
 
 
 def replace_phase(state: MissionState, phase: MissionPhase, reason: str) -> MissionState:
-    return MissionState(phase=phase, agent_id=state.agent_id, step=state.step + 1, reason=reason)
+    return MissionState(
+        phase=phase,
+        agent_id=state.agent_id,
+        step=state.step + 1,
+        reason=reason,
+    )
 
 
 def phase_limits(phase: MissionPhase) -> PhaseLimits:

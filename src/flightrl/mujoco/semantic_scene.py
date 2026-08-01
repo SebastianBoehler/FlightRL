@@ -5,6 +5,8 @@ import xml.etree.ElementTree as ET
 from flightrl.navigation.semantic_scene import SemanticScene
 from flightrl.sixdof.geometry import AxisAlignedObstacle, BoxRoom
 
+from .room_model import resize_room_geometry
+
 
 def add_semantic_scene_to_mjcf(mjcf: str, scene: SemanticScene) -> str:
     """Add named semantic box geometry while preserving the base drone model."""
@@ -14,7 +16,7 @@ def add_semantic_scene_to_mjcf(mjcf: str, scene: SemanticScene) -> str:
         raise ValueError("MuJoCo model has no worldbody")
 
     _add_room_appearance(root, worldbody, scene)
-    _resize_room(worldbody, scene)
+    resize_room_geometry(worldbody, scene.room.minimum, scene.room.maximum)
     for name in ("marker_x", "marker_y"):
         marker = worldbody.find(f"geom[@name='{name}']")
         if marker is not None:
@@ -91,31 +93,6 @@ def _add_room_appearance(
         geom = worldbody.find(f"geom[@name='{name}']")
         if geom is not None:
             geom.set("material", "semantic_wall_material")
-
-
-def _resize_room(worldbody: ET.Element, scene: SemanticScene) -> None:
-    x_min, y_min, z_min = scene.room.minimum
-    x_max, y_max, z_max = scene.room.maximum
-    center_x = 0.5 * (x_min + x_max)
-    center_y = 0.5 * (y_min + y_max)
-    center_z = 0.5 * (z_min + z_max)
-    half_x = 0.5 * (x_max - x_min)
-    half_y = 0.5 * (y_max - y_min)
-    half_z = 0.5 * (z_max - z_min)
-    room_geometry = {
-        "floor": ((center_x, center_y, z_min), (half_x, half_y, 0.05)),
-        "ceiling": ((center_x, center_y, z_max + 0.02), (half_x, half_y, 0.02)),
-        "wall_x_neg": ((x_min - 0.02, center_y, center_z), (0.02, half_y, half_z)),
-        "wall_x_pos": ((x_max + 0.02, center_y, center_z), (0.02, half_y, half_z)),
-        "wall_y_neg": ((center_x, y_min - 0.02, center_z), (half_x, 0.02, half_z)),
-        "wall_y_pos": ((center_x, y_max + 0.02, center_z), (half_x, 0.02, half_z)),
-    }
-    for name, (position, size) in room_geometry.items():
-        geom = worldbody.find(f"geom[@name='{name}']")
-        if geom is None:
-            raise ValueError(f"MuJoCo base model is missing room geometry {name!r}")
-        geom.set("pos", _vector(position))
-        geom.set("size", _vector(size))
 
 
 def box_room_from_semantic_scene(scene: SemanticScene, max_range_m: float = 4.0) -> BoxRoom:

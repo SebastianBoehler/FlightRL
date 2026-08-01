@@ -37,6 +37,17 @@ def test_data_plan_maps_incomplete_hardware_dynamics_to_measured_dynamics(tmp_pa
     measured = {record["name"]: record for record in report["requirements"]}["measured_dynamics"]
     assert measured["status"] == "blocked"
     assert measured["matched_blockers"] == ["hardware_dynamics_incomplete"]
+    assert measured["command"] is None
+
+
+def test_data_plan_rejects_truthy_ready_and_malformed_blockers(tmp_path) -> None:
+    audit = tmp_path / "audit.json"
+    audit.write_text(json.dumps({"transfer_ready": "false", "blocking_items": "none"}))
+
+    report = build_data_plan(audit)
+
+    assert report["transfer_ready"] is False
+    assert report["audit_blockers"] == ["audit_blockers_invalid"]
 
 
 def test_data_plan_keeps_failed_motor_bench_as_partial_evidence(tmp_path) -> None:
@@ -54,12 +65,13 @@ def test_data_plan_keeps_failed_motor_bench_as_partial_evidence(tmp_path) -> Non
     assert "partial" in report["partial_evidence"]["motor_bench_note"]
 
 
-def test_data_plan_markdown_includes_commands(tmp_path) -> None:
+def test_data_plan_marks_removed_live_calibration_runner_as_blocked(tmp_path) -> None:
     audit = write_audit(tmp_path, ["calibration_flight_not_ready"])
 
     markdown = render_markdown(build_data_plan(audit))
 
-    assert "python scripts/crazyflie_calibration_flight.py" in markdown
+    assert "No reviewed collection command is currently available." in markdown
+    assert "crazyflie_calibration_flight.py" not in markdown
     assert "Do not run live hardware" in markdown
 
 

@@ -11,7 +11,6 @@ from flightrl.hardware.motion import (
     disarm_after_flight,
     disarm_crazyflie_after_flight,
     execute_demo_flight,
-    reset_crazyflie_estimator,
 )
 
 
@@ -86,6 +85,18 @@ def test_demo_requires_confirmation_when_config_demands_it() -> None:
         DemoFlightPlan.from_config(config, confirmed=False)
 
 
+def test_demo_rejects_total_nominal_duration_above_flight_limit() -> None:
+    with pytest.raises(HardwareSafetyError, match="nominal duration"):
+        DemoFlightPlan(
+            default_height_m=0.8,
+            velocity_m_s=0.05,
+            turn_rate_deg_s=5.0,
+            turn_angle_degrees=90.0,
+            hover_s=0.0,
+            max_flight_s=1.0,
+        )
+
+
 def test_arm_and_disarm_use_supervisor_requests() -> None:
     supervisor = FakeSupervisor()
 
@@ -111,11 +122,3 @@ def test_disarm_crazyflie_clears_system_arm_param() -> None:
 
     assert cf.param.set_calls == [("system.arm", "0")]
     assert cf.supervisor.requests == [False]
-
-
-def test_reset_crazyflie_estimator_toggles_kalman_param() -> None:
-    cf = FakeCrazyflie()
-    cf.param.values["kalman.resetEstimation"] = "0"
-
-    assert reset_crazyflie_estimator(cf, sleep=lambda _: None) is True
-    assert cf.param.set_calls == [("kalman.resetEstimation", "1"), ("kalman.resetEstimation", "0")]

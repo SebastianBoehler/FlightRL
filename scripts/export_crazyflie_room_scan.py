@@ -7,7 +7,8 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 
-from flightrl.hardware.ranger_map import points_from_rows, prepare_rows, trajectory_from_rows
+from flightrl.hardware.ranger_integrity import ranger_row_integrity
+from flightrl.hardware.ranger_projection import points_from_rows, prepare_rows, trajectory_from_rows
 
 
 SENSOR_COLORS = {
@@ -32,7 +33,18 @@ def main() -> None:
 
     input_path = Path(args.input)
     prefix = Path(args.output_prefix) if args.output_prefix else input_path.with_suffix("")
-    rows = load_rows(input_path, args.min_drone_z_m, normalize_xy=not args.raw_origin)
+    raw_rows = read_rows(input_path)
+    integrity = ranger_row_integrity(raw_rows)
+    if integrity["valid"] is not True:
+        raise SystemExit(
+            "room scan source integrity failed: "
+            + ", ".join(integrity["failures"])
+        )
+    rows = prepare_rows(
+        raw_rows,
+        min_drone_z_m=args.min_drone_z_m,
+        normalize_xy=not args.raw_origin,
+    )
     points = points_from_rows(rows, max_range_m=args.max_range_m)
     trajectory = trajectory_from_rows(rows)
     if not points:
@@ -49,9 +61,9 @@ def main() -> None:
     print(f"wrote {html}")
 
 
-def load_rows(path: Path, min_drone_z_m: float, *, normalize_xy: bool):
+def read_rows(path: Path) -> list[dict[str, str]]:
     with path.open() as handle:
-        return prepare_rows(csv.DictReader(handle), min_drone_z_m=min_drone_z_m, normalize_xy=normalize_xy)
+        return list(csv.DictReader(handle))
 
 
 def write_points_csv(path: Path, points) -> None:

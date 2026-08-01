@@ -30,6 +30,10 @@ def test_task_probability_sweep_dry_run_writes_manifest(tmp_path: Path) -> None:
         [
             sys.executable,
             str(ROOT / "scripts" / "run_sixdof_task_probability_sweep.py"),
+            "--seed-dataset",
+            str(tmp_path / "seed.npz"),
+            "--initial-checkpoint",
+            str(tmp_path / "initial.pt"),
             "--max-variants",
             "2",
             "--report",

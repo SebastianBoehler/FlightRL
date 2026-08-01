@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +145,8 @@ class CrazyflieSafetyConfig:
 class CrazyflieDeckConfig:
     expect_flow_deck: bool = True
     expect_multiranger: bool = True
+    expect_ai_deck: bool = False
+    expect_zranger: bool = False
 
 
 @dataclass(slots=True)
@@ -176,9 +179,9 @@ def load_hardware_config(path: str | Path) -> CrazyflieHardwareConfig:
 
 def validate_hardware_config(config: CrazyflieHardwareConfig) -> None:
     uri = config.radio.uri
-    if not (uri.startswith("radio://") or uri.startswith("usb://")):
+    if not isinstance(uri, str) or not (uri.startswith("radio://") or uri.startswith("usb://")):
         raise HardwareConfigError("radio.uri must start with radio:// or usb://")
-    if not config.radio.cache_dir:
+    if not isinstance(config.radio.cache_dir, str) or not config.radio.cache_dir:
         raise HardwareConfigError("radio.cache_dir must not be empty")
 
     safety = config.safety
@@ -188,24 +191,57 @@ def validate_hardware_config(config: CrazyflieHardwareConfig) -> None:
     _range("safety.turn_angle_deg", safety.turn_angle_deg, low=1.0, high=90.0)
     _range("safety.hover_s", safety.hover_s, low=0.0, high=10.0)
     _range("safety.max_flight_s", safety.max_flight_s, low=1.0, high=60.0)
+    if type(safety.requires_manual_confirm) is not bool:
+        raise HardwareConfigError("safety.requires_manual_confirm must be a boolean")
 
-    if config.logging.period_ms < 10 or config.logging.period_ms > 1000:
+    for name in (
+        "expect_flow_deck",
+        "expect_multiranger",
+        "expect_ai_deck",
+        "expect_zranger",
+    ):
+        if type(getattr(config.decks, name)) is not bool:
+            raise HardwareConfigError(f"decks.{name} must be a boolean")
+
+    if type(config.logging.period_ms) is not int or not 10 <= config.logging.period_ms <= 1000:
         raise HardwareConfigError("logging.period_ms must be between 10 and 1000")
-    if not config.logging.variables:
-        raise HardwareConfigError("logging.variables must include at least one variable")
+    if not isinstance(config.logging.output_dir, str) or not config.logging.output_dir:
+        raise HardwareConfigError("logging.output_dir must not be empty")
+    if not config.logging.variables or not all(
+        isinstance(value, str) and value and "." in value
+        for value in config.logging.variables
+    ):
+        raise HardwareConfigError(
+            "logging.variables must contain nonempty group.name strings"
+        )
 
 
 def _load_logging(raw: dict[str, Any]) -> CrazyflieLoggingConfig:
     data = dict(raw)
     if "variables" in data:
-        data["variables"] = tuple(str(value) for value in data["variables"])
+        variables = data["variables"]
+        if not isinstance(variables, list) or not all(
+            isinstance(value, str) for value in variables
+        ):
+            raise HardwareConfigError("logging.variables must be a list of strings")
+        data["variables"] = tuple(variables)
     variable_types = dict(DEFAULT_LOG_VARIABLE_TYPES)
     if "variable_types" in data:
-        variable_types.update({str(key): str(value) for key, value in data["variable_types"].items()})
+        overrides = data["variable_types"]
+        if not isinstance(overrides, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in overrides.items()
+        ):
+            raise HardwareConfigError(
+                "logging.variable_types must map strings to strings"
+            )
+        variable_types.update(overrides)
     data["variable_types"] = variable_types
     return CrazyflieLoggingConfig(**data)
 
 
 def _range(name: str, value: float, *, low: float, high: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(float(value)):
+        raise HardwareConfigError(f"{name} must be a finite number")
     if value < low or value > high:
         raise HardwareConfigError(f"{name} must be between {low} and {high}")

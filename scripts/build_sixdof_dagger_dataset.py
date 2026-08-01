@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from flightrl.sixdof.dagger import collect_policy_dataset, merge_datasets
-from flightrl.sixdof.dataset import parse_task_probabilities, write_dataset
+from flightrl.sixdof.dagger import collect_policy_dataset
+from flightrl.sixdof.dataset import merge_datasets, parse_task_probabilities, write_dataset
 
 
 def main() -> None:

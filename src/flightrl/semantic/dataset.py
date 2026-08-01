@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -10,7 +9,6 @@ from PIL import Image, ImageDraw
 from flightrl.hardware.aideck_stream import AiDeckFrame
 
 from .contract import GroundingResult
-from .controller import DiscoveryCommand
 
 
 class SemanticRunWriter:
@@ -31,10 +29,7 @@ class SemanticRunWriter:
         frame: AiDeckFrame,
         grounding: GroundingResult,
         *,
-        command: DiscoveryCommand | None = None,
         telemetry: Mapping[str, Any] | None = None,
-        policy_shadow: Mapping[str, Any] | None = None,
-        controls_drone: bool = False,
     ) -> Path:
         frame_path = self.frame_dir / f"frame-{frame.index:06d}.png"
         annotated_path = self.annotated_dir / f"frame-{frame.index:06d}.png"
@@ -47,10 +42,8 @@ class SemanticRunWriter:
             "frame_path": str(frame_path),
             "annotated_path": str(annotated_path),
             "grounding": grounding.to_dict(),
-            "command": None if command is None else asdict(command),
             "telemetry": dict(telemetry or {}),
-            "policy_shadow": dict(policy_shadow or {}),
-            "controls_drone": bool(controls_drone),
+            "controls_drone": False,
         }
         self._events.write(json.dumps(event, sort_keys=True) + "\n")
         self._events.flush()

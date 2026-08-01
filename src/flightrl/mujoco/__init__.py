@@ -1,10 +1,9 @@
-from .env import MuJoCoCrazyflieEnv, is_mujoco_available
-from .semantic_gym_env import MuJoCoSemanticVisionGymEnv
-from .semantic_vision_env import MuJoCoSemanticVisionEnv
+from .env import MuJoCoCrazyflieEnv
+from .model import is_mujoco_available
+from .rendering import is_mujoco_rendering_available
 
 __all__ = [
     "MuJoCoCrazyflieEnv",
-    "MuJoCoSemanticVisionGymEnv",
-    "MuJoCoSemanticVisionEnv",
     "is_mujoco_available",
+    "is_mujoco_rendering_available",
 ]

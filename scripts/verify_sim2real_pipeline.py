@@ -8,13 +8,14 @@ from flightrl.sim2real.pipeline_verify import verify_pipeline, write_report
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify that sim-to-real pipeline input fingerprints are still current")
-    parser.add_argument("--pipeline", type=Path, default=Path("artifacts/replay/sim2real_pipeline_current_2026-05-20.json"))
-    parser.add_argument("--output", type=Path, default=Path("artifacts/replay/sim2real_pipeline_current_2026-05-20.verify.json"))
+    parser.add_argument("--pipeline", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     report = verify_pipeline(args.pipeline)
-    write_report(report, args.output)
-    print(f"verification={args.output}")
+    output = args.output or args.pipeline.with_suffix(".verify.json")
+    write_report(report, output)
+    print(f"verification={output}")
     print(f"passed={report['passed']}")
     print(f"failures={','.join(report['failures']) or 'none'}")
     if not report["passed"]:

@@ -5,6 +5,17 @@ from dataclasses import dataclass
 import numpy as np
 
 from .geometry import normalize_quat, quat_to_matrix
+from .orientation import quat_mul
+from .physics import (
+    GRAVITY,
+    LINEAR_DRAG,
+    MASS,
+    MAX_RATE_PITCH,
+    MAX_RATE_ROLL,
+    MAX_RATE_YAW,
+    MOTOR_TAU,
+)
+from .validation import require_finite_real, require_positive_int
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,11 +31,37 @@ class MotorRpmParams:
     yaw_torque_gain: float = 0.018
     angular_drag: float = 0.0025
 
+    def __post_init__(self) -> None:
+        for name in ("hover_rpm", "max_rpm", "arm_length_m", "ixx", "iyy", "izz"):
+            object.__setattr__(
+                self,
+                name,
+                require_finite_real(
+                    getattr(self, name),
+                    name,
+                    minimum=0.0,
+                    strictly_greater=True,
+                ),
+            )
+        if self.max_rpm < self.hover_rpm:
+            raise ValueError("max_rpm must be at least hover_rpm")
+        for name in ("motor_tau_s", "yaw_torque_gain", "angular_drag"):
+            object.__setattr__(
+                self,
+                name,
+                require_finite_real(getattr(self, name), name, minimum=0.0),
+            )
+        object.__setattr__(
+            self,
+            "physics_substeps",
+            require_positive_int(self.physics_substeps, "physics_substeps"),
+        )
+
 
 PUFFER_DRONE_MASS_KG = 0.027
 PUFFER_DRONE_GRAVITY_M_S2 = 9.81
 PUFFER_DRONE_K_THRUST = 3.16e-10
-PUFFER_DRONE_MOTOR = MotorRpmParams(
+PUFFER_PARAMETER_MOTOR = MotorRpmParams(
     hover_rpm=float(np.sqrt((PUFFER_DRONE_MASS_KG * PUFFER_DRONE_GRAVITY_M_S2) / (4.0 * PUFFER_DRONE_K_THRUST))),
     max_rpm=21702.0,
     motor_tau_s=0.150,
@@ -41,8 +78,8 @@ PUFFER_DRONE_MOTOR = MotorRpmParams(
 def resolve_motor_rpm_params(value: str | MotorRpmParams | None) -> MotorRpmParams:
     if value is None or value == "default":
         return MotorRpmParams()
-    if value == "puffer_drone":
-        return PUFFER_DRONE_MOTOR
+    if value == "puffer_parameters":
+        return PUFFER_PARAMETER_MOTOR
     if isinstance(value, MotorRpmParams):
         return value
     raise ValueError(f"unknown motor RPM profile {value!r}")
@@ -51,10 +88,16 @@ def resolve_motor_rpm_params(value: str | MotorRpmParams | None) -> MotorRpmPara
 def step_motor_rpm(env, actions: np.ndarray) -> None:
     params = env.motor_params
     target = target_rpm(actions, params)
+    randomized_tau = env.physics_params[:, MOTOR_TAU]
+    motor_tau = np.where(
+        randomized_tau > 0.0,
+        randomized_tau,
+        params.motor_tau_s,
+    )
     substeps = max(1, int(params.physics_substeps))
     dt = env.dt / substeps
     for _ in range(substeps):
-        alpha = dt / (params.motor_tau_s + dt)
+        alpha = (dt / (motor_tau + dt))[:, None]
         env.motor_rpm += alpha * (target - env.motor_rpm)
         thrusts = thrust_from_rpm(env.motor_rpm, env.mass, env.gravity, params)
         integrate_state(env, thrusts, params, dt)
@@ -74,16 +117,18 @@ def thrust_from_rpm(rpm: np.ndarray, mass: float, gravity: float, params: MotorR
 
 
 def integrate_state(env, thrusts: np.ndarray, params: MotorRpmParams, dt: float) -> None:
+    physics = env.physics_params
     total = np.sum(thrusts, axis=1)
     torque = motor_torques(thrusts, params)
     inertia = np.asarray([params.ixx, params.iyy, params.izz], dtype=np.float32)
     env.body_rates += ((torque - params.angular_drag * env.body_rates) / inertia) * dt
-    env.body_rates = np.clip(env.body_rates, -env.max_rate, env.max_rate).astype(np.float32)
+    max_rate = physics[:, [MAX_RATE_ROLL, MAX_RATE_PITCH, MAX_RATE_YAW]]
+    env.body_rates = np.clip(env.body_rates, -max_rate, max_rate).astype(np.float32)
     integrate_orientation(env, dt)
     up_world = quat_to_matrix(env.quaternion)[:, :, 2]
-    acceleration = up_world * (total / env.mass)[:, None]
-    acceleration[:, 2] -= env.gravity
-    acceleration -= env.drag * env.velocity
+    acceleration = up_world * (total / physics[:, MASS])[:, None]
+    acceleration[:, 2] -= physics[:, GRAVITY]
+    acceleration -= physics[:, LINEAR_DRAG][:, None] * env.velocity
     env.velocity += acceleration.astype(np.float32) * dt
     env.position += env.velocity * dt
 
@@ -102,12 +147,3 @@ def integrate_orientation(env, dt: float) -> None:
     omega = env.body_rates
     omega_quat = np.concatenate([np.zeros((env.num_envs, 1), dtype=np.float32), omega], axis=1)
     env.quaternion = normalize_quat(q + 0.5 * quat_mul(q, omega_quat) * dt).astype(np.float32)
-
-
-def quat_mul(left: np.ndarray, right: np.ndarray) -> np.ndarray:
-    lw, lx, ly, lz = left[:, 0], left[:, 1], left[:, 2], left[:, 3]
-    rw, rx, ry, rz = right[:, 0], right[:, 1], right[:, 2], right[:, 3]
-    return np.stack(
-        [lw * rw - lx * rx - ly * ry - lz * rz, lw * rx + lx * rw + ly * rz - lz * ry, lw * ry - lx * rz + ly * rw + lz * rx, lw * rz + lx * ry - ly * rx + lz * rw],
-        axis=1,
-    ).astype(np.float32)

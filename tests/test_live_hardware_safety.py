@@ -8,6 +8,12 @@ from flightrl.sim2real.live_safety import build_live_safety_report, scan_live_sc
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_CRAZYFLIE_SCRIPTS = {
+    "scripts/crazyflie_bringup.py",
+    "scripts/crazyflie_log.py",
+    "scripts/crazyflie_motor_bench.py",
+    "scripts/crazyflie_semantic_find.py",
+}
 
 
 def test_live_safety_report_accepts_current_crazyflie_scripts() -> None:
@@ -15,9 +21,9 @@ def test_live_safety_report_accepts_current_crazyflie_scripts() -> None:
 
     report = build_live_safety_report(scripts)
 
+    assert {str(path.relative_to(ROOT)) for path in scripts} == EXPECTED_CRAZYFLIE_SCRIPTS
     assert report["summary"]["passed"] is True
-    expected = sum(1 for record in report["records"] if record["uses_hardware"] and record["uses_checkpoint"])
-    assert report["summary"]["learned_checkpoint_hardware_scripts"] == expected
+    assert report["summary"]["learned_checkpoint_hardware_scripts"] == 0
 
 
 def test_live_safety_rejects_checkpoint_control_without_approval(tmp_path: Path) -> None:

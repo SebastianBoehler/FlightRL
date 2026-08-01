@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from .env import SixDofCrazyflieEnv
+from .episode_tasks import EpisodeTaskAssignments, task_probability_vector
 from .observation import OBSERVATION_MODES, augment_observation
 from .policies import teacher_actions
 from .tasks import append_task_encoding, parse_task_spec, select_task_actions, task_observation_dim
@@ -31,7 +32,14 @@ def collect_teacher_dataset(
     sampling_probabilities = task_probability_vector(tasks, task_probabilities)
     rng = np.random.default_rng(seed)
     env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
-    obs, _ = env.reset(seed=seed)
+    env.reset(seed=seed)
+    episode_tasks = EpisodeTaskAssignments.sample(
+        rng=rng,
+        num_envs=num_envs,
+        tasks=tasks,
+        probabilities=sampling_probabilities,
+    )
+    obs = episode_tasks.apply(env)
     observations = []
     actions = []
     task_indices_all = []
@@ -40,7 +48,8 @@ def collect_teacher_dataset(
     previous_action = np.zeros((num_envs, 4), dtype=np.float32)
     fresh = np.ones(num_envs, dtype=bool)
     for _ in range(steps):
-        task_indices = sample_task_indices(rng, num_envs, tasks, sampling_probabilities)
+        task_indices = episode_tasks.indices
+        obs = episode_tasks.apply(env)
         labels = teacher_labels(env, tasks, task_indices)
         model_obs = append_task_encoding(obs.copy(), task_indices, len(tasks))
         if previous_obs is None:
@@ -50,6 +59,7 @@ def collect_teacher_dataset(
         actions.append(labels.copy())
         task_indices_all.append(task_indices.copy())
         executed = execution_actions(labels, rng, execution_noise_std)
+        episode_tasks.apply(env)
         obs, _reward, terminal, truncation, _info = env.step(executed)
         terminals.append(terminal.copy())
         previous_obs = model_obs.copy()
@@ -58,6 +68,8 @@ def collect_teacher_dataset(
         done = terminal | truncation
         if np.any(done):
             obs = env.reset_done(done)
+            episode_tasks.resample(done)
+            obs = episode_tasks.apply(env)
             previous_action[done.astype(bool)] = 0.0
             fresh = done.astype(bool)
     stacked_obs = np.concatenate(observations).astype(np.float32)
@@ -153,35 +165,6 @@ def parse_task_probabilities(items: list[str] | tuple[str, ...]) -> dict[str, fl
             raise ValueError("task probability weights must be positive")
         probabilities[task] = weight
     return probabilities
-
-
-def task_probability_vector(tasks: tuple[str, ...], task_probabilities: dict[str, float] | None = None) -> np.ndarray:
-    weights = np.ones(len(tasks), dtype=np.float64)
-    if task_probabilities:
-        unknown = sorted(set(task_probabilities) - set(tasks))
-        if unknown:
-            raise ValueError(f"unknown task probability weight(s): {', '.join(unknown)}")
-        for task, weight in task_probabilities.items():
-            if weight <= 0:
-                raise ValueError("task probability weights must be positive")
-            weights[tasks.index(task)] = float(weight)
-    total = float(np.sum(weights))
-    if total <= 0:
-        raise ValueError("task probability weights must have positive sum")
-    return (weights / total).astype(np.float64)
-
-
-def sample_task_indices(
-    rng: np.random.Generator,
-    num_envs: int,
-    tasks: tuple[str, ...],
-    probabilities: np.ndarray | None = None,
-) -> np.ndarray:
-    if len(tasks) == 1:
-        return np.zeros(num_envs, dtype=np.int64)
-    if probabilities is not None:
-        return rng.choice(len(tasks), size=num_envs, p=probabilities).astype(np.int64)
-    return rng.integers(0, len(tasks), size=num_envs, dtype=np.int64)
 
 
 def execution_actions(labels: np.ndarray, rng: np.random.Generator, noise_std: float) -> np.ndarray:

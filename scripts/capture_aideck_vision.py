@@ -2,22 +2,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+from numbers import Integral, Real
 from pathlib import Path
-from time import monotonic, perf_counter
+from time import monotonic
 
 import numpy as np
 from PIL import Image
 
 from flightrl.hardware.aideck_stream import AiDeckStream, AiDeckUdpStream
-from flightrl.vision import (
-    VisionObservationConfig,
-    VisionObservationEncoder,
-    load_vision_action_policy,
-)
+
+
+CAPTURE_SCHEMA = "flightrl.aideck_decoded_frame_capture.v2"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Capture AI Deck frames through the FlightRL vision contract.")
+    parser = argparse.ArgumentParser(
+        description="Capture decoded AI Deck frames without loading or running a policy."
+    )
     parser.add_argument("--transport", choices=("tcp", "udp"), default="tcp")
     parser.add_argument("--host", default="192.168.4.1")
     parser.add_argument("--port", type=int, default=5000)
@@ -25,98 +27,85 @@ def main() -> None:
     parser.add_argument("--bind-port", type=int, default=5001)
     parser.add_argument("--timeout-s", type=float, default=10.0)
     parser.add_argument("--frames", type=int, default=32)
-    parser.add_argument("--output", type=Path, default=Path("artifacts/ai_deck/vision_observations.npz"))
-    parser.add_argument("--frame-dir", type=Path, help="save each raw source frame as a PNG")
-    parser.add_argument("--width", type=int, default=64)
-    parser.add_argument("--height", type=int, default=48)
-    parser.add_argument("--color-mode", choices=("grayscale", "rgb"), default="grayscale")
-    parser.add_argument("--input-color-order", choices=("rgb", "bgr"), default="rgb")
-    parser.add_argument("--frame-stack", type=int, default=1)
-    parser.add_argument("--include-delta", action="store_true")
-    parser.add_argument("--include-motion-mask", action="store_true")
-    parser.add_argument("--motion-threshold", type=float, default=0.08)
-    parser.add_argument("--normalization", choices=("zero_one", "minus_one_one"), default="minus_one_one")
-    parser.add_argument("--policy-checkpoint", type=Path, help="run a vision-action checkpoint in shadow mode")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/ai_deck/decoded_frames.npz"),
+    )
+    parser.add_argument("--frame-dir", type=Path, help="save each decoded frame as PNG")
     args = parser.parse_args()
 
-    if args.frames <= 0:
-        raise SystemExit("--frames must be positive")
-    config = VisionObservationConfig(
-        width=args.width,
-        height=args.height,
-        color_mode=args.color_mode,
-        input_color_order=args.input_color_order,
-        frame_stack=args.frame_stack,
-        include_delta=args.include_delta,
-        include_motion_mask=args.include_motion_mask,
-        motion_threshold=args.motion_threshold,
-        normalization=args.normalization,
-    )
-    encoder = VisionObservationEncoder(config)
-    policy = load_capture_policy(args.policy_checkpoint, config)
-    observations: list[np.ndarray] = []
+    validate_args(args, parser)
+    frames: list[np.ndarray] = []
     host_times: list[float] = []
-    source_means: list[float] = []
     frame_paths: list[str] = []
-    policy_actions: list[np.ndarray] = []
-    policy_actions_physical: list[np.ndarray] = []
-    policy_inference_ms: list[float] = []
     capture_error: Exception | None = None
-    start = monotonic()
     stream = stream_from_args(args)
+    start = monotonic()
 
     if args.frame_dir is not None:
         args.frame_dir.mkdir(parents=True, exist_ok=True)
     try:
         with stream:
             for frame in stream.frames(limit=args.frames):
-                observation = encoder.encode(frame.pixels)
-                observations.append(observation)
-                host_times.append(frame.host_time_s)
-                source_means.append(float(frame.pixels.mean()))
-                if policy is not None:
-                    normalized, physical, inference_ms = infer_policy(policy, observation)
-                    policy_actions.append(normalized)
-                    policy_actions_physical.append(physical)
-                    policy_inference_ms.append(inference_ms)
+                pixels = validate_frame(frame, len(frames) + 1, host_times[-1] if host_times else None)
+                frames.append(pixels.copy())
+                host_times.append(float(frame.host_time_s))
                 if args.frame_dir is not None:
                     frame_path = args.frame_dir / f"frame-{frame.index:06d}.png"
-                    Image.fromarray(frame.pixels).save(frame_path)
+                    Image.fromarray(pixels).save(frame_path)
                     frame_paths.append(str(frame_path))
     except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
         capture_error = exc
 
-    elapsed = monotonic() - start
-    dropped_frames = int(getattr(stream, "dropped_frames", 0))
-    if not observations:
+    if not frames:
         raise SystemExit(f"AI Deck capture failed before the first complete frame: {capture_error}")
+    try:
+        decoded_frames = np.stack(frames)
+    except ValueError as exc:
+        raise SystemExit("AI Deck capture produced inconsistent decoded frame shapes") from exc
+    if capture_error is None and len(frames) != args.frames:
+        capture_error = RuntimeError(f"capture stopped after {len(frames)}/{args.frames} frames")
+    complete = capture_error is None
+    dropped_frames = validated_counter(stream, "dropped_frames")
+    rejected_datagrams = validated_counter(stream, "rejected_datagrams")
+    metadata = capture_metadata(args, decoded_frames, complete, dropped_frames, rejected_datagrams)
+    metadata_json = json.dumps(metadata, sort_keys=True, allow_nan=False)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         args.output,
-        observations=np.stack(observations),
+        decoded_frames=decoded_frames,
         host_time_s=np.asarray(host_times, dtype=np.float64),
-        source_mean=np.asarray(source_means, dtype=np.float32),
-        frame_paths=np.asarray(frame_paths),
-        contract_json=np.asarray(json.dumps(config.metadata(), sort_keys=True)),
-        complete=np.asarray(capture_error is None),
+        frame_paths=np.asarray(frame_paths, dtype=str),
+        metadata_json=np.asarray(metadata_json),
+        complete=np.asarray(complete),
         capture_error=np.asarray("" if capture_error is None else str(capture_error)),
         dropped_frames=np.asarray(dropped_frames),
-        policy_actions=np.asarray(policy_actions, dtype=np.float32).reshape((-1, 3)),
-        policy_actions_physical=np.asarray(policy_actions_physical, dtype=np.float32).reshape((-1, 3)),
-        policy_inference_ms=np.asarray(policy_inference_ms, dtype=np.float32),
-        policy_checkpoint=np.asarray("" if args.policy_checkpoint is None else str(args.policy_checkpoint)),
+        rejected_datagrams=np.asarray(rejected_datagrams),
     )
-    print(f"wrote {len(observations)} observations to {args.output}")
-    print(f"shape={config.shape} flat_dim={config.flat_dim} rate_hz={len(observations) / elapsed:.2f}")
-    print(f"dropped_frames={dropped_frames}")
-    print(f"source_mean_min={min(source_means):.2f} source_mean_max={max(source_means):.2f}")
-    if policy_inference_ms:
-        print(
-            f"policy_inference_ms_p50={np.percentile(policy_inference_ms, 50):.3f} "
-            f"p95={np.percentile(policy_inference_ms, 95):.3f}"
+    provenance_path = args.output.with_suffix(args.output.suffix + ".provenance.json")
+    provenance_path.write_text(metadata_json + "\n")
+    if args.frame_dir is not None:
+        frame_integrity = {
+            "version": 1,
+            "datasets": [
+                {
+                    "path": ".",
+                    "status": "unreviewed",
+                    "evidence": metadata["authority_reason"],
+                }
+            ],
+        }
+        (args.frame_dir / "frame-integrity.json").write_text(
+            json.dumps(frame_integrity, indent=2, sort_keys=True) + "\n"
         )
+    elapsed = monotonic() - start
+    if not math.isfinite(elapsed) or elapsed <= 0.0:
+        raise SystemExit("AI Deck capture duration was nonfinite or non-positive")
+    print(f"wrote {len(frames)} decoded frames to {args.output}")
+    print(f"shape={decoded_frames.shape[1:]} rate_hz={len(frames) / elapsed:.2f}")
     if capture_error is not None:
-        raise SystemExit(f"AI Deck capture ended early after {len(observations)} frames: {capture_error}")
+        raise SystemExit(f"AI Deck capture ended early after {len(frames)} frames: {capture_error}")
 
 
 def stream_from_args(args):
@@ -131,37 +120,95 @@ def stream_from_args(args):
     return AiDeckStream(args.host, args.port, timeout_s=args.timeout_s)
 
 
-def load_capture_policy(checkpoint: Path | None, config: VisionObservationConfig):
-    if checkpoint is None:
-        return None
-    policy = load_vision_action_policy(checkpoint)
-    expected = (policy.metadata.channels, policy.metadata.height, policy.metadata.width)
-    if expected != config.shape:
-        raise SystemExit(f"policy expects vision shape {expected}, capture contract produces {config.shape}")
-    if policy.metadata.contract_json:
-        expected_contract = json.loads(policy.metadata.contract_json)
-        if expected_contract != config.metadata():
-            raise SystemExit("policy and capture vision contracts differ")
-    return policy
+def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.frames <= 0:
+        parser.error("--frames must be positive")
+    if not math.isfinite(args.timeout_s) or args.timeout_s <= 0.0:
+        parser.error("--timeout-s must be finite and positive")
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be in [1, 65535]")
+    if not 0 <= args.bind_port <= 65535:
+        parser.error("--bind-port must be in [0, 65535]")
+    if not args.host.strip():
+        parser.error("--host must be non-empty")
 
 
-def infer_policy(policy, observation: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
-    import torch
+def validate_frame(frame, expected_index: int, previous_time_s: float | None) -> np.ndarray:
+    if isinstance(frame.index, bool) or not isinstance(frame.index, Integral) or frame.index != expected_index:
+        raise ValueError(f"AI Deck frame index {frame.index} is not expected index {expected_index}")
+    for label, value in (("width", frame.width), ("height", frame.height), ("depth", frame.depth)):
+        if isinstance(value, bool) or not isinstance(value, Integral) or value <= 0:
+            raise ValueError(f"AI Deck frame {label} must be a positive integer")
+    if isinstance(frame.format, bool) or not isinstance(frame.format, Integral) or frame.format not in {0, 1, 2}:
+        raise ValueError("AI Deck frame format is invalid")
+    if isinstance(frame.host_time_s, bool) or not isinstance(frame.host_time_s, Real):
+        raise ValueError("AI Deck frame timestamp must be finite and non-negative")
+    host_time_s = float(frame.host_time_s)
+    if not math.isfinite(host_time_s) or host_time_s < 0.0:
+        raise ValueError("AI Deck frame timestamp must be finite and non-negative")
+    if previous_time_s is not None and host_time_s < previous_time_s:
+        raise ValueError("AI Deck frame timestamps must be nondecreasing")
+    pixels = np.asarray(frame.pixels)
+    expected_shape = (frame.height, frame.width) if frame.depth == 1 else (frame.height, frame.width, frame.depth)
+    if pixels.dtype != np.uint8 or pixels.shape != expected_shape:
+        raise ValueError(
+            f"AI Deck decoded frame {pixels.shape}/{pixels.dtype} does not match {expected_shape}/uint8"
+        )
+    return pixels
 
-    tensor = torch.from_numpy(observation).unsqueeze(0)
-    start = perf_counter()
-    with torch.no_grad():
-        normalized = policy(tensor)[0].numpy()
-    inference_ms = (perf_counter() - start) * 1000.0
-    scale = np.asarray(
-        [
-            policy.metadata.velocity_scale_m_s,
-            policy.metadata.velocity_scale_m_s,
-            policy.metadata.yawrate_scale_deg_s,
-        ],
-        dtype=np.float32,
+
+def validated_counter(stream, name: str) -> int:
+    value = getattr(stream, name, 0)
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or int(value) < 0:
+        raise SystemExit(f"AI Deck stream reported invalid {name}={value!r}")
+    return int(value)
+
+
+def capture_metadata(
+    args: argparse.Namespace,
+    decoded_frames: np.ndarray,
+    complete: bool,
+    dropped_frames: int,
+    rejected_datagrams: int,
+) -> dict[str, object]:
+    udp = args.transport == "udp"
+    authority_reason = (
+        "UDP capture is unreviewed because firmware provides no chunk sequence field or application frame checksum"
+        if udp
+        else "capture requires explicit frame-integrity review before any training use"
     )
-    return normalized, normalized * scale, inference_ms
+    return {
+        "schema": CAPTURE_SCHEMA,
+        "transport": args.transport,
+        "configured_source_endpoint": {"host": args.host, "port": args.port},
+        "decoded_frame_shape": list(decoded_frames.shape[1:]),
+        "decoded_frame_dtype": str(decoded_frames.dtype),
+        "captured_frames": int(len(decoded_frames)),
+        "requested_frames": int(args.frames),
+        "complete": bool(complete),
+        "dropped_frames": dropped_frames,
+        "rejected_datagrams": rejected_datagrams,
+        "policy_outputs_present": False,
+        "edge_v3_preprocessing_applied": False,
+        "integrity_status": "unreviewed",
+        "training_authority": False,
+        "deployment_authority": False,
+        "authority_reason": authority_reason,
+        "transport_integrity": {
+            "source_endpoint_enforced": True,
+            "cpx_route_function_consistency_enforced": True,
+            "ordered_transport": not udp,
+            "firmware_sequence_field_present": False,
+            "chunk_order_verified": not udp,
+            "application_frame_checksum_present": False,
+            "udp_reassembly_authoritative": False,
+            "udp_limitation": (
+                "datagram ordering cannot be proven without firmware sequence numbers"
+                if udp
+                else "not_applicable"
+            ),
+        },
+    }
 
 
 if __name__ == "__main__":

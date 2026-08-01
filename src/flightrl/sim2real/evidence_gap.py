@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from flightrl.evidence_scope import EDGE_DEPLOYMENT_VERIFIER_MISSING
 from flightrl.sim2real.provenance import path_provenance
 
 
@@ -23,6 +24,8 @@ CATEGORY_BY_BLOCKER = {
     "latency_unmeasured": "sensing_and_timing",
     "latency_failed": "sensing_and_timing",
     "deployment_readiness_blocked": "policy_deployment",
+    EDGE_DEPLOYMENT_VERIFIER_MISSING: "policy_deployment",
+    "edge_v3_deployment_bundle_missing": "policy_deployment",
     "training_stack_incomplete": "policy_deployment",
     "sensor_model_incomplete": "sensor_model",
 }
@@ -34,7 +37,7 @@ ACTION_BY_CATEGORY = {
     "sensing_and_timing": "Measure stationary sensor noise and command-to-observation latency for domain randomization and replay alignment.",
     "calibration_flight": "Record a supervised calibration flight with enough floor, XY, yaw, and ranger coverage.",
     "replay_validation": "Replay the calibration commands in sim and require state/ranger RMSE below the configured thresholds.",
-    "policy_deployment": "Keep checkpoints sim-only until deployment readiness, export parity, latency, and replay gates all pass.",
+    "policy_deployment": "Keep checkpoints sim-only until an edge-authoritative artifact proves on-device quantized parity, memory fit, hardware latency, and replay gates; desktop TorchScript evidence does not qualify.",
     "sensor_model": "Model noisy state and ranger observations instead of training against clean privileged state only.",
     "uncategorized": "Inspect uncategorized blockers and either add evidence or extend the gate taxonomy.",
 }
@@ -43,20 +46,21 @@ ACTION_BY_CATEGORY = {
 def build_evidence_gap_report(pipeline: Path) -> dict[str, Any]:
     data = json.loads(pipeline.read_text())
     blockers = list(data.get("blocking_items", []))
+    if EDGE_DEPLOYMENT_VERIFIER_MISSING not in blockers:
+        blockers.append(EDGE_DEPLOYMENT_VERIFIER_MISSING)
     categories = categorize(blockers)
-    enough = (
-        bool(data.get("transfer_approved", False))
-        and int(data.get("hardware_approved_checkpoints", 0) or 0) > 0
-        and not blockers
-    )
     return {
         "pipeline": path_provenance(pipeline),
-        "enough_for_one_step_transfer": enough,
-        "decision": "ready_for_supervised_transfer_test" if enough else "blocked",
+        "enough_for_one_step_transfer": False,
+        "decision": "blocked",
         "categories": categories,
         "action_items": action_items(categories),
-        "transfer_approved": bool(data.get("transfer_approved", False)),
-        "hardware_approved_checkpoints": int(data.get("hardware_approved_checkpoints", 0) or 0),
+        "transfer_approved": False,
+        "hardware_approved_checkpoints": 0,
+        "claimed_transfer_approved": data.get("transfer_approved") is True,
+        "claimed_hardware_approved_checkpoints": data.get(
+            "hardware_approved_checkpoints"
+        ),
         "safety": "This report is offline evidence triage. It does not approve live autonomous flight.",
     }
 

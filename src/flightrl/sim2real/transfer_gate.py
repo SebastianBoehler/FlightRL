@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from flightrl.sim2real.blockers import blockers_from_report
+from flightrl.evidence_values import exact_nonnegative_int, failure_strings, finite_number
+from flightrl.evidence_scope import DESKTOP_DEVELOPMENT_SCOPE
+from flightrl.sim2real.deployment_evidence import deployment_contract_failures
 
 
 def build_transfer_gate(
@@ -16,7 +18,6 @@ def build_transfer_gate(
     sim_readiness: Path | None = None,
     room_report: Path | None = None,
     live_safety: Path | None = None,
-    puffer_transfer_test: Path | list[Path] | None = None,
     hardware_blockers: Path | None = None,
 ) -> dict[str, Any]:
     audit_data = read_json(audit)
@@ -24,24 +25,16 @@ def build_transfer_gate(
     export_data = read_json(config_export)
     deployment_data = read_json(deployment_readiness)
     sim_data = read_json(sim_readiness) if sim_readiness else {}
+    profile_summary = report_summary(profile_data)
     checks = [
-        check("audit", audit, bool(audit_data.get("transfer_ready")), audit_data.get("blocking_items", [])),
-        check("profile", profile, bool(profile_data.get("summary", {}).get("profile_ready")), profile_data.get("summary", {}).get("failures", [])),
-        check("config_export", config_export, bool(export_data.get("exported")), export_data.get("failures", [])),
+        check("audit", audit, audit_data.get("transfer_ready"), audit_data.get("blocking_items", [])),
+        check("profile", profile, profile_summary.get("profile_ready"), profile_summary.get("failures", [])),
+        check("config_export", config_export, export_data.get("exported"), export_data.get("failures", [])),
         readiness_check("deployment_readiness", deployment_readiness, deployment_data),
+        readiness_check("sim_readiness", sim_readiness, sim_data) if sim_readiness else missing_check("sim_readiness"),
+        room_check(room_report, read_json(room_report)) if room_report else missing_check("room_map"),
+        live_safety_check(live_safety, read_json(live_safety)) if live_safety else missing_check("live_hardware_safety"),
     ]
-    if sim_readiness:
-        checks.append(readiness_check("sim_readiness", sim_readiness, sim_data))
-    if room_report:
-        checks.append(room_check(room_report, read_json(room_report)))
-    if live_safety:
-        checks.append(live_safety_check(live_safety, read_json(live_safety)))
-    puffer_paths = puffer_transfer_paths(puffer_transfer_test)
-    for index, puffer_path in enumerate(puffer_paths, start=1):
-        item = puffer_transfer_check(puffer_path, read_json(puffer_path))
-        if len(puffer_paths) > 1:
-            item["name"] = f"puffer_transfer_test_{index}"
-        checks.append(item)
     if hardware_blockers:
         checks.append(hardware_blockers_check(hardware_blockers, read_json(hardware_blockers)))
     failures = unique_failures(failure for item in checks for failure in item["failures"])
@@ -53,8 +46,27 @@ def build_transfer_gate(
     }
 
 
-def check(name: str, path: Path, passed: bool, failures: list[str]) -> dict[str, Any]:
-    return {"name": name, "path": str(path), "passed": passed, "failures": [] if passed else failures or [f"{name}_failed"]}
+def check(name: str, path: Path, passed: object, failures: object) -> dict[str, Any]:
+    valid_failures = validated_failures(failures, name)
+    valid_pass = passed is True and not valid_failures
+    if not valid_pass and not valid_failures:
+        valid_failures = [f"{name}_failed"]
+    return {"name": name, "path": str(path), "passed": valid_pass, "failures": valid_failures}
+
+
+def validated_failures(value: object, name: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        return [f"{name}_invalid_failures"]
+    return list(value)
+
+
+def missing_check(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "path": None,
+        "passed": False,
+        "failures": [f"{name}_missing"],
+    }
 
 
 def unique_failures(failures) -> list[str]:
@@ -69,18 +81,93 @@ def unique_failures(failures) -> list[str]:
 
 def readiness_check(name: str, path: Path, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
-    blocked = int(summary.get("blocked", 1) or 0)
-    total = int(summary.get("total", 0) or 0)
-    ready = int(summary.get("ready", 0) or 0)
+    if not isinstance(summary, dict):
+        summary = {}
+    records = report.get("records")
+    record_failures, derived_ready, derived_blocked = validate_readiness_records(records)
+    total = exact_nonnegative_int(summary.get("total"))
+    ready = exact_nonnegative_int(summary.get("ready"))
+    blocked = exact_nonnegative_int(summary.get("blocked"))
+    summary_valid = (
+        total is not None
+        and ready is not None
+        and blocked is not None
+        and total == len(records or [])
+        and ready == derived_ready
+        and blocked == derived_blocked
+        and ready + blocked == total
+    )
+    if name == "deployment_readiness":
+        authority_failures = deployment_contract_failures(report)
+    elif name == "sim_readiness" and (
+        report.get("evidence_scope") != DESKTOP_DEVELOPMENT_SCOPE
+        or report.get("deployment_authority") is not False
+    ):
+        authority_failures = ["desktop_scope_invalid"]
+    else:
+        authority_failures = []
+    declared_failures = validated_failures(summary.get("failures", []), name)
+    consistency_failures = record_failures + declared_failures + ([] if summary_valid else ["invalid_readiness_summary"])
+    blocked_failures = (
+        readiness_failures(report) if summary_valid and blocked else []
+    )
+    if authority_failures or consistency_failures:
+        return {
+            "name": name,
+            "path": str(path),
+            "passed": False,
+            "failures": unique_failures(
+                [*authority_failures, *consistency_failures, *blocked_failures]
+            ),
+            "ready": ready or 0,
+            "total": total or 0,
+            "blocked": blocked or 0,
+            "evidence_scope": report.get("evidence_scope"),
+            "deployment_authority": False,
+        }
+    assert total is not None and ready is not None and blocked is not None
     passed = total > 0 and blocked == 0 and ready == total
     failures = [] if passed else readiness_failures(report)
-    return {"name": name, "path": str(path), "passed": passed, "failures": failures, "ready": ready, "total": total, "blocked": blocked}
+    return {
+        "name": name,
+        "path": str(path),
+        "passed": passed,
+        "failures": failures,
+        "ready": ready,
+        "total": total,
+        "blocked": blocked,
+        "deployment_authority": False,
+    }
+
+
+def validate_readiness_records(records: object) -> tuple[list[str], int, int]:
+    if not isinstance(records, list):
+        return ["invalid_readiness_records"], 0, 0
+    failures: list[str] = []
+    ready = 0
+    for index, record in enumerate(records):
+        if not isinstance(record, dict) or type(record.get("ready")) is not bool:
+            failures.append(f"record_{index}:invalid_ready")
+            continue
+        if not isinstance(record.get("task"), str) or not record["task"]:
+            failures.append(f"record_{index}:invalid_task")
+        raw_failures = record.get("failures")
+        if not isinstance(raw_failures, list) or not all(
+            isinstance(item, str) and item for item in raw_failures
+        ):
+            failures.append(f"record_{index}:invalid_failures")
+            continue
+        if record["ready"] is True:
+            ready += 1
+            if raw_failures:
+                failures.append(f"record_{index}:ready_with_failures")
+    return failures, ready, len(records) - ready
 
 
 def readiness_failures(report: dict[str, Any]) -> list[str]:
     failures = []
     for record in report.get("records", []):
-        if not record.get("ready", False):
+        if record.get("ready") is not True:
             task = record.get("task", "unknown")
             record_failures = record.get("failures", []) or ["not_ready"]
             failures.extend(f"{task}:{failure}" for failure in record_failures)
@@ -89,109 +176,61 @@ def readiness_failures(report: dict[str, Any]) -> list[str]:
 
 def room_check(path: Path, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
-    ready = bool(summary.get("mapping_ready", False))
-    failures = [] if ready else summary.get("failures", []) or ["room_map_not_ready"]
+    if not isinstance(summary, dict):
+        summary = {}
+    failures = validated_failures(summary.get("failures", []), "room_map")
     estimate = report.get("room_estimate", {})
+    point_count = exact_nonnegative_int(summary.get("point_count"))
+    dimensions = [finite_positive(estimate.get(key)) for key in ("width_m", "depth_m", "height_m")] if isinstance(estimate, dict) else []
+    if point_count is None or point_count == 0 or len(dimensions) != 3 or any(value is None for value in dimensions):
+        failures.append("room_map_invalid_metadata")
+    ready = summary.get("mapping_ready") is True and not failures
+    failures = [] if ready else failures or ["room_map_not_ready"]
     return {
         "name": "room_map",
         "path": str(path),
         "passed": ready,
         "failures": failures,
-        "point_count": summary.get("point_count"),
-        "width_m": estimate.get("width_m"),
-        "depth_m": estimate.get("depth_m"),
-        "height_m": estimate.get("height_m"),
+        "point_count": point_count,
+        "width_m": dimensions[0] if len(dimensions) == 3 else None,
+        "depth_m": dimensions[1] if len(dimensions) == 3 else None,
+        "height_m": dimensions[2] if len(dimensions) == 3 else None,
     }
 
 
 def live_safety_check(path: Path, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
-    passed = bool(summary.get("passed", False))
-    failures = [] if passed else summary.get("failures", []) or ["live_hardware_safety_failed"]
+    if not isinstance(summary, dict):
+        summary = {}
+    failures = validated_failures(summary.get("failures", []), "live_hardware_safety")
+    checked = exact_nonnegative_int(summary.get("checked"))
+    hardware_scripts = exact_nonnegative_int(summary.get("hardware_scripts"))
+    learned_scripts = exact_nonnegative_int(summary.get("learned_checkpoint_hardware_scripts"))
+    if (
+        checked is None
+        or checked == 0
+        or hardware_scripts is None
+        or learned_scripts is None
+        or learned_scripts > hardware_scripts
+        or hardware_scripts > checked
+    ):
+        failures.append("live_hardware_safety_invalid_summary")
+    passed = summary.get("passed") is True and not failures
+    failures = [] if passed else failures or ["live_hardware_safety_failed"]
     return {
         "name": "live_hardware_safety",
         "path": str(path),
         "passed": passed,
         "failures": failures,
-        "hardware_scripts": summary.get("hardware_scripts"),
-        "learned_checkpoint_hardware_scripts": summary.get("learned_checkpoint_hardware_scripts"),
+        "hardware_scripts": hardware_scripts,
+        "learned_checkpoint_hardware_scripts": learned_scripts,
     }
-
-
-def puffer_transfer_check(path: Path, report: dict[str, Any]) -> dict[str, Any]:
-    passed = bool(report.get("passed", False))
-    return {
-        "name": "puffer_transfer_test",
-        "path": str(path),
-        "passed": passed,
-        "failures": [] if passed else puffer_transfer_failures(report),
-        "candidates": puffer_transfer_status(report),
-    }
-
-
-def puffer_transfer_paths(value: Path | list[Path] | None) -> list[Path]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
-def puffer_transfer_status(report: dict[str, Any]) -> dict[str, bool]:
-    if isinstance(report.get("bundle"), dict):
-        bundle = report["bundle"]
-        return {str(bundle.get("label", "bundle")): bool(bundle.get("passed", False))}
-    if isinstance(report.get("runs"), list):
-        label = str(report.get("label", "robustness_matrix"))
-        return {label: bool(report.get("passed", False))}
-    candidates = report.get("candidates", {})
-    return {label: bool(item.get("passed", False)) for label, item in candidates.items()}
-
-
-def puffer_transfer_failures(report: dict[str, Any]) -> list[str]:
-    quality_failures = puffer_source_quality_failures(report)
-    if isinstance(report.get("bundle"), dict):
-        bundle = report["bundle"]
-        if bundle.get("passed", False) and not quality_failures:
-            return []
-        label = str(bundle.get("label", "bundle"))
-        failures = list(quality_failures)
-        if not bundle.get("obstacle", {}).get("passed", False):
-            failures.append(f"{label}:obstacle_transfer_failed")
-        velocity = bundle.get("velocity", {})
-        if not velocity or not all(item.get("gate", {}).get("passed", False) for item in velocity.values()):
-            failures.append(f"{label}:velocity_transfer_failed")
-        return failures or [f"{label}:transfer_test_failed"]
-    if isinstance(report.get("runs"), list):
-        if report.get("passed", False) and not quality_failures:
-            return []
-        label = str(report.get("label", "robustness_matrix"))
-        failures = list(quality_failures)
-        for run in report.get("runs", []):
-            if not run.get("passed", False):
-                seed = run.get("seed", "unknown")
-                run_failures = run.get("failures", []) or ["seed_failed"]
-                failures.extend(f"{label}:seed_{seed}:{failure}" for failure in run_failures)
-        summary_failures = report.get("summary", {}).get("failures", [])
-        failures.extend(f"{label}:{failure}" for failure in summary_failures)
-        return unique_failures(failures) or [f"{label}:transfer_test_failed"]
-    failures = list(quality_failures)
-    for label, item in report.get("candidates", {}).items():
-        if not item.get("passed", False):
-            failures.append(f"{label}:transfer_test_failed")
-    return failures or ["puffer_transfer_test_failed"]
-
-
-def puffer_source_quality_failures(report: dict[str, Any]) -> list[str]:
-    failures = []
-    for label, item in report.get("source_teacher_quality", {}).items():
-        for failure in item.get("gate", {}).get("failures", []):
-            failures.append(f"{label}:{failure}")
-    return failures
 
 
 def hardware_blockers_check(path: Path, report: dict[str, Any]) -> dict[str, Any]:
-    blockers = blockers_from_report(report)
+    blockers = failure_strings(report.get("blockers"))
+    if blockers is None:
+        blockers = ["hardware_blockers_invalid"]
     return {
         "name": "hardware_blockers",
         "path": str(path),
@@ -224,4 +263,17 @@ def write_report(report: dict[str, Any], output: Path) -> None:
 
 
 def read_json(path: Path | None) -> dict[str, Any]:
-    return json.loads(path.read_text()) if path else {}
+    data = json.loads(path.read_text()) if path else {}
+    if not isinstance(data, dict):
+        raise ValueError(f"evidence report must be a JSON object: {path}")
+    return data
+
+
+def report_summary(report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary")
+    return summary if isinstance(summary, dict) else {}
+
+
+def finite_positive(value: object) -> float | None:
+    parsed = finite_number(value)
+    return parsed if parsed is not None and parsed > 0.0 else None

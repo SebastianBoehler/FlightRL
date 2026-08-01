@@ -1,10 +1,21 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
+from flightrl.evidence_values import exact_true, failure_strings
 from flightrl.sim2real.actuator import summarize_motor_bench
+from flightrl.sim2real.audit_evidence import (
+    finite_nonnegative,
+    summarize_calibration,
+    summarize_deployment,
+    summarize_hardware_latency,
+    summarize_replay,
+    summarize_sensor_profile,
+    summarize_stationary_noise,
+    summarize_training_stack,
+    valid_hardware_parameters,
+)
 from flightrl.sim2real.hardware_config import summarize_hardware_model
 
 
@@ -23,6 +34,13 @@ def build_audit(
     max_replay_range_rmse_mm: float = 300.0,
     min_motor_powers: int = 3,
 ) -> dict[str, Any]:
+    validate_thresholds(
+        max_replay_state_rmse=max_replay_state_rmse,
+        max_replay_range_rmse_mm=max_replay_range_rmse_mm,
+        min_motor_powers=min_motor_powers,
+    )
+    if hardware_blockers is not None and failure_strings(hardware_blockers) is None:
+        raise ValueError("hardware_blockers must contain nonempty strings")
     report = {
         "hardware_config": summarize_hardware_config(hardware_config),
         "motor_bench": summarize_motor_bench(motor_bench, min_powers=min_motor_powers),
@@ -55,134 +73,6 @@ def summarize_hardware_config(path: Path | None) -> dict[str, Any]:
     return summarize_hardware_model(path)
 
 
-def summarize_calibration(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "ready": False, "failures": ["missing"]}
-    summary = _read_json(path).get("summary", {})
-    return {
-        "present": True,
-        "path": str(path),
-        "ready": bool(summary.get("replay_calibration_ready", False)),
-        "failures": summary.get("failures", []),
-        "rows": summary.get("rows"),
-        "duration_s": summary.get("duration_s"),
-        "sample_rate_hz": summary.get("sample_rate_hz"),
-        "floor_valid_ratio": summary.get("floor_valid_ratio"),
-        "xy_span_m": summary.get("xy_span_m"),
-        "yaw_span_deg": summary.get("yaw_span_deg"),
-    }
-
-
-def summarize_replay(path: Path | None, *, max_state_rmse: float, max_range_rmse_mm: float) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    aligned = _read_json(path).get("aligned", {})
-    signals = aligned.get("signals", {})
-    worst_state = _worst_rmse(signals, "stateEstimate.")
-    worst_range = _worst_rmse(signals, "range.")
-    failures = []
-    if worst_state is None or worst_state > max_state_rmse:
-        failures.append("state_rmse")
-    if worst_range is None or worst_range > max_range_rmse_mm:
-        failures.append("range_rmse")
-    return {
-        "present": True,
-        "path": str(path),
-        "passed": not failures,
-        "failures": failures,
-        "samples": aligned.get("samples"),
-        "overlap_duration_s": aligned.get("overlap_duration_s"),
-        "worst_state_rmse": worst_state,
-        "worst_range_rmse_mm": worst_range,
-    }
-
-
-def summarize_stationary_noise(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    summary = _read_json(path).get("summary", {})
-    return {
-        "present": True,
-        "path": str(path),
-        "passed": bool(summary.get("stationary_noise_ready", False)),
-        "failures": summary.get("failures", []),
-        "duration_s": summary.get("duration_s"),
-        "sample_rate_hz": summary.get("sample_rate_hz"),
-        "max_position_span_m": summary.get("max_position_span_m"),
-        "max_attitude_span_deg": summary.get("max_attitude_span_deg"),
-    }
-
-
-def summarize_hardware_latency(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    summary = _read_json(path).get("summary", {})
-    return {
-        "present": True,
-        "path": str(path),
-        "passed": bool(summary.get("latency_ready", False)),
-        "failures": summary.get("failures", []),
-        "accepted_pairs": summary.get("accepted_pairs"),
-        "median_latency_s": summary.get("median_latency_s"),
-    }
-
-
-def summarize_sensor_profile(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    data = _read_json(path)
-    profile = data.get("sensor_profile", data)
-    knobs = {
-        key: float(profile.get(key, 0.0) or 0.0)
-        for key in (
-            "state_noise_std_m",
-            "velocity_noise_std_m_s",
-            "body_rate_noise_std_rad_s",
-            "range_noise_std_m",
-            "range_dropout_prob",
-            "action_lag_s",
-        )
-    }
-    enabled = bool(profile.get("enabled", False)) or any(value > 0.0 for value in knobs.values())
-    return {
-        "present": True,
-        "path": str(path),
-        "passed": enabled,
-        "failures": [] if enabled else ["disabled"],
-        "name": profile.get("name"),
-        **knobs,
-    }
-
-
-def summarize_deployment(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {"present": False, "passed": False, "failures": ["missing"]}
-    data = _read_json(path)
-    summary = data.get("summary", {})
-    total = int(summary.get("total", 0) or 0)
-    blocked = int(summary.get("blocked", 0) or 0)
-    failures = []
-    if total <= 0:
-        failures.append("no_candidates")
-    if blocked:
-        failures.append("blocked_candidates")
-    return {"present": True, "path": str(path), "passed": not failures, "failures": failures, "summary": summary}
-
-
-def summarize_training_stack(deployment_readiness: Path | None) -> dict[str, Any]:
-    if deployment_readiness is None or not deployment_readiness.exists():
-        return {"present": False, "passed": False, "failures": ["readiness_missing"]}
-    evidence = _read_json(deployment_readiness).get("global_evidence", {})
-    throughput = evidence.get("training_throughput", {})
-    puffer = evidence.get("puffer_export", {})
-    failures = []
-    if not throughput.get("present"):
-        failures.append("training_throughput_missing")
-    if not puffer.get("present") or not puffer.get("passed"):
-        failures.append("puffer_export")
-    return {"present": True, "passed": not failures, "failures": failures, "training_throughput": throughput, "puffer_export": puffer}
-
-
 def collect_blockers(report: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     if not report["hardware_config"]["present"]:
@@ -191,6 +81,8 @@ def collect_blockers(report: dict[str, Any]) -> list[str]:
         blockers.append("measured_dynamics_missing")
     if report["hardware_config"].get("missing_parameters"):
         blockers.append("hardware_dynamics_incomplete")
+    if not valid_hardware_parameters(report["hardware_config"].get("parameters")):
+        blockers.append("hardware_dynamics_invalid")
     if not report["motor_bench"]["passed"]:
         blockers.append("motor_bench_missing" if not report["motor_bench"]["present"] else "motor_bench_failed")
     if not report["calibration_quality"]["ready"]:
@@ -201,8 +93,9 @@ def collect_blockers(report: dict[str, Any]) -> list[str]:
         blockers.append("deployment_readiness_blocked")
     if not report["training_stack"]["passed"]:
         blockers.append("training_stack_incomplete")
-    hardware_sensor_model = bool(report["hardware_config"].get("sensor_model", {}).get("include_noisy_state"))
-    measured_sensor_profile = bool(report.get("sensor_profile", {}).get("passed"))
+    sensor_model = report["hardware_config"].get("sensor_model", {})
+    hardware_sensor_model = isinstance(sensor_model, dict) and exact_true(sensor_model.get("include_noisy_state"))
+    measured_sensor_profile = exact_true(report.get("sensor_profile", {}).get("passed"))
     if not hardware_sensor_model and not measured_sensor_profile:
         blockers.append("sensor_model_incomplete")
     if not report["stationary_noise"]["passed"]:
@@ -223,7 +116,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         ("stationary noise", report["stationary_noise"]["passed"], ",".join(report["stationary_noise"].get("failures", [])) or "pass", "sensor randomization"),
         ("hardware latency", report["hardware_latency"]["passed"], ",".join(report["hardware_latency"].get("failures", [])) or "pass", "command/sensor timing"),
         ("sensor profile", report["sensor_profile"]["passed"], ",".join(report["sensor_profile"].get("failures", [])) or "pass", "sim observation/noise profile"),
-        ("deployment readiness", report["deployment_readiness"]["passed"], str(report["deployment_readiness"].get("summary", {})), "candidate gates"),
+        ("edge deployment authority", report["deployment_readiness"]["passed"], str(report["deployment_readiness"].get("summary", {})), "on-device candidate gates"),
         ("training stack", report["training_stack"]["passed"], ",".join(report["training_stack"].get("failures", [])) or "pass", "Puffer/export/throughput"),
     ]
     lines = ["# Sim-To-Real Audit", "", f"Transfer ready: `{report['transfer_ready']}`", "", "| area | passed | detail | scope |", "| --- | ---: | --- | --- |"]
@@ -244,10 +137,16 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text())
-
-
-def _worst_rmse(signals: dict[str, Any], prefix: str) -> float | None:
-    values = [float(metrics["rmse"]) for key, metrics in signals.items() if key.startswith(prefix) and "rmse" in metrics]
-    return max(values) if values else None
+def validate_thresholds(
+    *,
+    max_replay_state_rmse: object,
+    max_replay_range_rmse_mm: object,
+    min_motor_powers: object,
+) -> None:
+    if (
+        finite_nonnegative(max_replay_state_rmse) is None
+        or finite_nonnegative(max_replay_range_rmse_mm) is None
+    ):
+        raise ValueError("replay RMSE thresholds must be finite nonnegative numbers")
+    if type(min_motor_powers) is not int or min_motor_powers < 2:
+        raise ValueError("min_motor_powers must be an integer >= 2")

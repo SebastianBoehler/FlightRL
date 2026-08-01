@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from flightrl.sixdof.physics import resolve_physics_profile
 from flightrl.sixdof.puffer_calibration import PhysicsSweepGrid, candidate_profiles, profile_score
 
@@ -54,3 +56,8 @@ def test_resolve_physics_profile_loads_json(tmp_path: Path) -> None:
     profile = resolve_physics_profile(str(path))
     assert profile.linear_drag == 0.07
     assert profile.max_rate_rad_s == (5.5, 5.5, 3.5)
+
+
+def test_resolve_physics_profile_rejects_retired_legacy_name() -> None:
+    with pytest.raises(ValueError, match="unknown 6-DoF physics profile"):
+        resolve_physics_profile("legacy")

@@ -86,7 +86,7 @@ def main() -> None:
                 frame_index=index,
                 frame_host_time_s=frame.host_time_s,
             )
-            writer.write(frame, result, controls_drone=False)
+            writer.write(frame, result)
             inference_ms.append(result.inference_ms)
             widths.append(result.image_width)
             means.append(result.source_mean)

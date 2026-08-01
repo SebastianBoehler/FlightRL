@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .validation import require_bool, require_finite_real
+
 
 @dataclass(frozen=True, slots=True)
 class SixDofSensorProfile:
@@ -17,6 +19,33 @@ class SixDofSensorProfile:
     range_noise_std_m: float = 0.0
     range_dropout_prob: float = 0.0
     action_lag_s: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("sensor profile name must be a non-empty string")
+        object.__setattr__(
+            self,
+            "range_observation_enabled",
+            require_bool(
+                self.range_observation_enabled,
+                "range_observation_enabled",
+            ),
+        )
+        for name in (
+            "state_noise_std_m",
+            "velocity_noise_std_m_s",
+            "body_rate_noise_std_rad_s",
+            "range_noise_std_m",
+            "range_dropout_prob",
+            "action_lag_s",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                require_finite_real(getattr(self, name), name, minimum=0.0),
+            )
+        if self.range_dropout_prob > 1.0:
+            raise ValueError("range_dropout_prob must be at most 1")
 
     @property
     def enabled(self) -> bool:
@@ -48,6 +77,12 @@ class SixDofSensorProfile:
         )
 
     def action_alpha(self, dt: float) -> float:
+        dt = require_finite_real(
+            dt,
+            "sensor action dt",
+            minimum=0.0,
+            strictly_greater=True,
+        )
         if self.action_lag_s <= 0.0:
             return 1.0
         return float(dt / (self.action_lag_s + dt))
@@ -68,7 +103,10 @@ class SixDofSensorProfile:
 
 
 IDEAL_SENSOR_PROFILE = SixDofSensorProfile()
-DECKLESS_SENSOR_PROFILE = SixDofSensorProfile(name="deckless", range_observation_enabled=False)
+NO_RANGER_SENSOR_PROFILE = SixDofSensorProfile(
+    name="no_ranger",
+    range_observation_enabled=False,
+)
 RANGER_SENSOR_PROFILE = SixDofSensorProfile(name="ranger")
 
 BUILTIN_SENSOR_PROFILES = {
@@ -76,9 +114,7 @@ BUILTIN_SENSOR_PROFILES = {
     "none": IDEAL_SENSOR_PROFILE,
     "off": IDEAL_SENSOR_PROFILE,
     "ranger": RANGER_SENSOR_PROFILE,
-    "deckless": DECKLESS_SENSOR_PROFILE,
-    "flow_only": DECKLESS_SENSOR_PROFILE,
-    "no_ranger": DECKLESS_SENSOR_PROFILE,
+    "no_ranger": NO_RANGER_SENSOR_PROFILE,
 }
 
 
@@ -96,23 +132,15 @@ def resolve_sensor_profile(value: str | Path | SixDofSensorProfile | None) -> Si
     data = json.loads(path.read_text())
     payload = data.get("sensor_profile", data)
     return SixDofSensorProfile(
-        name=str(payload.get("name", path.stem)),
-        range_observation_enabled=_bool(payload.get("range_observation_enabled", True)),
-        state_noise_std_m=float(payload.get("state_noise_std_m", 0.0) or 0.0),
-        velocity_noise_std_m_s=float(payload.get("velocity_noise_std_m_s", 0.0) or 0.0),
-        body_rate_noise_std_rad_s=float(payload.get("body_rate_noise_std_rad_s", 0.0) or 0.0),
-        range_noise_std_m=float(payload.get("range_noise_std_m", 0.0) or 0.0),
-        range_dropout_prob=float(payload.get("range_dropout_prob", 0.0) or 0.0),
-        action_lag_s=float(payload.get("action_lag_s", 0.0) or 0.0),
+        name=payload.get("name", path.stem),
+        range_observation_enabled=payload.get("range_observation_enabled", True),
+        state_noise_std_m=payload.get("state_noise_std_m", 0.0),
+        velocity_noise_std_m_s=payload.get("velocity_noise_std_m_s", 0.0),
+        body_rate_noise_std_rad_s=payload.get("body_rate_noise_std_rad_s", 0.0),
+        range_noise_std_m=payload.get("range_noise_std_m", 0.0),
+        range_dropout_prob=payload.get("range_dropout_prob", 0.0),
+        action_lag_s=payload.get("action_lag_s", 0.0),
     )
-
-
-def _bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() not in {"0", "false", "no", "off"}
-    return bool(value)
 
 
 def noisy_values(values: np.ndarray, std: float, rng: np.random.Generator) -> np.ndarray:

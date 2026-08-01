@@ -7,8 +7,8 @@ from pathlib import Path
 import torch
 
 from flightrl.sixdof import evaluate_policy, gate_status, load_policy_from_checkpoint
-from flightrl.sixdof.dagger import collect_policy_dataset, merge_datasets
-from flightrl.sixdof.dataset import load_dataset, parse_task_probabilities, write_dataset
+from flightrl.sixdof.dagger import collect_policy_dataset
+from flightrl.sixdof.dataset import load_dataset, merge_datasets, parse_task_probabilities, write_dataset
 from flightrl.sixdof.evaluation import checkpoint_tasks
 from flightrl.sixdof.offline import OfflineTrainConfig, train_offline_policy
 from flightrl.sixdof.tasks import parse_task_spec

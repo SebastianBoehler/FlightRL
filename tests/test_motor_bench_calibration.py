@@ -4,6 +4,8 @@ import csv
 import subprocess
 import sys
 
+import pytest
+
 from flightrl.sim2real.actuator import fit_motor_calibration, summarize_motor_bench
 
 
@@ -51,6 +53,51 @@ def test_motor_bench_summary_flags_missing_rpm_signal(tmp_path) -> None:
 
     assert report["passed"] is False
     assert report["failures"] == ["rpm_signal"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("rpm", "nan"), ("rpm", "1e200"), ("power", "1.5"), ("vbat", "inf")),
+)
+def test_motor_calibration_rejects_any_corrupt_evidence_row(
+    tmp_path,
+    field: str,
+    value: str,
+) -> None:
+    path = tmp_path / "motor.csv"
+    write_motor_bench(path, zero_rpm=False)
+    with path.open("a", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "motor",
+                "power",
+                "rpm",
+                "motor_output",
+                "motor_requested",
+                "vbat",
+            ],
+        )
+        row = {
+            "motor": 1,
+            "power": 20_000,
+            "rpm": 8_000,
+            "motor_output": 20_000,
+            "motor_requested": 20_000,
+            "vbat": 3.9,
+        }
+        row[field] = value
+        writer.writerow(row)
+
+    fit = fit_motor_calibration(path)
+    summary = summarize_motor_bench(path, min_powers=3)
+
+    assert fit["summary"]["passed"] is False
+    assert fit["summary"]["invalid_rows"] == 1
+    assert "invalid_rows" in fit["summary"]["failures"]
+    assert summary["passed"] is False
+    assert summary["invalid_rows"] == 1
+    assert "invalid_rows" in summary["failures"]
 
 
 def test_motor_calibration_cli_writes_report(tmp_path) -> None:

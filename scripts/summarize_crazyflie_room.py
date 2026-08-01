@@ -5,7 +5,9 @@ import csv
 import json
 from pathlib import Path
 
-from flightrl.hardware.ranger_map import estimate_room_bounds, points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
+from flightrl.hardware.ranger_integrity import ranger_row_integrity
+from flightrl.hardware.ranger_map import estimate_room_bounds, summarize_map
+from flightrl.hardware.ranger_projection import points_from_rows, prepare_rows, trajectory_from_rows
 
 
 def main() -> None:
@@ -30,7 +32,13 @@ def main() -> None:
     input_path = Path(args.input)
     output = Path(args.output or input_path.with_suffix(".room.json"))
     markdown = Path(args.markdown or output.with_suffix(".md"))
-    rows = load_rows(input_path, min_drone_z_m=args.min_drone_z_m, normalize_xy=not args.raw_origin)
+    raw_rows = read_rows(input_path)
+    source_integrity = ranger_row_integrity(raw_rows)
+    rows = prepare_rows(
+        raw_rows,
+        min_drone_z_m=args.min_drone_z_m,
+        normalize_xy=not args.raw_origin,
+    )
     points = points_from_rows(rows, max_range_m=args.max_range_m, min_range_m=args.min_range_m)
     trajectory = trajectory_from_rows(rows)
     summary = summarize_map(
@@ -42,6 +50,7 @@ def main() -> None:
         min_trajectory_xy_span_m=args.min_trajectory_xy_span_m,
         min_yaw_span_deg=args.min_yaw_span_deg,
         max_step_speed_m_s=args.max_step_speed_m_s,
+        source_integrity=source_integrity,
     )
     report = {
         "input": str(input_path),
@@ -70,9 +79,9 @@ def main() -> None:
         raise SystemExit(1)
 
 
-def load_rows(path: Path, *, min_drone_z_m: float, normalize_xy: bool) -> list[dict[str, str | float]]:
+def read_rows(path: Path) -> list[dict[str, str]]:
     with path.open() as handle:
-        return prepare_rows(csv.DictReader(handle), min_drone_z_m=min_drone_z_m, normalize_xy=normalize_xy)
+        return list(csv.DictReader(handle))
 
 
 def render_markdown(report: dict) -> str:

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from flightrl.evidence_scope import EDGE_DEPLOYMENT_VERIFIER_MISSING
+from flightrl.evidence_values import exact_nonnegative_int, exact_true, failure_strings
 from flightrl.sim2real.audit import build_audit, render_markdown as render_audit_markdown
 from flightrl.sim2real.checkpoint_manifest import build_checkpoint_manifest, write_report as write_manifest_report
 from flightrl.sim2real.data_plan import build_data_plan, render_markdown as render_data_plan_markdown
@@ -104,16 +106,25 @@ def pipeline_summary(
     manifest: dict[str, Any],
     inputs: dict[str, Any],
 ) -> dict[str, Any]:
+    blocking_items = validated_items(audit.get("blocking_items"), "audit_invalid_blocking_items")
+    profile_failures = nested_failures(profile, "profile_invalid_failures")
+    export_failures = validated_items(config_export.get("failures"), "config_export_invalid_failures")
+    gate_failures = nested_failures(gate, "transfer_gate_invalid_failures")
+    if EDGE_DEPLOYMENT_VERIFIER_MISSING not in gate_failures:
+        gate_failures.append(EDGE_DEPLOYMENT_VERIFIER_MISSING)
     return {
         "inputs": input_provenance(inputs),
         "artifacts": {key: str(path) for key, path in outputs.items()},
-        "transfer_ready": bool(audit.get("transfer_ready", False)),
-        "profile_ready": bool(profile.get("summary", {}).get("profile_ready", False)),
-        "config_exported": bool(config_export.get("exported", False)),
-        "transfer_approved": bool(gate.get("transfer_approved", False)),
-        "hardware_approved_checkpoints": int(manifest.get("summary", {}).get("hardware_approved", 0) or 0),
-        "blocking_items": audit.get("blocking_items", []),
-        "gate_failures": gate.get("summary", {}).get("failures", []),
+        "transfer_ready": exact_true(audit.get("transfer_ready")) and not blocking_items,
+        "profile_ready": nested_flag(profile, "profile_ready") and not profile_failures,
+        "config_exported": exact_true(config_export.get("exported")) and not export_failures,
+        "transfer_approved": valid_transfer_gate(gate, gate_failures),
+        "hardware_approved_checkpoints": exact_nonnegative_int(
+            manifest.get("summary", {}).get("hardware_approved")
+        )
+        or 0,
+        "blocking_items": blocking_items,
+        "gate_failures": gate_failures,
         "safety": "Pipeline rebuild is offline evidence generation only; it does not run live hardware.",
     }
 
@@ -190,3 +201,42 @@ def format_input(value: Any) -> str:
 
 def short_hash(value: str) -> str:
     return value[:12]
+
+
+def nested_failures(report: object, invalid: str) -> list[str]:
+    if not isinstance(report, dict) or not isinstance(report.get("summary", {}), dict):
+        return [invalid]
+    return validated_items(report.get("summary", {}).get("failures"), invalid)
+
+
+def nested_flag(report: object, key: str) -> bool:
+    if not isinstance(report, dict) or not isinstance(report.get("summary"), dict):
+        return False
+    return exact_true(report["summary"].get(key))
+
+
+def validated_items(value: object, invalid: str) -> list[str]:
+    failures = failure_strings(value)
+    return failures if failures is not None else [invalid]
+
+
+def valid_transfer_gate(gate: object, failures: list[str]) -> bool:
+    if not isinstance(gate, dict) or not exact_true(gate.get("transfer_approved")) or failures:
+        return False
+    checks = gate.get("checks")
+    summary = gate.get("summary")
+    if not isinstance(checks, list) or not checks or not isinstance(summary, dict):
+        return False
+    if not all(
+        isinstance(check, dict)
+        and exact_true(check.get("passed"))
+        and failure_strings(check.get("failures")) == []
+        for check in checks
+    ):
+        return False
+    passed = exact_nonnegative_int(summary.get("passed"))
+    total = exact_nonnegative_int(summary.get("total"))
+    if passed != total or total != len(checks):
+        return False
+    # No authoritative edge bundle verifier exists in this repository yet.
+    return False

@@ -33,6 +33,10 @@ def test_multitask_ppo_sweep_dry_run_builds_profile_matrix_commands(tmp_path: Pa
         [
             sys.executable,
             str(ROOT / "scripts" / "run_sixdof_multitask_ppo_sweep.py"),
+            "--init-checkpoint",
+            str(tmp_path / "init.pt"),
+            "--baseline-checkpoint",
+            str(tmp_path / "baseline.pt"),
             "--max-variants",
             "1",
             "--report",

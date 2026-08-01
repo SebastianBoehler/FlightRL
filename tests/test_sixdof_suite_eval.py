@@ -8,7 +8,7 @@ import importlib.util
 
 import torch
 
-from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof import SixDofPolicy, build_checkpoint_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,12 +22,11 @@ SPEC.loader.exec_module(SUITE)
 def test_sixdof_suite_evaluates_teacher_and_checkpoint(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.pt"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16, input_dim=30).state_dict(),
-            "hidden_size": 16,
-            "observation_dim": 30,
-            "tasks": ["position_yaw", "obstacle_avoidance"],
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16, input_dim=30).state_dict(),
+            tasks=("position_yaw", "obstacle_avoidance"),
+            hidden_size=16,
+        ),
         checkpoint,
     )
     output = tmp_path / "suite.json"

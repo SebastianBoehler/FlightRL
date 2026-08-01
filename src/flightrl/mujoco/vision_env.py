@@ -8,6 +8,7 @@ from flightrl.mujoco.camera_model import (
     sample_gray4_camera_parameters,
 )
 from flightrl.mujoco.env import MuJoCoCrazyflieEnv
+from flightrl.mujoco.rendering import require_mujoco_rendering
 from flightrl.mujoco.setpoint_control import VisualSetpointConfig, firmware_setpoint_actions
 from flightrl.navigation.semantic_scene import SemanticScene
 from flightrl.sixdof.env import quat_to_yaw, wrap_angle
@@ -28,6 +29,7 @@ class MuJoCoVisionPufferEnv:
         control: VisualSetpointConfig | None = None,
         semantic_scene: SemanticScene | None = None,
     ) -> None:
+        require_mujoco_rendering()
         self.num_agents = int(num_envs)
         self.vision_config = VisionObservationConfig(
             width=64,

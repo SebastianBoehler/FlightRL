@@ -8,9 +8,9 @@ import torch
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
 
 from .disturbance import configure_disturbance
-from .evaluation import OPEN_SPACE_CLEARANCE_M, aggregate_task_metrics, evaluate_one, gate_status
+from .evaluation import OPEN_SPACE_CLEARANCE_M, aggregate_task_metrics, evaluate_one
+from .gates import gate_status
 from .physics import SixDofPhysicsProfile
-from .puffer_observation import scale_previous_action_observation
 from .policies import roll_pitch_from_quat
 from .tasks import append_task_encoding
 from .yaw import yaw_error_for_task
@@ -34,7 +34,6 @@ class PufferEvalConfig:
     max_horizontal_speed_p95_m_s: float = 1.50
     max_open_space_horizontal_speed_p95_m_s: float | None = None
     max_tilt_p95_deg: float = 35.0
-    previous_action_observation_scale: float = 1.0
 
 
 def evaluate_puffer_backends(policy, config: PufferEvalConfig) -> dict[str, dict]:
@@ -48,8 +47,7 @@ def evaluate_puffer_backends(policy, config: PufferEvalConfig) -> dict[str, dict
 
 def evaluate_puffer_python(policy, config: PufferEvalConfig) -> dict:
     def action_fn(model, env, obs, task_indices, tasks, task):
-        scaled = scale_previous_action_observation(obs, config.previous_action_observation_scale)
-        return puffer_actions(model, env, scaled, task_indices, tasks, task)
+        return puffer_actions(model, env, obs, task_indices, tasks, task)
 
     per_task = {
         config.task: evaluate_one(
@@ -92,7 +90,6 @@ def evaluate_puffer_mujoco(policy, config: PufferEvalConfig) -> dict:
     task_indices = np.zeros(config.num_envs, dtype=np.int64)
     for _ in range(config.steps):
         policy_obs = append_task_encoding(obs.copy(), task_indices, 1)
-        policy_obs = scale_previous_action_observation(policy_obs, config.previous_action_observation_scale)
         actions = puffer_actions(policy, env, policy_obs, task_indices, (config.task,), config.task)
         obs, reward, terminals, truncations, _ = env.step(actions)
         done = terminals | truncations

@@ -9,6 +9,7 @@ import torch
 
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
 from flightrl.sixdof import checkpoint_tasks, gate_status, load_controller_from_checkpoint, teacher_actions
+from flightrl.sixdof.evaluation import position_error_for_task
 from flightrl.sixdof.controller import executed_action_for_controller
 from flightrl.sixdof.observation import augment_observation
 from flightrl.sixdof.tasks import append_task_encoding, parse_task_spec
@@ -110,7 +111,7 @@ def evaluate(args: argparse.Namespace) -> dict:
 
 
 def metrics_from_samples(env, task, rewards, clearances, action_abs, action_l2, yaw_errors, survived, alive_samples) -> dict:
-    pos_error = np.linalg.norm(env.target_position - env.position, axis=1)
+    pos_error = position_error_for_task(env, task)
     clear = np.concatenate(clearances)
     action_values = np.concatenate(action_abs)
     metrics = {

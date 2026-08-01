@@ -1,12 +1,28 @@
 from __future__ import annotations
 
+from math import sqrt
+import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from flightrl.navigation.semantic_scene import SemanticScene
+    from flightrl.sixdof.geometry import BoxRoom
+    from flightrl.sixdof.physics import SixDofPhysicsProfile
 
 
-CRAZYFLIE_MJCF = """
+# Official Crazyflie 2.1 Brushless dimensions:
+# https://www.bitcraze.io/products/crazyflie-2-1-brushless/
+# The manufacturer publishes the opposite-motor diagonal and X layout, but not
+# body-axis components. Use a symmetric-square decomposition until CAD or
+# measured brushless coordinates are bound.
+BRUSHLESS_MOTOR_DIAGONAL_M = 0.100
+BRUSHLESS_MOTOR_CENTER_RADIUS_M = BRUSHLESS_MOTOR_DIAGONAL_M / 2.0
+BRUSHLESS_MOTOR_AXIS_OFFSET_M = BRUSHLESS_MOTOR_CENTER_RADIUS_M / sqrt(2.0)
+BRUSHLESS_PROPELLER_DIAMETER_M = 0.055
+BRUSHLESS_PROPELLER_RADIUS_M = BRUSHLESS_PROPELLER_DIAMETER_M / 2.0
+
+
+CRAZYFLIE_MJCF = f"""
 <mujoco model="flightrl_crazyflie">
   <compiler angle="radian" inertiafromgeom="false"/>
   <option timestep="0.01" gravity="0 0 -9.81" integrator="RK4"/>
@@ -39,12 +55,12 @@ CRAZYFLIE_MJCF = """
       <freejoint name="root"/>
       <inertial pos="0 0 0" mass="0.036" diaginertia="1.43e-5 1.43e-5 2.60e-5"/>
       <geom name="body" type="box" size="0.024 0.024 0.008" material="body"/>
-      <geom name="arm_x" type="box" size="0.095 0.004 0.003" material="arm"/>
-      <geom name="arm_y" type="box" size="0.004 0.095 0.003" material="arm"/>
-      <geom name="rotor_front" type="cylinder" pos="0.09 0 0.01" size="0.024 0.002" material="rotor"/>
-      <geom name="rotor_back" type="cylinder" pos="-0.09 0 0.01" size="0.024 0.002" material="rotor"/>
-      <geom name="rotor_left" type="cylinder" pos="0 0.09 0.01" size="0.024 0.002" material="rotor"/>
-      <geom name="rotor_right" type="cylinder" pos="0 -0.09 0.01" size="0.024 0.002" material="rotor"/>
+      <geom name="arm_front_left_rear_right" type="box" size="{BRUSHLESS_MOTOR_CENTER_RADIUS_M:g} 0.004 0.003" euler="0 0 0.7853981633974483" material="arm"/>
+      <geom name="arm_front_right_rear_left" type="box" size="{BRUSHLESS_MOTOR_CENTER_RADIUS_M:g} 0.004 0.003" euler="0 0 -0.7853981633974483" material="arm"/>
+      <geom name="rotor_front_left" type="cylinder" pos="{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} {BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
+      <geom name="rotor_rear_right" type="cylinder" pos="-{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} -{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
+      <geom name="rotor_front_right" type="cylinder" pos="{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} -{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
+      <geom name="rotor_rear_left" type="cylinder" pos="-{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} {BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
       <camera name="aideck" pos="0.035 0 0.012" xyaxes="0 -1 0 0 0 1" fovy="63"/>
     </body>
   </worldbody>
@@ -52,17 +68,64 @@ CRAZYFLIE_MJCF = """
 """
 
 
-def build_crazyflie_mjcf(scene: SemanticScene | None = None) -> str:
-    if scene is None:
-        return CRAZYFLIE_MJCF
-    from .semantic_scene import add_semantic_scene_to_mjcf
+def build_crazyflie_mjcf(
+    scene: SemanticScene | None = None,
+    *,
+    room: BoxRoom | None = None,
+    physics_profile: SixDofPhysicsProfile | None = None,
+) -> str:
+    if scene is not None and room is not None:
+        raise ValueError("provide either room or scene, not both")
+    mjcf = _apply_physics_profile(CRAZYFLIE_MJCF, physics_profile)
+    if scene is not None:
+        from .semantic_scene import add_semantic_scene_to_mjcf
 
-    return add_semantic_scene_to_mjcf(CRAZYFLIE_MJCF, scene)
+        return add_semantic_scene_to_mjcf(mjcf, scene)
+    if room is not None:
+        from .room_model import add_box_room_to_mjcf
+
+        return add_box_room_to_mjcf(mjcf, room)
+    return mjcf
 
 
-def load_crazyflie_model(timestep: float, scene: SemanticScene | None = None):
+def _apply_physics_profile(
+    mjcf: str,
+    profile: SixDofPhysicsProfile | None,
+) -> str:
+    if profile is None:
+        return mjcf
+    root = ET.fromstring(mjcf)
+    option = root.find("option")
+    inertial = root.find(".//body[@name='crazyflie']/inertial")
+    if option is None or inertial is None:
+        raise ValueError("MuJoCo base model is missing physics elements")
+    option.set("gravity", f"0 0 {-profile.gravity_m_s2:g}")
+    original_mass = float(inertial.attrib["mass"])
+    inertia_scale = profile.mass_kg / original_mass
+    inertia = tuple(
+        float(value) * inertia_scale
+        for value in inertial.attrib["diaginertia"].split()
+    )
+    inertial.set("mass", f"{profile.mass_kg:g}")
+    inertial.set("diaginertia", " ".join(f"{value:g}" for value in inertia))
+    return ET.tostring(root, encoding="unicode")
+
+
+def load_crazyflie_model(
+    timestep: float,
+    scene: SemanticScene | None = None,
+    *,
+    room: BoxRoom | None = None,
+    physics_profile: SixDofPhysicsProfile | None = None,
+):
     mujoco = require_mujoco()
-    model = mujoco.MjModel.from_xml_string(build_crazyflie_mjcf(scene))
+    model = mujoco.MjModel.from_xml_string(
+        build_crazyflie_mjcf(
+            scene,
+            room=room,
+            physics_profile=physics_profile,
+        )
+    )
     model.opt.timestep = float(timestep)
     return model
 
@@ -75,3 +138,11 @@ def require_mujoco():
             "MuJoCo support requires the optional dependency: python -m pip install -e '.[mujoco]' --no-build-isolation"
         ) from exc
     return mujoco
+
+
+def is_mujoco_available() -> bool:
+    try:
+        require_mujoco()
+    except ModuleNotFoundError:
+        return False
+    return True

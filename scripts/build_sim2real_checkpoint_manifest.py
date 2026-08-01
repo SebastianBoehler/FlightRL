@@ -7,7 +7,7 @@ from flightrl.sim2real.checkpoint_manifest import build_checkpoint_manifest, wri
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build a checkpoint manifest split by sim-ready and hardware-approved status")
+    parser = argparse.ArgumentParser(description="Build a non-authoritative checkpoint readiness manifest; learned live control remains blocked")
     parser.add_argument("--transfer-gate", type=Path, required=True)
     parser.add_argument("--sim-readiness", type=Path, required=True)
     parser.add_argument("--deployment-readiness", type=Path, required=True)

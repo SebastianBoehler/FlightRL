@@ -19,7 +19,33 @@ void my_init(Env *env, Dict *kwargs) {
     )->value;
     env->physics_substeps = (int)dict_get(kwargs, "physics_substeps")->value;
     env->max_episode_steps = (int)dict_get(kwargs, "max_episode_steps")->value;
-    env->success_radius = (float)dict_get(kwargs, "success_radius_m")->value;
+    env->mission.target_standoff_m = (float)dict_get(
+        kwargs, "mission_target_standoff_m"
+    )->value;
+    env->mission.planar_position_tolerance_m = (float)dict_get(
+        kwargs, "mission_planar_position_tolerance_m"
+    )->value;
+    env->mission.vertical_position_tolerance_m = (float)dict_get(
+        kwargs, "mission_vertical_position_tolerance_m"
+    )->value;
+    env->mission.standoff_tolerance_m = (float)dict_get(
+        kwargs, "mission_standoff_tolerance_m"
+    )->value;
+    env->mission.yaw_alignment_tolerance_rad = (float)dict_get(
+        kwargs, "mission_yaw_alignment_tolerance_rad"
+    )->value;
+    env->mission.max_horizontal_speed_m_s = (float)dict_get(
+        kwargs, "mission_max_horizontal_speed_m_s"
+    )->value;
+    env->mission.max_vertical_speed_m_s = (float)dict_get(
+        kwargs, "mission_max_vertical_speed_m_s"
+    )->value;
+    env->mission.max_yaw_rate_rad_s = (float)dict_get(
+        kwargs, "mission_max_yaw_rate_rad_s"
+    )->value;
+    env->mission.dwell_steps = (int)dict_get(
+        kwargs, "mission_dwell_steps"
+    )->value;
     env->max_horizontal_speed = (float)dict_get(
         kwargs,
         "max_horizontal_speed_m_s"

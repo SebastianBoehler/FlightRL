@@ -38,14 +38,65 @@ def test_profile_emits_overlay_from_passed_evidence(tmp_path) -> None:
             "simulator_priors": {"present": True, "mean_slope_rpm_per_power": 0.45, "relative_motor_gains": {"1": 1.0, "2": 1.01, "3": 0.99, "4": 1.0}},
         },
     )
-    noise = write_json(tmp_path / "noise.json", {"summary": {"stationary_noise_ready": True, "failures": []}, "signals": noise_signals()})
-    latency = write_json(tmp_path / "latency.json", {"summary": {"latency_ready": True, "failures": [], "median_latency_s": 0.08}})
+    noise = write_json(tmp_path / "noise.json", {"summary": {"stationary_noise_ready": True, "failures": [], "rows": 100, "duration_s": 60.0, "sample_rate_hz": 10.0}, "signals": noise_signals()})
+    latency = write_json(tmp_path / "latency.json", {"summary": {"latency_ready": True, "failures": [], "accepted_pairs": 2, "median_latency_s": 0.08}})
 
     report = build_profile(hardware_config=hardware, motor_calibration=motor, stationary_noise=noise, hardware_latency=latency)
 
     assert report["summary"]["profile_ready"] is True
     assert report["simulator_overlay"]["actuator"]["relative_motor_gains"]["2"] == 1.01
     assert report["simulator_overlay"]["sensors"]["command_latency_s"] == 0.08
+
+
+def test_profile_rejects_truthy_string_evidence_flags(tmp_path) -> None:
+    hardware = write_hardware(tmp_path, "measured_crazyflie.toml", measured=True)
+    motor = write_json(tmp_path / "motor.json", {"summary": {"passed": "false", "failures": []}})
+    noise = write_json(tmp_path / "noise.json", {"summary": {"stationary_noise_ready": "false", "failures": []}})
+    latency = write_json(tmp_path / "latency.json", {"summary": {"latency_ready": "false", "failures": []}})
+
+    report = build_profile(
+        hardware_config=hardware,
+        motor_calibration=motor,
+        stationary_noise=noise,
+        hardware_latency=latency,
+    )
+
+    assert report["summary"]["profile_ready"] is False
+    assert set(report["summary"]["failures"]) >= {
+        "motor_calibration_failed",
+        "stationary_noise_failed",
+        "hardware_latency_failed",
+    }
+
+
+def test_profile_rejects_pass_with_failures_and_nonfinite_overlay_values(tmp_path) -> None:
+    hardware = write_hardware(tmp_path, "measured_crazyflie.toml", measured=True)
+    motor = write_json(
+        tmp_path / "motor.json",
+        {
+            "summary": {"passed": True, "failures": ["stale"], "gain_imbalance": 0.04},
+            "simulator_priors": {"present": True, "mean_slope_rpm_per_power": 0.45, "relative_motor_gains": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0}},
+        },
+    )
+    signals = noise_signals()
+    signals["range.front"]["std"] = float("nan")
+    noise = write_json(tmp_path / "noise.json", {"summary": {"stationary_noise_ready": True, "failures": [], "rows": 100, "duration_s": 60.0, "sample_rate_hz": 10.0}, "signals": signals})
+    latency = write_json(tmp_path / "latency.json", {"summary": {"latency_ready": True, "failures": [], "accepted_pairs": 2, "median_latency_s": 0.08}})
+
+    report = build_profile(hardware_config=hardware, motor_calibration=motor, stationary_noise=noise, hardware_latency=latency)
+
+    assert report["summary"]["profile_ready"] is False
+    assert {"motor_calibration_failed", "stationary_noise_failed"}.issubset(report["summary"]["failures"])
+    assert "simulator_overlay" not in report
+
+
+def test_profile_rejects_nonfinite_hardware_parameters(tmp_path) -> None:
+    hardware = write_hardware(tmp_path, "measured_crazyflie.toml", measured=True)
+    hardware.write_text(hardware.read_text().replace("mass = 1.15", "mass = nan"))
+
+    report = build_profile(hardware_config=hardware, motor_calibration=None, stationary_noise=None, hardware_latency=None)
+
+    assert "hardware_dynamics_invalid" in report["summary"]["failures"]
 
 
 def test_profile_cli_writes_report(tmp_path) -> None:
@@ -113,7 +164,7 @@ def noise_signals():
         "range.up": 10.0,
         "range.zrange": 8.0,
     }.items():
-        signals[column] = {"samples": 100, "std": std, "span": std * 4}
+        signals[column] = {"samples": 100, "valid_ratio": 1.0, "std": std, "span": std * 4}
     return signals
 
 

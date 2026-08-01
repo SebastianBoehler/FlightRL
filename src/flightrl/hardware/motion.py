@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
+from math import isfinite
 from time import sleep as default_sleep
 from typing import Callable, Protocol
 
@@ -38,10 +38,6 @@ class CrazyflieArmLike(Protocol):
     param: ParamLike
 
 
-class HoverCommanderLike(Protocol):
-    def send_hover_setpoint(self, vx: float, vy: float, yawrate: float, zdistance: float) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class DemoFlightPlan:
     default_height_m: float = 0.3
@@ -50,6 +46,42 @@ class DemoFlightPlan:
     turn_angle_degrees: float = 20.0
     hover_s: float = 2.0
     max_flight_s: float = 20.0
+
+    def __post_init__(self) -> None:
+        positive = {
+            "default_height_m": self.default_height_m,
+            "velocity_m_s": self.velocity_m_s,
+            "turn_rate_deg_s": self.turn_rate_deg_s,
+            "turn_angle_degrees": self.turn_angle_degrees,
+            "max_flight_s": self.max_flight_s,
+        }
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(float(value))
+            or value <= 0.0
+            for value in positive.values()
+        ):
+            raise HardwareSafetyError("demo motion limits must be finite and positive")
+        if (
+            isinstance(self.hover_s, bool)
+            or not isinstance(self.hover_s, (int, float))
+            or not isfinite(float(self.hover_s))
+            or self.hover_s < 0.0
+        ):
+            raise HardwareSafetyError("demo hover duration must be finite and nonnegative")
+        duration = self.nominal_duration_s()
+        if duration > self.max_flight_s:
+            raise HardwareSafetyError(
+                f"demo nominal duration {duration:.2f}s exceeds max_flight_s={self.max_flight_s:.2f}"
+            )
+
+    def nominal_duration_s(self) -> float:
+        return (
+            2.0 * self.default_height_m / self.velocity_m_s
+            + 2.0 * self.turn_angle_degrees / self.turn_rate_deg_s
+            + 3.0 * self.hover_s
+        )
 
     @classmethod
     def from_config(cls, config: CrazyflieHardwareConfig, *, confirmed: bool) -> "DemoFlightPlan":
@@ -72,9 +104,6 @@ def execute_demo_flight(
     *,
     sleep: Callable[[float], None] = default_sleep,
 ) -> None:
-    if plan.hover_s * 3 > plan.max_flight_s:
-        raise HardwareSafetyError("demo hover timing exceeds max_flight_s")
-
     landed = False
     try:
         commander.take_off(height=plan.default_height_m, velocity=plan.velocity_m_s)
@@ -126,41 +155,6 @@ def disarm_crazyflie_after_flight(cf: CrazyflieArmLike, *, sleep: Callable[[floa
             pass
     finally:
         disarm_after_flight(cf.supervisor, sleep=sleep)
-
-
-def reset_crazyflie_estimator(cf: CrazyflieArmLike, *, sleep: Callable[[float], None] = default_sleep) -> bool:
-    if not _has_param(cf.param, "kalman.resetEstimation"):
-        return False
-    cf.param.set_value("kalman.resetEstimation", "1")
-    sleep(0.1)
-    cf.param.set_value("kalman.resetEstimation", "0")
-    sleep(2.0)
-    return True
-
-
-def send_hover_setpoint_compat(
-    commander: HoverCommanderLike,
-    vx_m_s: float,
-    vy_m_s: float,
-    yawrate_deg_s: float,
-    zdistance_m: float,
-) -> None:
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"Using legacy TYPE_HOVER_LEGACY.*",
-            category=DeprecationWarning,
-        )
-        commander.send_hover_setpoint(vx_m_s, vy_m_s, yawrate_deg_s, zdistance_m)
-
-
-def install_legacy_hover_warning_filter() -> None:
-    warnings.filterwarnings(
-        "ignore",
-        message=r"Using legacy TYPE_HOVER_LEGACY.*",
-        category=DeprecationWarning,
-        module=r"cflib\.crazyflie\.commander",
-    )
 
 
 def _system_arm_state(param: ParamLike) -> bool | None:

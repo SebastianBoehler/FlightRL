@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from queue import Queue
 from types import SimpleNamespace
 
+import pytest
+
+from flightrl.hardware.errors import HardwareSafetyError
 from flightrl.hardware.telemetry import (
     TelemetryCsvWriter,
     TelemetrySample,
@@ -31,18 +35,36 @@ def test_telemetry_csv_writes_replay_friendly_rows(tmp_path) -> None:
     ]
 
 
-def test_sync_log_merges_partial_log_blocks_before_writing(tmp_path) -> None:
+def test_sync_log_merges_only_packets_with_the_same_device_timestamp(tmp_path) -> None:
     path = tmp_path / "merged.csv"
     config = SimpleNamespace(logging=SimpleNamespace(variables=("a", "b", "c"), period_ms=50))
     modules = SimpleNamespace(log_config_cls=FakeLogConfig, sync_logger_cls=FakeSyncLogger)
 
-    count = write_sync_log(None, modules, config, path, duration_s=1.0)
+    count = write_sync_log(None, modules, config, path, duration_s=0.01)
 
-    assert count >= 2
+    assert count == 2
     lines = path.read_text().splitlines()
     assert lines[0] == "host_time_s,crazyflie_time_ms,a,b,c"
     assert lines[1].endswith(",1.0,2.0,3.0")
     assert lines[2].endswith(",4.0,2.0,3.0")
+
+
+def test_sync_log_does_not_forward_fill_independently_timed_blocks(tmp_path) -> None:
+    path = tmp_path / "unsynchronized.csv"
+    config = SimpleNamespace(
+        logging=SimpleNamespace(variables=("a", "b", "c"), period_ms=50)
+    )
+    modules = SimpleNamespace(
+        log_config_cls=FakeLogConfig,
+        sync_logger_cls=UnsynchronizedFakeSyncLogger,
+    )
+
+    count = write_sync_log(None, modules, config, path, duration_s=0.01)
+
+    assert count == 0
+    assert path.read_text().splitlines() == [
+        "host_time_s,crazyflie_time_ms,a,b,c"
+    ]
 
 
 def test_log_configs_use_configured_variable_types() -> None:
@@ -94,6 +116,33 @@ def test_extra_and_available_log_variables_keep_order_and_filter() -> None:
     assert filtered.logging.variables == ("stateEstimate.x", "motor.m1")
 
 
+def test_sync_log_fails_when_toc_contains_no_requested_variables(tmp_path) -> None:
+    config = SimpleNamespace(
+        logging=SimpleNamespace(variables=("stateEstimate.x",), period_ms=50)
+    )
+    scf = SimpleNamespace(
+        cf=SimpleNamespace(log=SimpleNamespace(toc=SimpleNamespace(toc={})))
+    )
+    modules = SimpleNamespace(
+        log_config_cls=FakeLogConfig,
+        sync_logger_cls=FakeSyncLogger,
+    )
+
+    with pytest.raises(HardwareSafetyError, match="none of the configured"):
+        write_sync_log(scf, modules, config, tmp_path / "empty.csv", duration_s=1.0)
+
+    assert not (tmp_path / "empty.csv").exists()
+
+
+@pytest.mark.parametrize("duration", [float("nan"), float("inf"), 0.0, -1.0, 601.0])
+def test_sync_log_rejects_nonfinite_or_unbounded_duration(tmp_path, duration: float) -> None:
+    config = SimpleNamespace(logging=SimpleNamespace(variables=("a",), period_ms=50))
+    modules = SimpleNamespace(log_config_cls=FakeLogConfig, sync_logger_cls=FakeSyncLogger)
+
+    with pytest.raises(ValueError, match="telemetry duration"):
+        write_sync_log(None, modules, config, tmp_path / "bad.csv", duration_s=duration)
+
+
 class FakeLogConfig:
     def __init__(self, name: str, period_in_ms: int) -> None:
         self.name = name
@@ -106,14 +155,17 @@ class FakeLogConfig:
 
 class FakeSyncLogger:
     def __init__(self, _scf, _configs) -> None:
-        self.rows = iter(
-            [
-                (10, {"a": 1.0}, None),
-                (11, {"b": 2.0}, None),
-                (12, {"c": 3.0}, None),
-                (20, {"a": 4.0}, None),
-            ]
-        )
+        self._queue = Queue()
+        self.DISCONNECT_EVENT = "DISCONNECT"
+        for row in (
+            (10, {"a": 1.0}, None),
+            (10, {"b": 2.0}, None),
+            (10, {"c": 3.0}, None),
+            (20, {"a": 4.0}, None),
+            (20, {"b": 2.0}, None),
+            (20, {"c": 3.0}, None),
+        ):
+            self._queue.put(row)
 
     def __enter__(self):
         return self
@@ -121,8 +173,15 @@ class FakeSyncLogger:
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
 
-    def __iter__(self):
-        return self
 
-    def __next__(self):
-        return next(self.rows)
+class UnsynchronizedFakeSyncLogger(FakeSyncLogger):
+    def __init__(self, _scf, _configs) -> None:
+        self._queue = Queue()
+        self.DISCONNECT_EVENT = "DISCONNECT"
+        for row in (
+            (10, {"a": 1.0}, None),
+            (11, {"b": 2.0}, None),
+            (12, {"c": 3.0}, None),
+            (20, {"a": 4.0}, None),
+        ):
+            self._queue.put(row)

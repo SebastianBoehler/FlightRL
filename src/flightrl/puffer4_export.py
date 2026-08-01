@@ -16,11 +16,13 @@ PUFFER4_NATIVE_FILES = (
     "native_env.h",
     "native_logging.c",
     "native_observation.c",
+    "native_puffer_contract.h",
     "native_reset.c",
     "native_reward.c",
     "native_rng.h",
     "native_sixdof.c",
     "native_sixdof_context.inc",
+    "native_sixdof_observation.inc",
     "native_sixdof.h",
     "native_sixdof_step.inc",
     "native_tasks.c",
@@ -131,6 +133,7 @@ def render_puffer4_binding(config: FlightConfig) -> str:
 #define c_step flightrl_inner_step
 #define c_close flightrl_inner_close
 #include "native_env.h"
+#include "native_puffer_contract.h"
 #undef c_reset
 #undef c_step
 #undef c_close
@@ -184,6 +187,7 @@ static void flightrl_sync_outer(Env* env) {{
 }}
 
 void my_init(Env* env, Dict* kwargs) {{
+    const uint32_t env_index = env->rng;
     env->num_agents = 1;
 {_generate_assignments()}
 {_generate_waypoint_assignments()}
@@ -193,7 +197,10 @@ void my_init(Env* env, Dict* kwargs) {{
     }}
     env->terminal_flag = 0;
     env->truncation_flag = 0;
-    env->inner.rng_state = (uint64_t)dict_get(kwargs, "seed")->value + 0x9e3779b97f4a7c15ULL;
+    env->inner.rng_state = flightrl_puffer_seed64(
+        (uint64_t)dict_get(kwargs, "seed")->value,
+        env_index
+    );
 }}
 
 void my_log(Log* log, Dict* out) {{

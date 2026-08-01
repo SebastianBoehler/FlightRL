@@ -4,6 +4,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from flightrl.config import load_config
 from flightrl.sim2real.profile_export import export_config
 
@@ -18,6 +20,89 @@ def test_export_refuses_blocked_profile(tmp_path) -> None:
     assert report["exported"] is False
     assert "profile_not_ready" in report["failures"]
     assert not output.exists()
+
+
+@pytest.mark.parametrize("profile_ready", ["false", "true", 1])
+def test_export_rejects_non_boolean_profile_ready(tmp_path, profile_ready) -> None:
+    profile_data = ready_profile()
+    profile_data["summary"]["profile_ready"] = profile_ready
+    profile = write_json(tmp_path / "profile.json", profile_data)
+    output = tmp_path / "measured.toml"
+
+    report = export_config(profile, base_config=write_base_config(tmp_path), output_config=output)
+
+    assert report["exported"] is False
+    assert report["failures"] == ["profile_not_ready"]
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("failures", "expected"),
+    [
+        (["motor_calibration_failed"], ["motor_calibration_failed"]),
+        ("none", ["profile_failures_invalid"]),
+    ],
+)
+def test_export_rejects_ready_profile_with_invalid_or_nonempty_failures(tmp_path, failures, expected) -> None:
+    profile_data = ready_profile()
+    profile_data["summary"]["failures"] = failures
+    profile = write_json(tmp_path / "profile.json", profile_data)
+    output = tmp_path / "measured.toml"
+
+    report = export_config(profile, base_config=write_base_config(tmp_path), output_config=output)
+
+    assert report["exported"] is False
+    assert report["failures"] == ["profile_not_ready", *expected]
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("mass", [float("nan"), float("inf"), "tiny", True, -1.0])
+def test_export_rejects_invalid_overlay_dynamics(tmp_path, mass) -> None:
+    profile_data = ready_profile()
+    profile_data["simulator_overlay"]["drone"]["mass"] = mass
+    profile = write_json(tmp_path / "profile.json", profile_data)
+    output = tmp_path / "measured.toml"
+
+    report = export_config(profile, base_config=write_base_config(tmp_path), output_config=output)
+
+    assert report["exported"] is False
+    assert report["failures"] == ["simulator_overlay_drone_invalid"]
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("section", "value", "failure"),
+    [
+        ("sensors", [], "simulator_overlay_sensors_invalid"),
+        ("sensors", {"state_noise_std": float("nan")}, "simulator_overlay_sensors_invalid"),
+        ("sensors", {"junk": 1.0}, "simulator_overlay_sensors_invalid"),
+        ("domain_randomization", "enabled", "simulator_overlay_domain_randomization_invalid"),
+        (
+            "domain_randomization",
+            {"enabled": True, "sensor_noise_scale": "wide"},
+            "simulator_overlay_domain_randomization_invalid",
+        ),
+        ("actuator", None, "simulator_overlay_actuator_invalid"),
+        (
+            "actuator",
+            {"present": True, "relative_motor_gains": {"1": "one"}},
+            "simulator_overlay_actuator_invalid",
+        ),
+    ],
+)
+def test_export_rejects_malformed_overlay_sections(tmp_path, section, value, failure) -> None:
+    profile_data = ready_profile()
+    profile_data["simulator_overlay"][section] = value
+    profile = write_json(tmp_path / "profile.json", profile_data)
+
+    report = export_config(
+        profile,
+        base_config=write_base_config(tmp_path),
+        output_config=tmp_path / "measured.toml",
+    )
+
+    assert report["exported"] is False
+    assert failure in report["failures"]
 
 
 def test_export_writes_loadable_toml_for_ready_profile(tmp_path) -> None:
@@ -80,8 +165,17 @@ def ready_profile():
                 "max_pitch_torque": 0.015,
                 "actuator_tau": 0.06,
             },
-            "actuator": {"present": True, "relative_motor_gains": {"1": 1.0}},
-            "sensors": {"state_noise_std": 0.004, "imu_noise_std": 0.02, "command_latency_s": 0.08, "range_noise_std_mm": 12.0},
+            "actuator": {
+                "present": True,
+                "relative_motor_gains": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0},
+            },
+            "sensors": {
+                "state_noise_std": 0.004,
+                "attitude_noise_std_deg": 0.1,
+                "imu_noise_std": 0.02,
+                "command_latency_s": 0.08,
+                "range_noise_std_mm": 12.0,
+            },
             "domain_randomization": {"enabled": True, "sensor_noise_scale": 1.0},
         },
     }

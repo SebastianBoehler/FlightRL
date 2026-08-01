@@ -9,7 +9,11 @@ from flightrl.sixdof.puffer_drone_reference import build_reference_report, write
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare official Puffer drone against FlightRL 6-DoF env contracts.")
     parser.add_argument("--pufferlib-root", type=Path, required=True)
-    parser.add_argument("--output", type=Path, default=Path("artifacts/replay/puffer_drone_reference_alignment_20260701.json"))
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("artifacts/replay/puffer_drone_reference_alignment.json"),
+    )
     args = parser.parse_args()
 
     report = build_reference_report(args.pufferlib_root)

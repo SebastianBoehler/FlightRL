@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+import json
+from pathlib import Path
 from statistics import median
 from time import sleep, time
 from typing import Any
@@ -34,7 +35,6 @@ def collect_camera_only(
     writer: SemanticRunWriter,
     *,
     duration_s: float,
-    policy_shadow=None,
 ) -> dict[str, Any]:
     deadline = time() + duration_s
     last_frame_index = -1
@@ -45,12 +45,7 @@ def collect_camera_only(
         latest = pipeline.latest()
         if latest is not None and latest[0].index != last_frame_index:
             frame, result = latest
-            writer.write(
-                frame,
-                result,
-                policy_shadow=_policy_shadow(policy_shadow, frame, result),
-                controls_drone=False,
-            )
+            writer.write(frame, result)
             last_frame_index = frame.index
             written += 1
             detected += int(result.best is not None)
@@ -66,13 +61,10 @@ def collect_camera_only(
     }
 
 
-def _policy_shadow(policy_shadow, frame, result) -> dict:
-    if policy_shadow is None:
-        return {}
-    detection = None if result.best is None else asdict(result.best)
-    return policy_shadow.step(
-        frame=frame.pixels,
-        telemetry={},
-        prompt=result.prompt,
-        detection=detection,
-    )
+def write_capture_summary(
+    output_dir: str | Path,
+    summary: dict[str, Any],
+) -> Path:
+    path = Path(output_dir) / "summary.json"
+    path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return path

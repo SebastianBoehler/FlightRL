@@ -26,8 +26,8 @@ class DaggerVariant:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run closed-loop DAgger recovery sweeps for 6-DoF position/yaw")
-    parser.add_argument("--seed-dataset", default="artifacts/datasets/sixdof_position_yaw_recovery_history1_512x192_noise008.npz")
-    parser.add_argument("--initial-checkpoint", default="artifacts/checkpoints/sixdof_position_yaw_recovery_history1_512x192_noise008_h128.pt")
+    parser.add_argument("--seed-dataset", required=True)
+    parser.add_argument("--initial-checkpoint", required=True)
     parser.add_argument("--output-dir", default="artifacts/dagger/position_yaw_recovery")
     parser.add_argument("--report", default="artifacts/replay/sixdof_position_yaw_recovery_dagger_sweep.json")
     parser.add_argument("--task", default="position_yaw")

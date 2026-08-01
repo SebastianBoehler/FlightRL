@@ -26,7 +26,7 @@ def build_live_safety_report(paths: list[Path]) -> dict[str, Any]:
             "failures": failures,
         },
         "records": records,
-        "safety": "Learned-checkpoint live control scripts must require hardware approval before cflib; monitor-only scripts must label their output.",
+        "safety": "Diagnostic source inventory only; typed edge-v3 bundle authority must not rely on lexical scanning.",
     }
 
 

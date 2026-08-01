@@ -24,7 +24,7 @@ class WeightVariant:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run 6-DoF multi-task offline task-weight sweeps")
-    parser.add_argument("--dataset", default="artifacts/dagger/sixdof_safe_tasks_horizon800/iter_01.npz")
+    parser.add_argument("--dataset", required=True)
     parser.add_argument("--output-dir", default="artifacts/task_weight_sweep/safe_tasks")
     parser.add_argument("--report", default="artifacts/replay/sixdof_task_weight_sweep.json")
     parser.add_argument("--run", action="store_true")

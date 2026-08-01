@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+from types import SimpleNamespace
+
+from flightrl.sixdof.rl import SixDofActorCritic
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +21,34 @@ def test_ppo_score_penalizes_yaw_when_completion_matches() -> None:
     drifting = metrics(yaw=0.8, yaw_p95=1.8)
 
     assert PPO.score_metrics(aligned) > PPO.score_metrics(drifting)
+
+
+def test_finalize_best_uses_holdout_seed_not_selection_seed(monkeypatch) -> None:
+    model = SixDofActorCritic(input_dim=28, hidden_size=16)
+    selection_metrics = metrics(yaw=0.1, yaw_p95=0.3)
+    holdout_metrics = metrics(yaw=0.2, yaw_p95=0.4)
+    best = {
+        "state_dict": model.actor.state_dict(),
+        "metrics": selection_metrics,
+    }
+    calls = []
+    monkeypatch.setattr(
+        PPO,
+        "eval_actor",
+        lambda _model, _args, *, seed: calls.append(seed) or holdout_metrics,
+    )
+
+    finalized = PPO.finalize_best(
+        model,
+        best,
+        SimpleNamespace(selection_seed=1_919, evaluation_seed=2_919),
+    )
+
+    assert calls == [2_919]
+    assert finalized["selection_metrics"] is selection_metrics
+    assert finalized["metrics"] is holdout_metrics
+    assert finalized["selection_seed"] == 1_919
+    assert finalized["evaluation_seed"] == 2_919
 
 
 def metrics(*, yaw: float, yaw_p95: float) -> dict:

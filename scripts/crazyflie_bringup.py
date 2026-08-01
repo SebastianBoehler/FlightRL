@@ -18,12 +18,10 @@ from flightrl.hardware.preflight import (
     expected_deck_params,
     inspect_decks,
     inspect_log_variables,
+    require_expected_decks,
     require_supervisor_allows_flight,
+    require_supervisor_is_armed_and_can_fly,
 )
-
-
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "configs" / "hardware" / "crazyflie_2_1_brushless.toml"
 
 
 class DryRunCommander:
@@ -48,7 +46,12 @@ class DryRunCommander:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Crazyflie hardware bring-up helpers")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="explicit hardware/deck profile for the connected stack",
+    )
     parser.add_argument("--dry-run", action="store_true", help="validate command flow without importing cflib")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("scan", help="scan for Crazyflie radio URIs")
@@ -114,8 +117,10 @@ def _demo(config, dry_run: bool, confirmed: bool) -> int:
     modules = require_cflib()
     with sync_crazyflie_context(config, modules) as scf:
         try:
+            require_expected_decks(scf, config)
             require_supervisor_allows_flight(scf, modules, config)
             arm_crazyflie_for_flight(scf.cf)
+            require_supervisor_is_armed_and_can_fly(scf, modules, config)
             commander = build_motion_commander(scf, modules, config)
             execute_demo_flight(commander, plan)
         finally:

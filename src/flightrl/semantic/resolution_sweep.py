@@ -84,7 +84,7 @@ def evaluate_variant(
                 frame_index=index,
                 frame_host_time_s=frame.host_time_s,
             )
-            writer.write(frame, result, controls_drone=False)
+            writer.write(frame, result)
             evaluated.append(EvaluatedFrame(result, result.best))
     return evaluated
 

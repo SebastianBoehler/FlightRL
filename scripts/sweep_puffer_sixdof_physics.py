@@ -7,6 +7,7 @@ from pathlib import Path
 from flightrl.sixdof.puffer_calibration import PhysicsSweepGrid, calibrate_puffer_physics, candidate_profiles, render_calibration_markdown
 from flightrl.sixdof.puffer_evaluation import PufferEvalConfig
 from flightrl.sixdof.puffer_policy import load_puffer_sixdof_policy
+from flightrl.sixdof.tasks import parse_task_spec
 
 
 def main() -> None:
@@ -17,7 +18,7 @@ def main() -> None:
     parser.add_argument("--task", default="obstacle_avoidance")
     parser.add_argument("--reset-profile", default="obstacle_hover_live")
     parser.add_argument("--sensor-profile", default=None)
-    parser.add_argument("--base-physics-profile", default="legacy")
+    parser.add_argument("--base-physics-profile", default="baseline")
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--num-envs", type=int, default=128)
     parser.add_argument("--seed", type=int, default=707)
@@ -29,6 +30,9 @@ def main() -> None:
     args = parser.parse_args()
 
     policy = load_puffer_sixdof_policy(args.checkpoint)
+    tasks = parse_task_spec(args.task)
+    if policy.checkpoint_metadata is None or tasks != policy.checkpoint_metadata.tasks:
+        raise SystemExit("--task must exactly match the task contract stored in the Puffer checkpoint")
     config = PufferEvalConfig(
         task=args.task,
         backend="both",

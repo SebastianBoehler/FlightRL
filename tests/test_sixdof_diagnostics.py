@@ -7,7 +7,7 @@ import sys
 
 import torch
 
-from flightrl.sixdof import SixDofPolicy
+from flightrl.sixdof import SixDofPolicy, build_checkpoint_payload
 from flightrl.sixdof.diagnostics import diagnose_controller, summarize_diagnostics
 
 
@@ -82,14 +82,12 @@ def test_diagnose_sixdof_policy_supports_teacher_residual_checkpoint(tmp_path: P
     checkpoint = tmp_path / "residual.pt"
     output = tmp_path / "diagnostics.json"
     torch.save(
-        {
-            "state_dict": SixDofPolicy(hidden_size=16).state_dict(),
-            "hidden_size": 16,
-            "task": "position_yaw",
-            "tasks": ["position_yaw"],
-            "controller": "teacher_residual",
-            "residual_scale": 0.0,
-        },
+        build_checkpoint_payload(
+            state_dict=SixDofPolicy(hidden_size=16).state_dict(),
+            tasks=("position_yaw",),
+            hidden_size=16,
+            controller="teacher_residual",
+        ),
         checkpoint,
     )
 

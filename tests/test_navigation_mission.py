@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from flightrl.navigation.mission import MissionEvent, MissionPhase, MissionState, next_state, phase_limits
 
 
@@ -35,11 +37,53 @@ def test_mission_state_machine_abort_wins_from_any_phase() -> None:
     assert aborted.reason == "abort_requested"
 
 
+def test_recovery_resumes_search_without_inventing_target_acquisition() -> None:
+    searching = MissionState(
+        phase=MissionPhase.SEARCH,
+        step=2,
+        reason="takeoff_ready",
+    )
+
+    recovering = next_state(searching, MissionEvent.BLOCKED)
+    resumed = next_state(recovering, MissionEvent.RECOVERED)
+
+    assert recovering.resume_phase is MissionPhase.SEARCH
+    assert resumed.phase is MissionPhase.SEARCH
+    assert resumed.resume_phase is None
+
+
+def test_recovery_without_origin_is_rejected() -> None:
+    invalid = MissionState(phase=MissionPhase.RECOVER)
+
+    with pytest.raises(ValueError, match="no valid phase"):
+        next_state(invalid, MissionEvent.RECOVERED)
+
+
 def test_phase_limits_tighten_for_hold_and_abort() -> None:
     navigate = phase_limits(MissionPhase.NAVIGATE)
     hold = phase_limits(MissionPhase.HOLD)
     abort = phase_limits(MissionPhase.ABORT)
 
     assert navigate.max_speed_m_s > hold.max_speed_m_s
-    assert abort.allow_learned_policy is False
+    assert abort.learned_policy_phase_eligible is False
     assert hold.command_source == "controller"
+
+
+def test_invalid_mission_event_is_rejected_without_consuming_state() -> None:
+    state = MissionState(phase=MissionPhase.SEARCH, step=7, reason="searching")
+
+    with pytest.raises(ValueError, match="invalid mission transition"):
+        next_state(state, MissionEvent.LANDED)
+
+    assert state == MissionState(
+        phase=MissionPhase.SEARCH,
+        step=7,
+        reason="searching",
+    )
+
+
+def test_abort_is_idempotent_after_abort_authority_takes_control() -> None:
+    state = MissionState(phase=MissionPhase.ABORT, step=3, reason="timeout")
+
+    assert next_state(state, MissionEvent.ABORT_REQUESTED) is state
+    assert next_state(state, MissionEvent.TIMEOUT) is state

@@ -5,7 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 
-from flightrl.hardware.ranger_map import estimate_room_bounds, points_from_rows, prepare_rows, summarize_map, trajectory_from_rows
+import pytest
+
+from flightrl.hardware.ranger_integrity import ranger_row_integrity
+from flightrl.hardware.ranger_map import estimate_room_bounds, summarize_map
+from flightrl.hardware.ranger_projection import points_from_rows, prepare_rows, trajectory_from_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +60,44 @@ def test_summarize_map_reports_speed_glitches() -> None:
     assert summary["trajectory_quality"]["speed_glitch_count"] > 0
 
 
+@pytest.mark.parametrize(("field", "value"), (("stateEstimate.x", "nan"), ("range.front", "inf")))
+def test_room_summary_rejects_corrupt_source_rows(
+    field: str,
+    value: str,
+) -> None:
+    rows = sample_rows(count=8, dt=1.5, x_step=0.06, yaw_step=12.0)
+    rows[3][field] = value
+    integrity = ranger_row_integrity(rows)
+
+    summary = summarize_map(
+        points_from_rows(rows),
+        trajectory_from_rows(rows),
+        min_points=20,
+        min_duration_s=8.0,
+        min_horizontal_sensors=4,
+        min_trajectory_xy_span_m=0.2,
+        source_integrity=integrity,
+    )
+
+    assert integrity["valid"] is False
+    assert summary["mapping_ready"] is False
+    assert set(integrity["failures"]).issubset(summary["failures"])
+
+
+def test_room_summary_rejects_nonmonotonic_trajectory() -> None:
+    rows = sample_rows(count=8, dt=1.5, x_step=0.06, yaw_step=12.0)
+    rows[4]["host_time_s"] = rows[3]["host_time_s"]
+
+    summary = summarize_map(
+        points_from_rows(rows),
+        trajectory_from_rows(rows),
+        source_integrity=ranger_row_integrity(rows),
+    )
+
+    assert summary["mapping_ready"] is False
+    assert "trajectory_time_monotonic" in summary["failures"]
+
+
 def test_prepare_rows_filters_height_and_normalizes_origin() -> None:
     rows = [
         {"host_time_s": "10", "stateEstimate.x": "4", "stateEstimate.y": "5", "stateEstimate.z": "0.1"},
@@ -68,6 +110,22 @@ def test_prepare_rows_filters_height_and_normalizes_origin() -> None:
     assert prepared[0]["host_time_s"] == "0.0"
     assert prepared[0]["stateEstimate.x"] == "0.0"
     assert prepared[0]["stateEstimate.y"] == "0.0"
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum"),
+    ((float("nan"), 4.0), (0.03, float("inf")), (4.0, 4.0), (5.0, 4.0)),
+)
+def test_ranger_projection_rejects_invalid_range_limits(
+    minimum: float,
+    maximum: float,
+) -> None:
+    with pytest.raises(ValueError, match="0 < min < max"):
+        points_from_rows(
+            sample_rows(count=2, dt=1.0, x_step=0.1),
+            min_range_m=minimum,
+            max_range_m=maximum,
+        )
 
 
 def test_estimate_room_bounds_uses_horizontal_points_and_floor_hits() -> None:

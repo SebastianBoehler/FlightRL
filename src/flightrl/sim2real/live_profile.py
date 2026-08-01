@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 from statistics import median
 from typing import Any
 
 import numpy as np
 
+from flightrl.evidence_values import exact_true, failure_strings, finite_number
 from flightrl.sixdof.sensor_model import SixDofSensorProfile
 
 
@@ -15,6 +17,9 @@ RANGE_COLUMNS = ("range.front", "range.back", "range.left", "range.right", "rang
 STATE_COLUMNS = ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z")
 VELOCITY_COLUMNS = ("stateEstimate.vx", "stateEstimate.vy", "stateEstimate.vz")
 GYRO_COLUMNS = ("gyro.x", "gyro.y", "gyro.z")
+PROFILE_SIGNAL_COLUMNS = (*STATE_COLUMNS, *VELOCITY_COLUMNS, *GYRO_COLUMNS, *RANGE_COLUMNS)
+MIN_PROFILE_FLIGHT_ROWS = 3
+MIN_PROFILE_NOISE_ROWS = 3
 
 
 def build_live_sim_profile(
@@ -30,30 +35,48 @@ def build_live_sim_profile(
     noise_rows = stationary_rows or stable_flight
     sample_period_s = median_step_s(flight_rows)
     latency = latency_s(latency_report) if latency_report else None
+    signal_samples = {column: len(values(noise_rows, column)) for column in PROFILE_SIGNAL_COLUMNS}
+    invalid_values = invalid_required_values(flight_rows, noise_rows)
+    failures = []
+    if len(flight_rows) < MIN_PROFILE_FLIGHT_ROWS:
+        failures.append("flight_rows")
+    if len(noise_rows) < MIN_PROFILE_NOISE_ROWS:
+        failures.append("noise_rows")
+    if sample_period_s is None:
+        failures.append("sample_period")
+    if any(samples < MIN_PROFILE_NOISE_ROWS for samples in signal_samples.values()):
+        failures.append("signal_coverage")
+    if invalid_values:
+        failures.append("nonfinite_values")
     profile = SixDofSensorProfile(
         name=name,
         state_noise_std_m=bounded(max_robust_diff_std(noise_rows, STATE_COLUMNS), 0.0, 0.08),
         velocity_noise_std_m_s=bounded(max_robust_diff_std(noise_rows, VELOCITY_COLUMNS), 0.0, 1.0),
         body_rate_noise_std_rad_s=bounded(np.deg2rad(max_signal_std(noise_rows, GYRO_COLUMNS)), 0.0, 8.0),
-        range_noise_std_m=bounded(max_robust_range_noise(noise_rows), 0.002, 0.12),
+        range_noise_std_m=bounded(max_robust_range_noise(noise_rows), 0.0, 0.12),
         range_dropout_prob=bounded(range_dropout_probability(flight_rows + stationary_rows), 0.0, 0.20),
-        action_lag_s=bounded(latency if latency is not None else sample_period_s * 2.0, 0.0, 0.15),
+        action_lag_s=bounded(latency if latency is not None else (sample_period_s or 0.0) * 2.0, 0.0, 0.15),
     )
     return {
         "inputs": {
-            "flight_logs": [str(path) for path in flight_logs],
-            "stationary_logs": [str(path) for path in stationary_logs],
-            "latency_report": str(latency_report) if latency_report else None,
+            "flight_logs": [str(path.resolve()) for path in flight_logs],
+            "stationary_logs": [str(path.resolve()) for path in stationary_logs],
+            "latency_report": str(latency_report.resolve()) if latency_report else None,
         },
         "summary": {
             "flight_rows": len(flight_rows),
             "stable_flight_rows": len(stable_flight),
             "stationary_rows": len(stationary_rows),
+            "noise_rows": len(noise_rows),
             "sample_period_s": sample_period_s,
             "latency_source": "latency_report" if latency is not None else "sample_period_x2",
             "battery_v": quantiles(values(flight_rows, "pm.vbat")),
             "hmin_m": quantiles(horizontal_min_values(stable_flight)),
             "tumbled_rows": sum(1 for row in flight_rows if truthy(row.get("sys.isTumbled"))),
+            "signal_samples": signal_samples,
+            "invalid_required_values": invalid_values,
+            "profile_ready": not failures,
+            "failures": failures,
         },
         "sensor_profile": profile.as_report(),
         "safety": "Offline simulator profile only; direct live control still requires replay, shadow, and hardware approval gates.",
@@ -76,21 +99,27 @@ def stable_flight_row(row: dict[str, str]) -> bool:
     return roll < 35.0 and pitch < 35.0
 
 
-def median_step_s(rows: list[dict[str, str]]) -> float:
+def median_step_s(rows: list[dict[str, str]]) -> float | None:
     times = sorted(value for row in rows if (value := as_float(row.get("host_time_s"))) is not None)
     steps = [b - a for a, b in zip(times, times[1:], strict=False) if 0.0 < b - a < 0.2]
-    return float(median(steps)) if steps else 0.01
+    return float(median(steps)) if steps else None
 
 
 def latency_s(path: Path | None) -> float | None:
     if path is None or not path.exists():
         return None
     data = json.loads(path.read_text())
-    summary = data.get("summary", {})
-    if not summary.get("latency_ready"):
+    if not isinstance(data, dict):
         return None
-    value = summary.get("median_latency_s")
-    return float(value) if value is not None else None
+    summary = data.get("summary", {})
+    if (
+        not isinstance(summary, dict)
+        or not exact_true(summary.get("latency_ready"))
+        or failure_strings(summary.get("failures", [])) != []
+    ):
+        return None
+    value = finite_number(summary.get("median_latency_s"))
+    return value if value is not None and value >= 0.0 else None
 
 
 def max_robust_range_noise(rows: list[dict[str, str]]) -> float:
@@ -183,9 +212,23 @@ def truthy(value: object) -> bool:
 
 def as_float(value: object) -> float | None:
     try:
-        return float(str(value))
+        parsed = float(str(value))
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def invalid_required_values(
+    flight_rows: list[dict[str, str]],
+    noise_rows: list[dict[str, str]],
+) -> int:
+    invalid_times = sum(as_float(row.get("host_time_s")) is None for row in flight_rows)
+    invalid_signals = sum(
+        as_float(row.get(column)) is None
+        for row in noise_rows
+        for column in PROFILE_SIGNAL_COLUMNS
+    )
+    return invalid_times + invalid_signals
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -198,13 +241,15 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Flight rows: `{summary['flight_rows']}`",
             f"- Stable flight rows: `{summary['stable_flight_rows']}`",
             f"- Stationary rows: `{summary['stationary_rows']}`",
-            f"- Sample period s: `{summary['sample_period_s']:.6f}`",
+            f"- Profile ready: `{summary['profile_ready']}`",
+            f"- Failures: `{', '.join(summary['failures']) or 'none'}`",
+            f"- Sample period s: `{_fmt(summary['sample_period_s'])}`",
             f"- Latency source: `{summary['latency_source']}`",
             "",
             "## Sensor Profile",
             "",
             "```json",
-            json.dumps(profile, indent=2, sort_keys=True),
+            json.dumps(profile, allow_nan=False, indent=2, sort_keys=True),
             "```",
             "",
             report["safety"],
@@ -214,5 +259,10 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def write_report(report: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    output.write_text(json.dumps(report, allow_nan=False, indent=2, sort_keys=True) + "\n")
     output.with_suffix(".md").write_text(render_markdown(report) + "\n")
+
+
+def _fmt(value: object) -> str:
+    parsed = finite_number(value)
+    return "n/a" if parsed is None else f"{parsed:.6f}"

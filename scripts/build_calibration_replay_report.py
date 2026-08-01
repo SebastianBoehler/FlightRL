@@ -105,7 +105,7 @@ def readiness_args(args: argparse.Namespace, comparison_path: Path) -> SimpleNam
         require_replay_comparison=True,
         require_training_throughput=False,
         require_puffer_export=False,
-        max_latency_us=50.0,
+        max_desktop_latency_us=50.0,
         max_native_state_rmse=1e-5,
         max_native_range_rmse=1.0,
         max_replay_state_rmse=0.5,

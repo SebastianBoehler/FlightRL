@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import csv
 import json
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
+from .actuator_fit import (
+    fit_motor_curve,
+    simulator_priors,
+    slope_imbalance,
+    validate_fit_thresholds,
+)
+
+
+MAX_PLAUSIBLE_RPM = 100_000.0
+
 
 def summarize_motor_bench(path: Path | None, *, min_powers: int) -> dict[str, Any]:
+    if type(min_powers) is not int or min_powers < 2:
+        raise ValueError("min_powers must be an integer >= 2")
     if path is None or not path.exists():
         return {"present": False, "passed": False, "motors": {}, "failures": ["missing"]}
-    rows = load_motor_rows(path)
+    rows, invalid_rows = parse_motor_rows(path)
     motors = group_motor_rows(rows)
     compact = {str(motor): motor_stats(values) for motor, values in sorted(motors.items())}
     failures = []
+    if invalid_rows:
+        failures.append("invalid_rows")
     if set(motors) != {1, 2, 3, 4}:
         failures.append("motor_coverage")
     if any(len({row["power"] for row in values}) < min_powers for values in motors.values()):
@@ -21,7 +36,14 @@ def summarize_motor_bench(path: Path | None, *, min_powers: int) -> dict[str, An
         failures.append("rpm_signal")
     if any(not any(row["vbat"] is not None for row in values) for values in motors.values()):
         failures.append("battery_signal")
-    return {"present": True, "path": str(path), "passed": not failures, "motors": compact, "failures": failures}
+    return {
+        "present": True,
+        "path": str(path),
+        "passed": not failures,
+        "motors": compact,
+        "invalid_rows": invalid_rows,
+        "failures": failures,
+    }
 
 
 def fit_motor_calibration(
@@ -33,7 +55,14 @@ def fit_motor_calibration(
     min_valid_rpm: float = 0.0,
     max_dropout_ratio: float = 0.0,
 ) -> dict[str, Any]:
-    rows = load_motor_rows(path)
+    validate_fit_thresholds(
+        min_powers=min_powers,
+        min_r2=min_r2,
+        max_gain_imbalance=max_gain_imbalance,
+        min_valid_rpm=min_valid_rpm,
+        max_dropout_ratio=max_dropout_ratio,
+    )
+    rows, invalid_rows = parse_motor_rows(path)
     motors = group_motor_rows(rows)
     records = {
         str(motor): fit_motor_curve(
@@ -49,6 +78,8 @@ def fit_motor_calibration(
     gain_imbalance = slope_imbalance(slopes)
     dropped_samples = sum(record["dropped_samples"] for record in records.values())
     failures = []
+    if invalid_rows:
+        failures.append("invalid_rows")
     if set(motors) != {1, 2, 3, 4}:
         failures.append("motor_coverage")
     for motor, record in records.items():
@@ -67,6 +98,7 @@ def fit_motor_calibration(
             "min_r2": min_r2,
             "max_gain_imbalance": max_gain_imbalance,
             "dropped_samples": dropped_samples,
+            "invalid_rows": invalid_rows,
             "warnings": ["rpm_dropouts_filtered"] if dropped_samples else [],
             "vbat": vbat_range(rows),
         },
@@ -77,15 +109,46 @@ def fit_motor_calibration(
 
 
 def load_motor_rows(path: Path) -> list[dict[str, float | int | None]]:
+    rows, _invalid_rows = parse_motor_rows(path)
+    return rows
+
+
+def parse_motor_rows(
+    path: Path,
+) -> tuple[list[dict[str, float | int | None]], int]:
     rows = []
+    invalid_rows = 0
     for row in csv.DictReader(path.open()):
         motor = as_int(row.get("motor"))
         power = as_float(row.get("power"))
         rpm = as_float(row.get("rpm"))
-        if motor is None or power is None or rpm is None:
+        if (
+            motor is None
+            or motor not in {1, 2, 3, 4}
+            or power is None
+            or not power.is_integer()
+            or not 1.0 <= power <= 65_535.0
+            or rpm is None
+            or not 0.0 <= rpm <= MAX_PLAUSIBLE_RPM
+        ):
+            invalid_rows += 1
             continue
-        rows.append({"motor": motor, "power": power, "rpm": rpm, "vbat": as_float(row.get("vbat"))})
-    return rows
+        vbat = as_float(row.get("vbat"))
+        raw_vbat = row.get("vbat")
+        if raw_vbat not in (None, "") and (
+            vbat is None or not 0.0 < vbat < 10.0
+        ):
+            invalid_rows += 1
+            continue
+        rows.append(
+            {
+                "motor": motor,
+                "power": power,
+                "rpm": rpm,
+                "vbat": vbat,
+            }
+        )
+    return rows, invalid_rows
 
 
 def group_motor_rows(rows: list[dict[str, float | int | None]]) -> dict[int, list[dict[str, float | int | None]]]:
@@ -93,94 +156,6 @@ def group_motor_rows(rows: list[dict[str, float | int | None]]) -> dict[int, lis
     for row in rows:
         grouped.setdefault(int(row["motor"]), []).append(row)
     return grouped
-
-
-def fit_motor_curve(
-    rows: list[dict[str, float | int | None]],
-    *,
-    min_powers: int,
-    min_r2: float,
-    min_valid_rpm: float = 0.0,
-    max_dropout_ratio: float = 0.0,
-) -> dict[str, Any]:
-    raw_points = sorted([(float(row["power"]), float(row["rpm"])) for row in rows], key=lambda item: item[0])
-    points, dropped = filter_motor_dropouts(raw_points, min_valid_rpm=min_valid_rpm, max_dropout_ratio=max_dropout_ratio)
-    powers = {power for power, _rpm in points}
-    slope, intercept, r2 = linear_fit(points)
-    failures = []
-    if len(powers) < min_powers:
-        failures.append("power_coverage")
-    if not any(rpm > 0 for _power, rpm in points):
-        failures.append("rpm_signal")
-    if slope <= 0:
-        failures.append("slope")
-    if r2 is None or r2 < min_r2:
-        failures.append("r2")
-    if not monotonic(points):
-        failures.append("monotonicity")
-    return {
-        "passed": not failures,
-        "failures": failures,
-        "samples": len(raw_points),
-        "filtered_samples": len(points),
-        "dropped_samples": len(dropped),
-        "dropped": dropped,
-        "power_min": min(powers) if powers else None,
-        "power_max": max(powers) if powers else None,
-        "rpm_min": min([rpm for _power, rpm in points], default=None),
-        "rpm_max": max([rpm for _power, rpm in points], default=None),
-        "slope_rpm_per_power": slope,
-        "intercept_rpm": intercept,
-        "r2": r2,
-    }
-
-
-def filter_motor_dropouts(
-    points: list[tuple[float, float]],
-    *,
-    min_valid_rpm: float,
-    max_dropout_ratio: float,
-) -> tuple[list[tuple[float, float]], list[dict[str, float | str]]]:
-    kept: list[tuple[float, float]] = []
-    dropped: list[dict[str, float | str]] = []
-    for power, rpm in points:
-        reason = None
-        if min_valid_rpm > 0.0 and rpm < min_valid_rpm:
-            reason = "rpm_below_min"
-        elif max_dropout_ratio > 0.0 and kept and rpm < kept[-1][1] * max_dropout_ratio:
-            reason = "rpm_dropout"
-        if reason:
-            dropped.append({"power": power, "rpm": rpm, "reason": reason})
-            continue
-        kept.append((power, rpm))
-    return kept, dropped
-
-
-def linear_fit(points: list[tuple[float, float]]) -> tuple[float, float, float | None]:
-    if len(points) < 2:
-        return 0.0, 0.0, None
-    xs, ys = zip(*points)
-    mean_x = sum(xs) / len(xs)
-    mean_y = sum(ys) / len(ys)
-    denom = sum((x - mean_x) ** 2 for x in xs)
-    slope = sum((x - mean_x) * (y - mean_y) for x, y in points) / denom if denom else 0.0
-    intercept = mean_y - slope * mean_x
-    total = sum((y - mean_y) ** 2 for y in ys)
-    residual = sum((y - (slope * x + intercept)) ** 2 for x, y in points)
-    r2 = 1.0 - residual / total if total else None
-    return slope, intercept, r2
-
-
-def simulator_priors(records: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    passed = {motor: record for motor, record in records.items() if record["passed"]}
-    if not passed:
-        return {"present": False}
-    mean_slope = sum(record["slope_rpm_per_power"] for record in passed.values()) / len(passed)
-    return {
-        "present": True,
-        "mean_slope_rpm_per_power": mean_slope,
-        "relative_motor_gains": {motor: record["slope_rpm_per_power"] / mean_slope for motor, record in passed.items()},
-    }
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -220,17 +195,6 @@ def motor_stats(rows: list[dict[str, float | int | None]]) -> dict[str, Any]:
     return {"powers": sorted({row["power"] for row in rows}), "rpm_min": min(rpms) if rpms else None, "rpm_max": max(rpms) if rpms else None, "vbat_samples": len(vbats)}
 
 
-def monotonic(points: list[tuple[float, float]]) -> bool:
-    return all(next_rpm >= rpm for (_power, rpm), (_next_power, next_rpm) in zip(points, points[1:]))
-
-
-def slope_imbalance(slopes: list[float]) -> float | None:
-    if len(slopes) != 4 or min(slopes) <= 0:
-        return None
-    mean = sum(slopes) / len(slopes)
-    return max(abs(slope - mean) / mean for slope in slopes)
-
-
 def vbat_range(rows: list[dict[str, float | int | None]]) -> dict[str, float | None]:
     values = [float(row["vbat"]) for row in rows if row["vbat"] is not None]
     return {"min": min(values) if values else None, "max": max(values) if values else None}
@@ -249,6 +213,7 @@ def as_int(value: object) -> int | None:
 
 def as_float(value: object) -> float | None:
     try:
-        return float(str(value))
+        parsed = float(str(value))
     except (TypeError, ValueError):
         return None
+    return parsed if isfinite(parsed) else None

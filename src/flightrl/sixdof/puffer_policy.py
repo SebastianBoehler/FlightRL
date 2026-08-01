@@ -6,6 +6,12 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from .checkpoint_contract import (
+    PUFFER_POLICY_FORMAT,
+    SixDofCheckpointMetadata,
+    require_current_checkpoint,
+)
+
 
 class PufferEncoder(nn.Module):
     def __init__(self, observation_dim: int, hidden_size: int) -> None:
@@ -51,6 +57,7 @@ class PufferSixDofPolicy(nn.Module):
     def __init__(self, metadata: PufferPolicyMetadata) -> None:
         super().__init__()
         self.metadata = metadata
+        self.checkpoint_metadata: SixDofCheckpointMetadata | None = None
         self.encoder = PufferEncoder(metadata.observation_dim, metadata.hidden_size)
         self.network = PufferMlp(metadata.hidden_size, metadata.num_layers)
         self.decoder = PufferDecoder(metadata.hidden_size, metadata.action_dim)
@@ -64,8 +71,11 @@ class PufferSixDofPolicy(nn.Module):
         return policy
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        return torch.tanh(self.action_location(observations))
+
+    def action_location(self, observations: torch.Tensor) -> torch.Tensor:
         hidden = self.network(self.encoder(observations))
-        return self.decoder.mean_action(hidden).clamp(-1.0, 1.0)
+        return self.decoder.mean_action(hidden)
 
     def value(self, observations: torch.Tensor) -> torch.Tensor:
         hidden = self.network(self.encoder(observations))
@@ -91,6 +101,19 @@ def infer_metadata(state_dict: Mapping[str, torch.Tensor]) -> PufferPolicyMetada
 
 
 def load_puffer_sixdof_policy(path: str) -> PufferSixDofPolicy:
-    state_dict = torch.load(path, map_location="cpu")
+    checkpoint = torch.load(path, map_location="cpu")
+    contract = require_current_checkpoint(
+        checkpoint,
+        expected_format=PUFFER_POLICY_FORMAT,
+    )
+    state_dict = checkpoint["state_dict"]
     state_dict = {key.removeprefix("module."): value for key, value in state_dict.items()}
-    return PufferSixDofPolicy.from_state_dict(state_dict)
+    policy = PufferSixDofPolicy.from_state_dict(state_dict)
+    if (
+        policy.metadata.observation_dim != contract.observation_dim
+        or policy.metadata.hidden_size != contract.hidden_size
+        or policy.metadata.action_dim != 4
+    ):
+        raise ValueError("Puffer policy state_dict dimensions do not match its six-DoF checkpoint contract")
+    policy.checkpoint_metadata = contract
+    return policy

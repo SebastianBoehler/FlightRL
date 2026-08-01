@@ -3,12 +3,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from flightrl.mujoco import is_mujoco_available
+from flightrl.mujoco import (
+    is_mujoco_available,
+    is_mujoco_rendering_available,
+)
 
 
 def test_mujoco_vision_puffer_env_contract_when_available() -> None:
     if not is_mujoco_available():
         pytest.skip("MuJoCo optional dependency is not installed")
+    if not is_mujoco_rendering_available():
+        pytest.skip("MuJoCo rendering backend is unavailable")
     pytest.importorskip("pufferlib")
     from flightrl.mujoco.vision_env import INTENT_DIM, MuJoCoVisionPufferEnv
 

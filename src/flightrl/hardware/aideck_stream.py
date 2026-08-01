@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-from io import BytesIO
 from dataclasses import dataclass
+import math
+from numbers import Integral, Real
 import socket
-import struct
 from time import monotonic, time
 from typing import Callable, Iterator
 
 import numpy as np
-from PIL import Image
 
-
-AIDECK_IMAGE_MAGIC = 0xBC
-AIDECK_RAW_FORMAT = 0
-AIDECK_JPEG_FORMAT = 1
-AIDECK_GRAY4_FORMAT = 2
-AIDECK_IMAGE_HEADER = struct.Struct("<BHHBBI")
-AIDECK_CPX_HEADER = struct.Struct("<HBB")
-AIDECK_UDP_HANDSHAKE = b"FER"
+from .aideck_protocol import (
+    AIDECK_CPX_HEADER,
+    AIDECK_UDP_HANDSHAKE,
+    decode_pixels,
+    parse_image_header,
+    parse_cpx_packet,
+    try_image_header,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +40,7 @@ class AiDeckStream:
         clock: Callable[[], float] = time,
         sock: socket.socket | None = None,
     ) -> None:
+        _validate_stream_config(host, port, timeout_s)
         self.host = host
         self.port = int(port)
         self.timeout_s = float(timeout_s)
@@ -70,26 +70,25 @@ class AiDeckStream:
         if self._socket is None:
             self.connect()
         assert self._socket is not None
-        packet_length, _routing, _function = AIDECK_CPX_HEADER.unpack(_read_exact(self._socket, 4))
+        packet_length, routing, function = AIDECK_CPX_HEADER.unpack(_read_exact(self._socket, 4))
         if packet_length < 2:
             raise ValueError(f"invalid AI Deck image header packet length {packet_length}")
         header = _read_exact(self._socket, packet_length - 2)
-        if len(header) != AIDECK_IMAGE_HEADER.size:
-            raise ValueError(f"invalid AI Deck image header size {len(header)}")
-        magic, width, height, depth, image_format, size = AIDECK_IMAGE_HEADER.unpack(header)
-        host_time_s = self.clock()
-        if magic != AIDECK_IMAGE_MAGIC:
-            raise ValueError(f"invalid AI Deck image magic 0x{magic:02x}")
+        width, height, depth, image_format, size = parse_image_header(header)
+        host_time_s = _finite_host_time(self.clock())
 
         payload = bytearray()
         while len(payload) < size:
-            chunk_length, _destination, _source = AIDECK_CPX_HEADER.unpack(_read_exact(self._socket, 4))
+            chunk_length, chunk_routing, chunk_function = AIDECK_CPX_HEADER.unpack(_read_exact(self._socket, 4))
             if chunk_length < 2:
                 raise ValueError(f"invalid AI Deck image chunk length {chunk_length}")
-            payload.extend(_read_exact(self._socket, chunk_length - 2))
-        if len(payload) != size:
-            raise ValueError(f"AI Deck payload exceeded advertised size: {len(payload)} != {size}")
-        pixels = _decode_pixels(bytes(payload), width, height, depth, image_format)
+            if (chunk_routing, chunk_function) != (routing, function):
+                raise ValueError("AI Deck TCP frame changed CPX routing/function mid-frame")
+            chunk = _read_exact(self._socket, chunk_length - 2)
+            if len(chunk) > size - len(payload):
+                raise ValueError(f"AI Deck payload exceeded advertised size {size}")
+            payload.extend(chunk)
+        pixels = decode_pixels(bytes(payload), width, height, depth, image_format)
         self._index += 1
         return AiDeckFrame(self._index, host_time_s, width, height, depth, image_format, pixels)
 
@@ -112,6 +111,9 @@ class AiDeckUdpStream:
         clock: Callable[[], float] = time,
         sock: socket.socket | None = None,
     ) -> None:
+        _validate_stream_config(host, port, timeout_s)
+        if isinstance(bind_port, bool) or not isinstance(bind_port, Integral) or not 0 <= bind_port <= 65535:
+            raise ValueError("AI Deck UDP bind port must be in [0, 65535]")
         self.host = host
         self.port = int(port)
         self.bind_host = bind_host
@@ -122,14 +124,20 @@ class AiDeckUdpStream:
         self._owns_socket = sock is None
         self._index = 0
         self.dropped_frames = 0
+        self.rejected_datagrams = 0
         self._connected = False
+        self._peer_ip: str | None = None
 
     def connect(self) -> None:
         if self._socket is None:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._socket.bind((self.bind_host, self.bind_port))
+        try:
+            self._peer_ip = socket.gethostbyname(self.host)
+        except OSError as exc:
+            raise ConnectionError(f"could not resolve AI Deck UDP host {self.host!r}") from exc
         self._socket.settimeout(self.timeout_s)
-        self._socket.sendto(AIDECK_UDP_HANDSHAKE, (self.host, self.port))
+        self._socket.sendto(AIDECK_UDP_HANDSHAKE, (self._peer_ip, self.port))
         self._connected = True
 
     def close(self) -> None:
@@ -151,6 +159,7 @@ class AiDeckUdpStream:
         assert self._socket is not None
         deadline = monotonic() + self.timeout_s
         metadata: tuple[int, int, int, int, int] | None = None
+        stream_key: tuple[int, int] | None = None
         host_time_s = 0.0
         payload = bytearray()
 
@@ -159,17 +168,24 @@ class AiDeckUdpStream:
             if remaining_s <= 0:
                 raise TimeoutError("AI Deck UDP frame timed out")
             self._socket.settimeout(remaining_s)
-            packet, _address = self._socket.recvfrom(2048)
-            cpx_payload = _udp_cpx_payload(packet)
-            header = _try_image_header(cpx_payload)
+            packet, address = self._socket.recvfrom(2048)
+            if not self._source_matches(address):
+                self.rejected_datagrams += 1
+                continue
+            routing, function, cpx_payload = parse_cpx_packet(packet)
+            header = try_image_header(cpx_payload)
             if header is not None:
                 if metadata is not None and len(payload) < metadata[-1]:
                     self.dropped_frames += 1
                 metadata = header
-                host_time_s = self.clock()
+                stream_key = (routing, function)
+                host_time_s = _finite_host_time(self.clock())
                 payload.clear()
                 continue
             if metadata is None:
+                continue
+            if (routing, function) != stream_key:
+                self.rejected_datagrams += 1
                 continue
 
             payload.extend(cpx_payload)
@@ -179,17 +195,27 @@ class AiDeckUdpStream:
             if len(payload) > size:
                 self.dropped_frames += 1
                 metadata = None
+                stream_key = None
                 payload.clear()
                 continue
             try:
-                pixels = _decode_pixels(bytes(payload), width, height, depth, image_format)
+                pixels = decode_pixels(bytes(payload), width, height, depth, image_format)
             except ValueError:
                 self.dropped_frames += 1
                 metadata = None
+                stream_key = None
                 payload.clear()
                 continue
             self._index += 1
             return AiDeckFrame(self._index, host_time_s, width, height, depth, image_format, pixels)
+
+    def _source_matches(self, address: tuple[object, ...]) -> bool:
+        return (
+            self._peer_ip is not None
+            and len(address) >= 2
+            and address[0] == self._peer_ip
+            and address[1] == self.port
+        )
 
     def frames(self, limit: int | None = None) -> Iterator[AiDeckFrame]:
         count = 0
@@ -208,52 +234,24 @@ def _read_exact(sock: socket.socket, size: int) -> bytes:
     return bytes(data)
 
 
-def _udp_cpx_payload(packet: bytes) -> bytes:
-    if len(packet) < AIDECK_CPX_HEADER.size:
-        raise ValueError(f"AI Deck UDP packet is too short: {len(packet)}")
-    advertised_length, _routing, _function = AIDECK_CPX_HEADER.unpack_from(packet)
-    if advertised_length + 2 != len(packet):
-        raise ValueError(
-            f"AI Deck UDP packet length mismatch: advertised={advertised_length + 2} actual={len(packet)}"
-        )
-    return packet[AIDECK_CPX_HEADER.size :]
+def _validate_stream_config(host: str, port: int, timeout_s: float) -> None:
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("AI Deck host must be a non-empty string")
+    if isinstance(port, bool) or not isinstance(port, Integral) or not 1 <= port <= 65535:
+        raise ValueError("AI Deck port must be in [1, 65535]")
+    if (
+        isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, Real)
+        or not math.isfinite(float(timeout_s))
+        or timeout_s <= 0.0
+    ):
+        raise ValueError("AI Deck timeout must be finite and positive")
 
 
-def _try_image_header(payload: bytes) -> tuple[int, int, int, int, int] | None:
-    if len(payload) != AIDECK_IMAGE_HEADER.size or payload[0] != AIDECK_IMAGE_MAGIC:
-        return None
-    _magic, width, height, depth, image_format, size = AIDECK_IMAGE_HEADER.unpack(payload)
-    if width <= 0 or height <= 0 or depth <= 0 or size <= 0:
-        raise ValueError("AI Deck image header contains non-positive dimensions")
-    return width, height, depth, image_format, size
-
-
-def _decode_pixels(payload: bytes, width: int, height: int, depth: int, image_format: int) -> np.ndarray:
-    if image_format == AIDECK_RAW_FORMAT:
-        expected_size = int(width) * int(height) * int(depth)
-        if len(payload) != expected_size:
-            raise ValueError(f"AI Deck raw payload size {len(payload)} does not match {width}x{height}x{depth}")
-        pixels = np.frombuffer(payload, dtype=np.uint8)
-        return pixels.reshape((height, width) if depth == 1 else (height, width, depth)).copy()
-    if image_format == AIDECK_JPEG_FORMAT:
-        try:
-            with Image.open(BytesIO(payload)) as image:
-                pixels = np.asarray(image)
-        except OSError as exc:
-            raise ValueError("AI Deck JPEG payload could not be decoded") from exc
-        if pixels.shape[:2] != (height, width):
-            raise ValueError(f"AI Deck JPEG shape {pixels.shape} does not match {width}x{height}")
-        return pixels.copy()
-    if image_format == AIDECK_GRAY4_FORMAT:
-        pixel_count = int(width) * int(height) * int(depth)
-        expected_size = (pixel_count + 1) // 2
-        if len(payload) != expected_size:
-            raise ValueError(f"AI Deck gray4 payload size {len(payload)} does not match {width}x{height}x{depth}")
-        packed = np.frombuffer(payload, dtype=np.uint8)
-        pixels = np.empty(packed.size * 2, dtype=np.uint8)
-        pixels[0::2] = packed >> 4
-        pixels[1::2] = packed & 0x0F
-        pixels = pixels[:pixel_count] * 17
-        shape = (height, width) if depth == 1 else (height, width, depth)
-        return pixels.reshape(shape)
-    raise ValueError(f"unsupported AI Deck image format {image_format}")
+def _finite_host_time(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("AI Deck frame host timestamp must be finite and non-negative")
+    timestamp = float(value)
+    if not math.isfinite(timestamp) or timestamp < 0.0:
+        raise ValueError("AI Deck frame host timestamp must be finite and non-negative")
+    return timestamp

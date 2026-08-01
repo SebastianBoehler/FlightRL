@@ -1,7 +1,7 @@
 PYTHON ?= python
 CONFIG ?= configs/tasks/hover.toml
 
-.PHONY: dev build clean test smoke benchmark rollout train eval compare
+.PHONY: dev build package clean test smoke benchmark rollout train eval compare
 
 dev:
 	$(PYTHON) -m pip install -e . --no-build-isolation
@@ -9,9 +9,13 @@ dev:
 build:
 	$(PYTHON) setup.py build_ext --inplace --force
 
+package: clean
+	$(PYTHON) -m build
+
 clean:
-	rm -rf build dist .pytest_cache src/flightrl/*.so src/flightrl/*.dylib src/flightrl/*.pyd
-	find src -name "__pycache__" -type d -prune -exec rm -rf {} +
+	rm -rf build dist .pytest_cache .ruff_cache src/flightrl.egg-info
+	rm -f src/flightrl/*.so src/flightrl/*.dylib src/flightrl/*.pyd
+	find src scripts tests -name "__pycache__" -type d -prune -exec rm -rf {} +
 
 test:
 	$(PYTHON) -m pytest

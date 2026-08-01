@@ -25,7 +25,7 @@ class PpoVariant:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plan or run 6-DoF position/yaw PPO tuning sweeps")
-    parser.add_argument("--init-checkpoint", default="artifacts/curriculum/position_yaw/easy_medium_h128/checkpoint.pt")
+    parser.add_argument("--init-checkpoint", required=True)
     parser.add_argument("--baseline-checkpoint", default=None)
     parser.add_argument("--output-dir", default="artifacts/ppo/position_yaw")
     parser.add_argument("--report", default="artifacts/replay/sixdof_position_yaw_ppo_sweep.json")
