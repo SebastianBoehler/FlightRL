@@ -8,13 +8,15 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+from typing import Sequence
 
 import torch
 
 from flightrl.puffer4_door_export import DOOR_NATIVE_FILES
+from flightrl.puffer4_native_revision import require_clean_puffer_revision
 
 
-BUILD_FINGERPRINT_SCHEMA_VERSION = 1
+BUILD_FINGERPRINT_SCHEMA_VERSION = 2
 BUILD_MODE = "cpu"
 PUFFER_NATIVE_FILES = (
     "build.sh",
@@ -45,10 +47,14 @@ def native_build_marker_path(puffer_root: Path) -> Path:
     return extension.with_name(extension.name + ".flightrl-build.json")
 
 
-def native_source_paths(puffer_root: Path, env_name: str) -> tuple[Path, ...]:
+def native_source_paths(
+    puffer_root: Path,
+    env_name: str,
+    native_files: Sequence[str] = DOOR_NATIVE_FILES,
+) -> tuple[Path, ...]:
     root = Path(puffer_root).expanduser().resolve()
     env_dir = root / "ocean" / env_name
-    relative_env_files = ("binding.c", *DOOR_NATIVE_FILES)
+    relative_env_files = ("binding.c", *native_files)
     return tuple(
         sorted(
             (
@@ -60,10 +66,15 @@ def native_source_paths(puffer_root: Path, env_name: str) -> tuple[Path, ...]:
     )
 
 
-def build_environment(puffer_root: Path, env_name: str) -> dict:
+def build_environment(
+    puffer_root: Path,
+    env_name: str,
+    native_files: Sequence[str] = DOOR_NATIVE_FILES,
+) -> dict:
     root = Path(puffer_root).expanduser().resolve()
     marker = native_build_marker_path(root)
-    before = _source_manifest(root, env_name)
+    dependency_revision = require_clean_puffer_revision(root)
+    before = _source_manifest(root, env_name, native_files)
     before_digest = _manifest_sha256(before)
     marker.unlink(missing_ok=True)
     env = os.environ.copy()
@@ -84,9 +95,13 @@ def build_environment(puffer_root: Path, env_name: str) -> dict:
         not in os.environ.get("DYLD_LIBRARY_PATH", "").split(":")
     ):
         _align_openmp_runtime(root)
-    after = _source_manifest(root, env_name)
+    after = _source_manifest(root, env_name, native_files)
     after_digest = _manifest_sha256(after)
-    if before != after or before_digest != after_digest:
+    if (
+        before != after
+        or before_digest != after_digest
+        or dependency_revision != require_clean_puffer_revision(root)
+    ):
         raise RuntimeError("native build sources changed during native build")
     extension = native_extension_path(root)
     if not extension.is_file():
@@ -96,6 +111,7 @@ def build_environment(puffer_root: Path, env_name: str) -> dict:
         "env_name": env_name,
         "build_mode": BUILD_MODE,
         "python_abi": current_python_abi(),
+        "dependency_revision": dependency_revision,
         "source_files_sha256": after,
         "source_manifest_sha256": after_digest,
         "source_manifest_sha256_before": before_digest,
@@ -133,7 +149,11 @@ def _align_openmp_runtime(puffer_root: Path) -> None:
             )
 
 
-def verify_native_build(puffer_root: Path, env_name: str) -> dict:
+def verify_native_build(
+    puffer_root: Path,
+    env_name: str,
+    native_files: Sequence[str] = DOOR_NATIVE_FILES,
+) -> dict:
     root = Path(puffer_root).expanduser().resolve()
     marker = native_build_marker_path(root)
     if not marker.is_file():
@@ -155,7 +175,9 @@ def verify_native_build(puffer_root: Path, env_name: str) -> dict:
         raise RuntimeError("native build fingerprint is not for CPU mode")
     if fingerprint.get("python_abi") != current_python_abi():
         raise RuntimeError("native build fingerprint Python ABI does not match")
-    expected_manifest = _source_manifest(root, env_name)
+    if fingerprint.get("dependency_revision") != require_clean_puffer_revision(root):
+        raise RuntimeError("native build PufferLib dependency revision does not match")
+    expected_manifest = _source_manifest(root, env_name, native_files)
     expected_digest = _manifest_sha256(expected_manifest)
     recorded_digests = (
         fingerprint.get("source_manifest_sha256"),
@@ -179,9 +201,13 @@ def verify_native_build(puffer_root: Path, env_name: str) -> dict:
     return fingerprint
 
 
-def load_puffer(puffer_root: Path, env_name: str):
+def load_puffer(
+    puffer_root: Path,
+    env_name: str,
+    native_files: Sequence[str] = DOOR_NATIVE_FILES,
+):
     root = Path(puffer_root).expanduser().resolve()
-    verify_native_build(root, env_name)
+    verify_native_build(root, env_name, native_files)
     preloaded = next(
         (
             name
@@ -223,10 +249,14 @@ def load_puffer(puffer_root: Path, env_name: str):
     return args, torch_pufferl
 
 
-def _source_manifest(puffer_root: Path, env_name: str) -> dict[str, str]:
+def _source_manifest(
+    puffer_root: Path,
+    env_name: str,
+    native_files: Sequence[str],
+) -> dict[str, str]:
     return {
         str(path.resolve()): _file_sha256(path)
-        for path in native_source_paths(puffer_root, env_name)
+        for path in native_source_paths(puffer_root, env_name, native_files)
     }
 
 

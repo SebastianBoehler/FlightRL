@@ -75,4 +75,22 @@ void flightrl_sixdof_door_observation_scene(
     float *observation
 );
 
+void flightrl_sixdof_edge_door_observation_scene(
+    const float *position,
+    const float *quaternion,
+    const float *room,
+    const float *door,
+    const float *obstacle,
+    float target_mean,
+    int scene_seed,
+    float camera_randomization,
+    float *door_grounding,
+    float *observation
+);
+
+void flightrl_edge_grounding_from_mask(
+    uint8_t *door_mask,
+    float *grounding
+);
+
 #endif

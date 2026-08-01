@@ -16,6 +16,15 @@ import flightrl.puffer4_door_runner as runner
 ENV_NAME = "flightrl_fixed_door_test"
 
 
+@pytest.fixture(autouse=True)
+def _stable_dependency_revision(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "require_clean_puffer_revision",
+        lambda _root: {"git_commit": "a" * 40},
+    )
+
+
 def _write_build_inputs(root: Path) -> Path:
     env_dir = root / "ocean" / ENV_NAME
     env_dir.mkdir(parents=True)
@@ -113,10 +122,11 @@ def test_build_records_atomic_abi_specific_fingerprint_for_exact_sources(
     }
     assert marker.name == extension.name + ".flightrl-build.json"
     assert result == json.loads(marker.read_text())
-    assert result["schema_version"] == 1
+    assert result["schema_version"] == 2
     assert result["env_name"] == ENV_NAME
     assert result["build_mode"] == "cpu"
     assert result["python_abi"] == runner.current_python_abi()
+    assert result["dependency_revision"] == {"git_commit": "a" * 40}
     assert set(result["source_files_sha256"]) == {
         str(path.resolve()) for path in expected_sources
     }

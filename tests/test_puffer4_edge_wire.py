@@ -87,6 +87,28 @@ def test_input_order_requires_alignment_and_resets_on_drop(
         )
 
 
+@pytest.mark.parametrize(
+    ("capture_delta_us", "reset_required"),
+    ((39_999, True), (40_000, False), (60_000, False), (60_001, True)),
+)
+def test_input_order_enforces_the_full_measured_capture_period(
+    timing: EdgeTimingProfile,
+    capture_delta_us: int,
+    reset_required: bool,
+) -> None:
+    current_capture = 1_000_000 + capture_delta_us
+
+    assert validate_edge_input_order(
+        _input(
+            frame_sequence=11,
+            capture_time_us=current_capture,
+            telemetry_time_us=current_capture - 1_000,
+        ),
+        _input(),
+        timing,
+    ) is reset_required
+
+
 def test_stm32_accepts_only_fresh_exactly_echoed_new_proposals(
     timing: EdgeTimingProfile,
 ) -> None:
@@ -96,6 +118,8 @@ def test_stm32_accepts_only_fresh_exactly_echoed_new_proposals(
         previous_proposal_sequence=6,
         stm32_now_us=1_050_000,
         timing=timing,
+        state_reset_applied=False,
+        input_reset_required=False,
     ) == 50_000
     with pytest.raises(ValueError, match="latest input authority"):
         validate_edge_proposal_stamp(
@@ -104,6 +128,8 @@ def test_stm32_accepts_only_fresh_exactly_echoed_new_proposals(
             previous_proposal_sequence=6,
             stm32_now_us=1_050_000,
             timing=timing,
+            state_reset_applied=False,
+            input_reset_required=False,
         )
     with pytest.raises(ValueError, match="duplicate or reordered"):
         validate_edge_proposal_stamp(
@@ -112,6 +138,8 @@ def test_stm32_accepts_only_fresh_exactly_echoed_new_proposals(
             previous_proposal_sequence=6,
             stm32_now_us=1_050_000,
             timing=timing,
+            state_reset_applied=False,
+            input_reset_required=False,
         )
     with pytest.raises(ValueError, match="stale or from the future"):
         validate_edge_proposal_stamp(
@@ -120,7 +148,46 @@ def test_stm32_accepts_only_fresh_exactly_echoed_new_proposals(
             previous_proposal_sequence=None,
             stm32_now_us=1_100_000,
             timing=timing,
+            state_reset_applied=False,
+            input_reset_required=False,
         )
+
+
+@pytest.mark.parametrize(
+    ("state_reset_applied", "input_reset_required"),
+    ((True, False), (False, True), (1, True), (True, 1)),
+)
+def test_stm32_rejects_wrong_or_nonboolean_reset_acknowledgement(
+    timing: EdgeTimingProfile,
+    state_reset_applied: object,
+    input_reset_required: object,
+) -> None:
+    with pytest.raises(ValueError, match="reset acknowledgement"):
+        validate_edge_proposal_stamp(
+            _proposal(),
+            _input(),
+            previous_proposal_sequence=6,
+            stm32_now_us=1_050_000,
+            timing=timing,
+            state_reset_applied=state_reset_applied,
+            input_reset_required=input_reset_required,
+        )
+
+
+@pytest.mark.parametrize("reset_required", (False, True))
+def test_stm32_accepts_exact_reset_acknowledgement(
+    timing: EdgeTimingProfile,
+    reset_required: bool,
+) -> None:
+    assert validate_edge_proposal_stamp(
+        _proposal(),
+        _input(),
+        previous_proposal_sequence=6,
+        stm32_now_us=1_050_000,
+        timing=timing,
+        state_reset_applied=reset_required,
+        input_reset_required=reset_required,
+    ) == 50_000
 
 
 @pytest.mark.parametrize("target_id", (-1, 3, 255, True))

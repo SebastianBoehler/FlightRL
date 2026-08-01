@@ -138,6 +138,7 @@ static void render_one(
     float target_mean,
     int scene_seed,
     float *door_grounding,
+    uint8_t *door_mask,
     uint8_t *frame
 ) {
     float rotation[9];
@@ -194,6 +195,9 @@ static void render_one(
                 door,
                 &door_pixel
             );
+            if (door_mask) {
+                door_mask[pixel] = (uint8_t)door_pixel;
+            }
             if (door_pixel) {
                 door_pixels += 1;
                 door_min_col = door_min_col < col ? door_min_col : col;
@@ -256,6 +260,7 @@ void flightrl_sixdof_render_gray4_batch(
             NULL,
             target_mean[env],
             scene_seed[env],
+            NULL,
             NULL,
             frames + env * SIXDOF_VISION_PIXELS
         );
@@ -349,6 +354,7 @@ void flightrl_sixdof_visual_observation_batch(
             target_mean[env],
             scene_seed[env],
             NULL,
+            NULL,
             current
         );
         assemble_visual_observation(
@@ -386,6 +392,7 @@ void flightrl_sixdof_visual_observation_scene(
         NULL,
         target_mean,
         scene_seed,
+        NULL,
         NULL,
         current
     );
@@ -498,6 +505,7 @@ void flightrl_sixdof_door_observation_scene(
         target_mean,
         scene_seed,
         door_grounding,
+        NULL,
         current
     );
     randomize_door_camera(
@@ -527,3 +535,5 @@ void flightrl_sixdof_door_observation_scene(
         sizeof(float) * SIXDOF_DOOR_PROPRIO_DIM
     );
 }
+
+#include "native_edge_student_vision.inc"

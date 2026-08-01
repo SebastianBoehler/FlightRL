@@ -56,12 +56,52 @@ def test_edge_actor_outputs_bounded_setpoints_and_shared_grounding() -> None:
     assert next_state.shape == (3, 48)
     assert torch.all(action >= -1.0)
     assert torch.all(action <= 1.0)
+    assert torch.equal(action[:, 1:3], torch.zeros_like(action[:, 1:3]))
     assert torch.all(grounding[:, 0] >= 0.0)
     assert torch.all(grounding[:, 0] <= 1.0)
     assert torch.all(grounding[:, 1:3] >= -1.0)
     assert torch.all(grounding[:, 1:3] <= 1.0)
     assert torch.all(grounding[:, 3] >= 0.0)
     assert torch.all(grounding[:, 3] <= 1.0)
+
+
+def test_edge_actor_starts_as_exact_door_axis_persistence_policy() -> None:
+    actor = EdgeNavigationActor(hidden_size=48)
+    observation = _valid_observation(2)
+    telemetry_start = EDGE_FRAME_PIXELS
+    observation[:, telemetry_start + 15 : telemetry_start + 19] = torch.tensor(
+        ((0.75, 0.50, -0.25, -0.625), (-0.5, -0.75, 1.0, 0.25))
+    )
+
+    action, _grounding, _state = actor.forward_step(
+        observation,
+        actor.initial_state(2),
+    )
+
+    assert actor.action_head[0].out_features == 2
+    assert torch.count_nonzero(actor.action_head[0].weight) == 0
+    assert torch.count_nonzero(actor.action_head[0].bias) == 0
+    assert torch.equal(
+        action,
+        torch.tensor(((0.75, 0.0, 0.0, -0.625), (-0.5, 0.0, 0.0, 0.25))),
+    )
+
+
+def test_edge_actor_clamps_bounded_residuals_over_applied_feedback() -> None:
+    actor = EdgeNavigationActor(hidden_size=48)
+    observation = _valid_observation(1)
+    telemetry_start = EDGE_FRAME_PIXELS
+    observation[0, telemetry_start + 15] = 0.8
+    observation[0, telemetry_start + 18] = -0.8
+    with torch.no_grad():
+        actor.action_head[0].bias.copy_(torch.tensor((0.4, -0.4)))
+
+    action, _grounding, _state = actor.forward_step(
+        observation,
+        actor.initial_state(1),
+    )
+
+    assert torch.equal(action, torch.tensor(((1.0, 0.0, 0.0, -1.0),)))
 
 
 def test_edge_grounding_is_conditioned_on_active_target() -> None:
@@ -83,6 +123,41 @@ def test_edge_grounding_is_conditioned_on_active_target() -> None:
     grounding = actor._grounding(visual, mission)
 
     assert grounding[0, 0] > grounding[1, 0]
+
+
+def test_training_visibility_logit_keeps_gradient_when_runtime_output_saturates() -> None:
+    actor = EdgeNavigationActor(hidden_size=48)
+    with torch.no_grad():
+        actor.grounding_head.weight.zero_()
+        actor.grounding_head.bias.zero_()
+        actor.grounding_head.bias[0] = 100.0
+    observation = _valid_observation(1)
+
+    action, grounding, visibility_logit, state = actor.forward_training_step(
+        observation,
+        actor.initial_state(1),
+    )
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(
+        visibility_logit,
+        torch.zeros_like(visibility_logit),
+    )
+    loss.backward()
+
+    runtime = actor.forward_step(observation, actor.initial_state(1))
+    assert grounding[0, 0] == 1.0
+    assert actor.grounding_head.bias.grad[0] > 0.0
+    assert torch.equal(action, runtime[0])
+    assert torch.equal(grounding, runtime[1])
+    assert torch.equal(state, runtime[2])
+
+
+def test_training_step_rejects_nonfinite_visibility_logit() -> None:
+    actor = EdgeNavigationActor(hidden_size=48)
+    with torch.no_grad():
+        actor.grounding_head.bias[0] = float("inf")
+
+    with pytest.raises(RuntimeError, match="nonfinite"):
+        actor.forward_training_step(_valid_observation(1), actor.initial_state(1))
 
 
 def test_edge_actor_reset_state_is_deterministic() -> None:
@@ -145,11 +220,11 @@ def test_edge_actor_budget_reports_wire_and_compute_costs() -> None:
 
     budget = edge_actor_budget(actor)
 
-    assert budget["parameter_count"] == 17_700
-    assert budget["int8_weight_bytes"] == 17_336
-    assert budget["quantized_parameter_bytes"] == 18_792
+    assert budget["parameter_count"] == 17_602
+    assert budget["int8_weight_bytes"] == 17_240
+    assert budget["quantized_parameter_bytes"] == 18_688
     assert budget["packed_input_bytes"] == 1_635
-    assert budget["macs_per_step"] == 96_144
+    assert budget["macs_per_step"] == 96_048
     assert budget["model_input_elements"] == EDGE_OBSERVATION_DIM
     assert budget["largest_internal_activation_elements"] == 1_536
     assert budget["largest_single_tensor_elements"] == EDGE_OBSERVATION_DIM

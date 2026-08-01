@@ -6,13 +6,13 @@ from math import hypot, isfinite
 from numbers import Real
 from typing import Any, Mapping
 
+from flightrl.puffer4_edge_action_contract import edge_action_contract_payload
 from flightrl.puffer4_edge_wire import (
     EdgeTimingProfile,
     edge_timing_payload,
     edge_wire_contract,
 )
 from flightrl.puffer4_edge_schema import (
-    ACTION_SPECS,
     EDGE_ACTION_DIM,
     EDGE_FRAME_PIXELS,
     EDGE_HEIGHT,
@@ -150,8 +150,9 @@ def _payload(
             "inference": "gap8_int8_unimplemented_target",
             "exact_deployment_graph_available": False,
             "timing_bound": timing is not None,
-            "exact_training_adapter_available": False,
-            "exact_training_authority": False,
+            "exact_training_adapter_available": True,
+            "exact_training_authority": True,
+            "exact_training_target_ids": [edge_target_id("door")],
             "safety_owner": "stm32",
             "timing": edge_timing_payload(timing),
         },
@@ -238,15 +239,7 @@ def _payload(
             "state_commit": "only_after_valid_packet_and_successful_inference",
             "rejected_packet": "does_not_update_state_and_next_valid_packet_resets",
         },
-        "action": {
-            "wire_type": "float32_le_normalized_proposal",
-            "order": [spec[0] for spec in ACTION_SPECS],
-            "normalized_clip": [-1.0, 1.0],
-            "physical_mapping": [_action_field(spec) for spec in ACTION_SPECS],
-            "consumer": "stm32_safety_envelope",
-            "freshness_required": True,
-            "feedback": "next_observation_contains_stm32_applied_setpoint",
-        },
+        "action": edge_action_contract_payload(),
         "mission_boundary": {
             "policy_owned_phases": ["search", "navigate"],
             "stm32_owned_phases": [
@@ -279,17 +272,6 @@ def _telemetry_field(spec: tuple[Any, ...]) -> dict[str, Any]:
         "clip": list(clip),
         "reference_frame": reference_frame,
         "formula": f"clip({formula}, {clip[0]}, {clip[1]})",
-    }
-
-
-def _action_field(spec: tuple[Any, ...]) -> dict[str, Any]:
-    name, unit, scale, reference_frame = spec
-    return {
-        "name": name,
-        "unit": unit,
-        "scale": scale,
-        "reference_frame": reference_frame,
-        "formula": f"clip(normalized_{name}, -1, 1) * {scale}",
     }
 
 

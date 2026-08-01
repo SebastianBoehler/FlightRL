@@ -22,9 +22,21 @@
 #include "native_door_teacher.h"
 #include "native_door_teacher.c"
 
+#ifdef FLIGHTRL_EDGE_STUDENT_LANE
+#include "native_edge_student_action.h"
+#include "native_edge_student_action.c"
+#include "native_edge_student_observation.h"
+#include "native_edge_student_observation.c"
+#define OBS_SIZE FLIGHTRL_EDGE_STUDENT_OBS_DIM
+#define NUM_ATNS 4
+#define ACT_SIZES {1, 1, 1, 1}
+#define FLIGHTRL_DOOR_ACTION_DIM 4
+#else
 #define OBS_SIZE SIXDOF_DOOR_OBS_DIM
 #define NUM_ATNS 2
 #define ACT_SIZES {1, 1}
+#define FLIGHTRL_DOOR_ACTION_DIM 2
+#endif
 #define OBS_TENSOR_T FloatTensor
 
 #include "native_door_env_types.inc"
@@ -37,76 +49,7 @@ static void c_render(FlightRLDoorEnv *env), c_close(FlightRLDoorEnv *env);
 
 #include "native_door_domain.inc"
 #include "native_door_episode_groups.inc"
-
-static void write_door_observation(Env *env, uint8_t reset_temporal) {
-    float grounding[4];
-    float proprioception[SIXDOF_DOOR_PROPRIO_DIM] = {0};
-    flightrl_door_proprioception(
-        env->position, env->velocity, env->quaternion, env->body_rates,
-        env->room, env->origin_position, env->origin_yaw, env->previous_action,
-        proprioception
-    );
-    flightrl_sixdof_door_observation_scene(
-        env->position,
-        env->quaternion,
-        env->room,
-        env->scene.door,
-        env->scene.obstacle,
-        env->camera_mean,
-        env->scene_seed,
-        env->camera_randomization,
-        env->previous_frame,
-        reset_temporal,
-        proprioception,
-        grounding,
-        env->observations
-    );
-    if (env->camera_mask > 0.5f) {
-        memset(
-            env->observations,
-            0,
-            sizeof(float) * SIXDOF_VISION_CHANNELS * SIXDOF_VISION_PIXELS
-        );
-    }
-    int visible = grounding[0] > 0.5f;
-    float detector_grounding[4];
-    memcpy(detector_grounding, grounding, sizeof(detector_grounding));
-    if (env->camera_mask > 0.5f) {
-        memset(detector_grounding, 0, sizeof(detector_grounding));
-    }
-    flightrl_door_detector_update(
-        &env->detector, detector_grounding, env->control_step,
-        &env->appearance_rng, env->control_dt, env->maximum_evidence_age_s
-    );
-    int detected = (
-        env->detector.evidence[0] > 0.0f
-        && env->detector.evidence[4] < 1.0f
-    );
-    int phase = detected
-        ? (env->detector.evidence[3] >= 0.55f ? 2 : 1)
-        : (env->detector.target_seen ? 3 : 0);
-    int phase_offset = (
-        SIXDOF_VISION_CHANNELS * SIXDOF_VISION_PIXELS
-        + SIXDOF_DOOR_SENSOR_DIM
-    );
-    env->observations[phase_offset + phase] = 1.0f;
-    memcpy(
-        env->observations + phase_offset + SIXDOF_DOOR_PHASE_DIM,
-        env->detector.evidence,
-        sizeof(env->detector.evidence)
-    );
-    float teacher[2];
-    flightrl_door_teacher_action(
-        env->position, env->quaternion, &env->scene,
-        env->max_yawrate_deg_s, teacher
-    );
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM] = teacher[0];
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 1] = teacher[1];
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 2] = (float)visible;
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 3] = grounding[1];
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 4] = grounding[2];
-    env->observations[SIXDOF_DOOR_POLICY_OBS_DIM + 5] = grounding[3];
-}
+#include "native_door_lane.inc"
 
 #include "native_door_env_config.inc"
 
@@ -146,6 +89,7 @@ static void c_reset(Env *env) {
     memset(env->previous_frame, 0, sizeof(env->previous_frame));
     memcpy(env->origin_position, env->position, sizeof(env->origin_position));
     env->origin_yaw = flightrl_door_yaw(env->quaternion);
+    env->takeoff_origin_z = env->room[4];
     update_ranges(env->position, env->quaternion, env->ranges, env->room);
     float camera_range = env->camera_mean_max - env->camera_mean_min;
     float normal_camera_min = env->camera_mean_min + 0.25f * camera_range;
@@ -160,7 +104,6 @@ static void c_reset(Env *env) {
         flightrl_door_seed_mix(rng_next(&env->appearance_rng)) & 0x00ffffffu
     );
     env->scene_seed = (int)flightrl_door_seed_mix(rng_next(&env->appearance_rng));
-    capture_door_episode_group(env, (uint8_t)low_light);
     env->control_step = 0;
     flightrl_door_detector_reset(&env->detector);
     env->visible_steps = 0;
@@ -171,6 +114,7 @@ static void c_reset(Env *env) {
     env->terminal = 0;
     env->truncation = 0;
     write_door_observation(env, 1);
+    capture_door_episode_group(env, (uint8_t)low_light);
 }
 
 static void c_step(Env *env) {
@@ -180,13 +124,7 @@ static void c_step(Env *env) {
         &env->scene
     );
     float command[4];
-    flightrl_door_control_action(
-        env->actions,
-        env->max_yawrate_deg_s,
-        env->physics[SIXDOF_PHYS_MAX_RATE_YAW],
-        command,
-        env->previous_action
-    );
+    apply_door_lane_action(env, command);
     flightrl_sixdof_setpoint_actions_batch(
         env->velocity,
         env->quaternion,
@@ -220,6 +158,9 @@ static void c_step(Env *env) {
         );
     }
     env->control_step += 1;
+#ifdef FLIGHTRL_EDGE_STUDENT_LANE
+    int visible = write_door_observation(env, 0);
+#else
     int visible = flightrl_door_scene_visible(
         env->position,
         env->quaternion,
@@ -232,6 +173,7 @@ static void c_step(Env *env) {
         env->quaternion,
         &env->scene
     );
+#endif
     env->visible_steps += visible;
     float distance = flightrl_door_scene_distance(env->position, &env->scene);
     int collision = flightrl_door_scene_collides(
@@ -254,10 +196,7 @@ static void c_step(Env *env) {
     );
     env->truncation = env->control_step >= env->max_episode_steps;
     env->terminal = collision || success;
-    float action_cost = (
-        env->previous_action[0] * env->previous_action[0]
-        + env->previous_action[1] * env->previous_action[1]
-    );
+    float action_cost = door_lane_action_cost(env);
     int discovered = !previously_observed && env->scene.target_observed;
     env->rewards[0] = (
         env->scene.target_observed
@@ -266,7 +205,9 @@ static void c_step(Env *env) {
         )
         + 1.0f * discovered + 0.005f * visible - 0.0005f * action_cost
         - 10.0f * collision + 10.0f * success;
+#ifndef FLIGHTRL_EDGE_STUDENT_LANE
     write_door_observation(env, 0);
+#endif
     env->terminals[0] = (env->terminal || env->truncation) ? 1.0f : 0.0f;
     env->current_return += env->rewards[0];
     env->current_length += 1.0f;

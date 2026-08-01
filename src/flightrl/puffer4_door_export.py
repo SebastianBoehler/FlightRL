@@ -30,9 +30,11 @@ DOOR_NATIVE_FILES = (
     "native_door_detector.h",
     "native_door_self_mask.c",
     "native_door_self_mask.h",
+    "native_door_lane.inc",
     "native_sixdof_vision.c",
     "native_sixdof_vision.h",
     "native_sixdof_vision_surfaces.inc",
+    "native_edge_student_vision.inc",
     "native_door_scene.c",
     "native_door_scene.h",
     "native_door_scene_coverage.inc",
@@ -66,7 +68,12 @@ def export_fixed_door_assets(
         "#define SIXDOF_VISION_WIDTH 64\n"
         "#define SIXDOF_VISION_HEIGHT 48\n"
     )
-    binding = dimensions + (native_dir / "native_door_env_binding.c").read_text()
+    binding_source = (native_dir / "native_door_env_binding.c").read_text()
+    binding_source = binding_source.replace(
+        '#include "native_door_lane.inc"',
+        (native_dir / "native_door_lane.inc").read_text(),
+    )
+    binding = dimensions + binding_source
     (env_dir / "binding.c").write_text(binding)
     config_path.write_text(
         render_puffer4_ini(build_fixed_door_teacher_sections(settings))

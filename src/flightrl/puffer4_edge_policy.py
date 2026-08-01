@@ -3,6 +3,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from flightrl.puffer4_edge_action_contract import (
+    EDGE_CONTROLLED_ACTION_AXES,
+    EDGE_CONTROLLED_TELEMETRY_INDICES,
+)
 from flightrl.puffer4_edge_contract import (
     EDGE_ACTION_DIM,
     EDGE_FRAME_PIXELS,
@@ -77,9 +81,11 @@ class EdgeNavigationActor(nn.Module):
         )
         self.recurrent = HardGatedRecurrentCell(hidden_size)
         self.action_head = nn.Sequential(
-            nn.Linear(hidden_size, EDGE_ACTION_DIM),
+            nn.Linear(hidden_size, len(EDGE_CONTROLLED_ACTION_AXES)),
             nn.Hardtanh(-1.0, 1.0),
         )
+        nn.init.zeros_(self.action_head[0].weight)
+        nn.init.zeros_(self.action_head[0].bias)
         self.visible_activation = nn.Hardsigmoid()
         self.center_activation = nn.Hardtanh(-1.0, 1.0)
         self.scale_activation = nn.Hardsigmoid()
@@ -104,6 +110,16 @@ class EdgeNavigationActor(nn.Module):
         observation: torch.Tensor,
         state: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        action, grounding, _visibility_logit, next_state = (
+            self.forward_training_step(observation, state)
+        )
+        return action, grounding, next_state
+
+    def forward_training_step(
+        self,
+        observation: torch.Tensor,
+        state: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if observation.ndim != 2 or observation.shape[1] != EDGE_OBSERVATION_DIM:
             raise ValueError(
                 f"edge observation must have shape [batch, {EDGE_OBSERVATION_DIM}]"
@@ -130,15 +146,36 @@ class EdgeNavigationActor(nn.Module):
         mission = observation[:, telemetry_end:]
         self._validate_contract_values(frame, telemetry, mission)
         visual = self.visual(frame)
-        grounding = self._grounding(visual, mission)
+        grounding, visibility_logit = self._grounding_with_logit(visual, mission)
         encoded = self.fusion(
             torch.cat((visual, telemetry, mission, grounding), dim=1)
         )
         next_state = self.recurrent(encoded, state)
-        action = self.action_head(next_state)
-        if not all(torch.isfinite(value).all() for value in (action, grounding, next_state)):
+        action_delta = self.action_head(next_state)
+        previous_controlled = telemetry[
+            :, EDGE_CONTROLLED_TELEMETRY_INDICES
+        ]
+        controlled = torch.clamp(
+            previous_controlled + action_delta,
+            min=-1.0,
+            max=1.0,
+        )
+        structural_zero = torch.zeros_like(controlled[:, 0])
+        action = torch.stack(
+            (
+                controlled[:, 0],
+                structural_zero,
+                structural_zero,
+                controlled[:, 1],
+            ),
+            dim=1,
+        )
+        if not all(
+            torch.isfinite(value).all()
+            for value in (action, grounding, visibility_logit, next_state)
+        ):
             raise RuntimeError("edge actor produced nonfinite outputs or state")
-        return action, grounding, next_state
+        return action, grounding, visibility_logit, next_state
 
     @staticmethod
     def _validate_contract_values(
@@ -180,10 +217,16 @@ class EdgeNavigationActor(nn.Module):
         visual: torch.Tensor,
         mission: torch.Tensor,
     ) -> torch.Tensor:
+        return self._grounding_with_logit(visual, mission)[0]
+
+    def _grounding_with_logit(
+        self,
+        visual: torch.Tensor,
+        mission: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         target_gate = self.grounding_target_gate(mission)
-        return self._bounded_grounding(
-            self.grounding_head(visual * target_gate)
-        )
+        raw = self.grounding_head(visual * target_gate)
+        return self._bounded_grounding(raw), raw[:, 0]
 
     def _bounded_grounding(self, raw: torch.Tensor) -> torch.Tensor:
         visible = self.visible_activation(raw[:, :1])

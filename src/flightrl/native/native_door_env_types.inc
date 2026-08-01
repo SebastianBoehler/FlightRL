@@ -54,9 +54,10 @@ typedef struct {
     float thrust_state;
     float low_level_action[4];
     float state_observation[28];
-    float previous_action[2];
+    float previous_action[FLIGHTRL_DOOR_ACTION_DIM];
     float origin_position[3];
     float origin_yaw;
+    float takeoff_origin_z;
     uint8_t previous_frame[SIXDOF_VISION_PIXELS];
     FlightRLDoorScene scene;
     FlightRLDoorDetector detector;

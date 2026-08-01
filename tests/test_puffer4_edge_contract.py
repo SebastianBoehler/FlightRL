@@ -41,9 +41,22 @@ def test_edge_contract_is_single_frame_and_host_detector_free() -> None:
         "2": "sink",
     }
     assert report["action"]["order"] == ["vx", "vy", "vz", "yaw_rate"]
+    assert report["action"]["controlled_axes"] == ["vx", "yaw_rate"]
+    assert report["action"]["structurally_zero_axes"] == ["vy", "vz"]
+    assert report["action"]["parameterization"] == {
+        "kind": "bounded_residual_over_stm32_applied_previous_action",
+        "feedback_telemetry_indices": [15, 18],
+        "feedback_index_space": "zero_based_telemetry_segment",
+        "learned_delta_clip": [-1.0, 1.0],
+        "final_clip": [-1.0, 1.0],
+        "delta_head_initialization": "exact_zero_weights_and_bias",
+        "initial_policy": "controlled_axis_persistence",
+    }
     assert report["runtime"]["training"] == "mac_edge_shaped_pytorch_reference"
     assert report["runtime"]["exact_deployment_graph_available"] is False
-    assert report["runtime"]["exact_training_authority"] is False
+    assert report["runtime"]["exact_training_adapter_available"] is True
+    assert report["runtime"]["exact_training_authority"] is True
+    assert report["runtime"]["exact_training_target_ids"] == [0]
     assert report["runtime"]["timing"]["status"] == "unmeasured_blocker"
     absent_target = report["model"]["grounding_label_semantics"]["absent_target"]
     assert "visible label zero and supervised" in absent_target
@@ -131,7 +144,7 @@ def test_edge_contract_accepts_only_measured_bound_runtime_timing() -> None:
 
     verify_edge_policy_contract(report, hidden_size=48, timing=timing)
     assert report["runtime"]["timing_bound"] is True
-    assert report["runtime"]["exact_training_authority"] is False
+    assert report["runtime"]["exact_training_authority"] is True
     assert report["runtime"]["timing"]["status"] == "measured_and_bound"
 
     with pytest.raises(ValueError, match="at least 1000"):

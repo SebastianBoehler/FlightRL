@@ -160,6 +160,7 @@ def validate_edge_input_order(
     )
     return bool(
         frame_delta != 1
+        or capture_delta < timing.minimum_period_us
         or capture_delta > timing.maximum_period_us
         or current.mission_epoch != previous.mission_epoch
         or current.arming_epoch != previous.arming_epoch
@@ -174,7 +175,17 @@ def validate_edge_proposal_stamp(
     previous_proposal_sequence: int | None,
     stm32_now_us: int,
     timing: EdgeTimingProfile,
+    state_reset_applied: bool,
+    input_reset_required: bool,
 ) -> int:
+    if (
+        type(state_reset_applied) is not bool
+        or type(input_reset_required) is not bool
+        or state_reset_applied != input_reset_required
+    ):
+        raise ValueError(
+            "edge proposal reset acknowledgement does not match the input requirement"
+        )
     expected = (
         latest_input.frame_sequence,
         latest_input.capture_time_us,
@@ -212,7 +223,7 @@ def edge_timing_payload(
     return {
         "status": "unmeasured_blocker",
         "clock_domain": "stm32_monotonic_uint32_us",
-        "exact_training_authority": False,
+        "deployment_timing_authority": False,
         "required_measurement": (
             "measure the complete gray4 capture, telemetry alignment, CPX, "
             "inference, and proposal-return path"
