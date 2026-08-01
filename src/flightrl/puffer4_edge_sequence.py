@@ -7,6 +7,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from flightrl.puffer4_edge_action_contract import (
+    EDGE_STRUCTURALLY_ZERO_ACTION_INDICES,
+)
 from flightrl.puffer4_edge_collection_evidence import (
     build_edge_dataset_metadata,
     require_edge_collection_metadata,
@@ -19,6 +22,9 @@ from flightrl.puffer4_edge_contract import (
     EDGE_TELEMETRY_BOUNDS,
 )
 from flightrl.puffer4_edge_dagger import require_edge_execution_trace
+from flightrl.puffer4_edge_episode_provenance import (
+    require_edge_episode_provenance,
+)
 
 
 edge_dataset_metadata = build_edge_dataset_metadata
@@ -35,6 +41,8 @@ class EdgeSequenceDataset:
     behavior_actions: np.ndarray
     execution_student_mask: np.ndarray
     grounding: np.ndarray
+    episode_ids: np.ndarray
+    scene_group_ids: np.ndarray
     resets: np.ndarray
     dones: np.ndarray
     metadata: dict
@@ -84,6 +92,8 @@ def require_edge_sequence_structure(dataset: EdgeSequenceDataset) -> None:
     _array(dataset.behavior_actions, prefix + (EDGE_ACTION_DIM,), np.float32, "behavior")
     _array(dataset.execution_student_mask, (agents,), np.uint8, "execution mask")
     _array(dataset.grounding, prefix + (4,), np.float32, "grounding")
+    _array(dataset.episode_ids, prefix, np.uint64, "episode IDs")
+    _array(dataset.scene_group_ids, prefix, np.uint8, "scene group IDs")
     _array(dataset.resets, prefix, np.uint8, "resets")
     _array(dataset.dones, prefix, np.uint8, "dones")
     _validate_values(dataset)
@@ -105,6 +115,8 @@ def write_edge_sequence_dataset(
         behavior_actions=dataset.behavior_actions,
         execution_student_mask=dataset.execution_student_mask,
         grounding=dataset.grounding,
+        episode_ids=dataset.episode_ids,
+        scene_group_ids=dataset.scene_group_ids,
         resets=dataset.resets,
         dones=dataset.dones,
         metadata=json.dumps(dataset.metadata, sort_keys=True, allow_nan=False),
@@ -126,6 +138,8 @@ def load_edge_sequence_dataset(
             "behavior_actions",
             "execution_student_mask",
             "grounding",
+            "episode_ids",
+            "scene_group_ids",
             "resets",
             "dones",
             "metadata",
@@ -139,6 +153,8 @@ def load_edge_sequence_dataset(
             behavior_actions=data["behavior_actions"],
             execution_student_mask=data["execution_student_mask"],
             grounding=data["grounding"],
+            episode_ids=data["episode_ids"],
+            scene_group_ids=data["scene_group_ids"],
             resets=data["resets"],
             dones=data["dones"],
             metadata=json.loads(str(data["metadata"])),
@@ -247,6 +263,11 @@ def _validate_values(dataset: EdgeSequenceDataset) -> None:
         or np.any(np.abs(dataset.behavior_actions) > 1.0)
     ):
         raise ValueError("edge dataset target or action is outside the door contract")
+    structural = EDGE_STRUCTURALLY_ZERO_ACTION_INDICES
+    if np.any(dataset.teacher_actions[..., structural] != 0.0) or np.any(
+        dataset.behavior_actions[..., structural] != 0.0
+    ):
+        raise ValueError("edge dataset vy/vz action axes must be structurally zero")
     if np.any(dataset.execution_student_mask > 1):
         raise ValueError("edge dataset execution mask is nonbinary")
     if np.any((dataset.resets > 1) | (dataset.dones > 1)) or not np.all(
@@ -257,6 +278,12 @@ def _validate_values(dataset: EdgeSequenceDataset) -> None:
         dataset.resets[1:], dataset.dones[:-1]
     ):
         raise ValueError("edge dataset terminal-to-reset chronology is invalid")
+    require_edge_episode_provenance(
+        dataset.episode_ids,
+        dataset.scene_group_ids,
+        dataset.resets,
+        dataset.grounding[..., 0],
+    )
     visible = dataset.grounding[..., 0]
     if np.any((visible != 0.0) & (visible != 1.0)):
         raise ValueError("edge dataset visibility labels must be binary")

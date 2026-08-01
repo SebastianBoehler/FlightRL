@@ -22,7 +22,8 @@ from flightrl.puffer4_edge_training import (
     train_edge_student,
 )
 from flightrl.puffer4_edge_training_state import edge_state_dict_sha256
-from puffer4_edge_training_support import training_dataset, training_metadata
+from puffer4_edge_training_support import allow_tiny_training_coverage, training_dataset, training_metadata
+pytestmark = pytest.mark.usefixtures(allow_tiny_training_coverage.__name__)
 
 
 def _critical_dataset(split: str, seed: int) -> EdgeSequenceDataset:
@@ -36,6 +37,8 @@ def _critical_dataset(split: str, seed: int) -> EdgeSequenceDataset:
     grounding[2:4, 0] = (1.0, 0.25, -0.25, 0.4)
     resets = np.zeros((steps, agents), dtype=np.uint8)
     resets[[0, 4], 0] = 1
+    episode_ids = np.zeros((steps, agents), dtype=np.uint64)
+    episode_ids[4:, 0] = 1
     dones = np.zeros((steps, agents), dtype=np.uint8)
     dones[3, 0] = 1
     return EdgeSequenceDataset(
@@ -46,10 +49,13 @@ def _critical_dataset(split: str, seed: int) -> EdgeSequenceDataset:
         behavior_actions=actions.copy(),
         execution_student_mask=np.zeros(agents, dtype=np.uint8),
         grounding=grounding,
+        episode_ids=episode_ids,
+        scene_group_ids=np.full((steps, agents), 64, dtype=np.uint8),
         resets=resets,
         dones=dones,
         metadata=training_metadata(split, seed, steps, agents),
     )
+
 
 def test_training_trace_validation_does_not_repeat_per_epoch(
     monkeypatch: pytest.MonkeyPatch,
@@ -66,7 +72,7 @@ def test_training_trace_validation_does_not_repeat_per_epoch(
         train_edge_student(
             training_dataset("train", 11),
             training_dataset("selection", 21),
-            EdgeTrainConfig(epochs=3, tbptt_steps=2),
+            EdgeTrainConfig(epochs=3, tbptt_steps=2, warmup_batch_size=4),
         )
     except EdgeTrainingRejected:
         pass
@@ -133,6 +139,16 @@ def test_loss_weights_balance_episodes_visibility_classes_and_decisions() -> Non
     assert weights.decision[2, 0] > weights.decision[1, 0]
     assert weights.decision[3, 0] > weights.decision[1, 0]
     assert weights.decision[4, 0] > weights.decision[5, 0]
+    assert weights.decision[0, 0] / weights.decision[1, 0] == pytest.approx(8.0)
+    assert weights.decision[:4, 0].sum() == pytest.approx(
+        float(weights.decision[4:, 0].sum())
+    )
+    assert weights.training_decision[weights.critical].sum() == pytest.approx(
+        float(weights.training_decision[~weights.critical].sum())
+    )
+    assert weights.training_decision[:4, 0].sum() == pytest.approx(
+        float(weights.training_decision[4:, 0].sum())
+    )
 
 
 def test_baselines_expose_persistence_and_constant_grounding_shortcuts() -> None:
@@ -199,7 +215,9 @@ def test_sequence_trainer_rejects_checkpoint_that_only_copies_previous_action() 
         train_edge_student(
             train,
             selection,
-            EdgeTrainConfig(epochs=1, tbptt_steps=2, learning_rate=1.0e-3),
+            EdgeTrainConfig(
+                epochs=1, tbptt_steps=2, warmup_batch_size=4, learning_rate=1.0e-3
+            ),
         )
 
     report = caught.value.report
@@ -225,7 +243,9 @@ def test_sequence_trainer_requires_multi_agent_visual_ablation() -> None:
 def test_sequence_trainer_selects_strict_door_only_edge_checkpoint_parent() -> None:
     train = training_dataset("train", 11)
     selection = training_dataset("selection", 21)
-    config = EdgeTrainConfig(epochs=8, tbptt_steps=2, learning_rate=5.0e-3)
+    config = EdgeTrainConfig(
+        epochs=8, tbptt_steps=2, warmup_batch_size=4, learning_rate=5.0e-3
+    )
     torch.manual_seed(config.seed)
     initial = EdgeNavigationActor(hidden_size=48)
     initial_loss = evaluate_edge_sequence_loss(initial, selection, config)[

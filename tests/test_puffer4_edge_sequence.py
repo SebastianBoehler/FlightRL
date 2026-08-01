@@ -42,6 +42,8 @@ def _dataset(
     dones = np.zeros((steps, agents), dtype=np.uint8)
     dones[1, 0] = 1
     resets[2, 0] = 1
+    episode_ids = np.asarray(((0, 1), (0, 1), (2, 1)), dtype=np.uint64)
+    scene_groups = np.asarray(((0, 1), (0, 1), (66, 1)), dtype=np.uint8)
     profile = collection_profile
     if profile is None:
         profile = {
@@ -61,6 +63,8 @@ def _dataset(
         behavior_actions=np.zeros((steps, agents, 4), dtype=np.float32),
         execution_student_mask=np.zeros(agents, dtype=np.uint8),
         grounding=grounding,
+        episode_ids=episode_ids,
+        scene_group_ids=scene_groups,
         resets=resets,
         dones=dones,
         metadata=edge_dataset_metadata(
@@ -131,6 +135,19 @@ def test_edge_sequence_rejects_privileged_or_invalid_values() -> None:
         require_edge_sequence_dataset(dataset)
 
 
+@pytest.mark.parametrize("field", ("teacher_actions", "behavior_actions"))
+@pytest.mark.parametrize("axis", (1, 2))
+def test_edge_sequence_rejects_nonzero_structural_action_axes(
+    field: str,
+    axis: int,
+) -> None:
+    dataset = _dataset()
+    getattr(dataset, field)[0, 0, axis] = 0.25
+
+    with pytest.raises(ValueError, match="structurally zero"):
+        require_edge_sequence_dataset(dataset)
+
+
 def test_edge_sequence_splits_must_be_seed_and_name_disjoint() -> None:
     train = _dataset()
     selection = _dataset(split="selection", seed=21, appearance_seed=51)
@@ -167,14 +184,15 @@ def test_edge_sequence_rejects_metadata_tampering() -> None:
         require_edge_sequence_dataset(tampered)
 
 
-def test_edge_sequence_v4_binds_full_config_hash_and_collection_sources() -> None:
+def test_edge_sequence_v5_binds_full_config_hash_and_collection_sources() -> None:
     dataset = _dataset()
-    assert dataset.metadata["schema"] == "flightrl.edge_v3.sequence_dataset.v4"
+    assert dataset.metadata["schema"] == "flightrl.edge_v3.sequence_dataset.v5"
     assert dataset.metadata["environment_config"]["seed"] == 11
     assert set(dataset.metadata["collection_source_identity"]) == {
-        "collector", "artifact_paths", "adapter", "dagger", "sequence",
-        "collection_evidence", "exporter", "sections", "door_sections", "config",
-        "runner", "mission", "native_identity",
+        "collector", "artifact_paths", "adapter", "collection_arrays", "execution",
+        "episode_provenance", "dagger", "sequence", "collection_evidence",
+        "exporter", "sections", "door_sections", "config", "runner",
+        "mission", "native_identity",
     }
     assert dataset.metadata["native_build_fingerprint"] == native_build_fingerprint(
         Path("/tmp/flightrl-edge-test-build"), "flightrl_edge_door"

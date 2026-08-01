@@ -8,6 +8,12 @@ from flightrl.puffer4_edge_schema import ACTION_SPECS
 EDGE_CONTROLLED_ACTION_AXES = ("vx", "yaw_rate")
 EDGE_CONTROLLED_TELEMETRY_INDICES = (15, 18)
 EDGE_STRUCTURALLY_ZERO_ACTION_AXES = ("vy", "vz")
+EDGE_STRUCTURALLY_ZERO_ACTION_INDICES = tuple(
+    index
+    for index, spec in enumerate(ACTION_SPECS)
+    if spec[0] in EDGE_STRUCTURALLY_ZERO_ACTION_AXES
+)
+EDGE_LEARNED_DELTA_LIMIT = 2.0
 
 
 def edge_action_contract_payload() -> dict[str, Any]:
@@ -22,7 +28,10 @@ def edge_action_contract_payload() -> dict[str, Any]:
                 EDGE_CONTROLLED_TELEMETRY_INDICES
             ),
             "feedback_index_space": "zero_based_telemetry_segment",
-            "learned_delta_clip": [-1.0, 1.0],
+            "learned_delta_clip": [
+                -EDGE_LEARNED_DELTA_LIMIT,
+                EDGE_LEARNED_DELTA_LIMIT,
+            ],
             "final_clip": [-1.0, 1.0],
             "delta_head_initialization": "exact_zero_weights_and_bias",
             "initial_policy": "controlled_axis_persistence",

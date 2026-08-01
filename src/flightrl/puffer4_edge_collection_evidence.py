@@ -10,7 +10,7 @@ from pathlib import Path
 from flightrl.evidence_scope import file_identity
 from flightrl.puffer4_config import Puffer4ExportSettings, render_puffer4_ini
 from flightrl.puffer4_edge_contract import edge_policy_contract_report
-from flightrl.puffer4_edge_dataset import edge_execution_provenance
+from flightrl.puffer4_edge_execution import edge_execution_provenance
 from flightrl.puffer4_edge_native_build import (
     canonical_edge_native_build_fingerprint,
 )
@@ -18,7 +18,7 @@ from flightrl.puffer4_edge_student_sections import build_edge_student_sections
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EDGE_DATASET_SCHEMA = "flightrl.edge_v3.sequence_dataset.v4"
+EDGE_DATASET_SCHEMA = "flightrl.edge_v3.sequence_dataset.v5"
 _SPLITS = ("train", "selection", "final")
 _PROFILE_FIELDS = {
     "obstacle_probability",
@@ -37,6 +37,11 @@ _SOURCES = {
     "collector": ROOT / "scripts/build_puffer_edge_dataset.py",
     "artifact_paths": ROOT / "src/flightrl/artifact_paths.py",
     "adapter": ROOT / "src/flightrl/puffer4_edge_dataset.py",
+    "collection_arrays": ROOT
+    / "src/flightrl/puffer4_edge_collection_arrays.py",
+    "execution": ROOT / "src/flightrl/puffer4_edge_execution.py",
+    "episode_provenance": ROOT
+    / "src/flightrl/puffer4_edge_episode_provenance.py",
     "dagger": ROOT / "src/flightrl/puffer4_edge_dagger.py",
     "sequence": ROOT / "src/flightrl/puffer4_edge_sequence.py",
     "collection_evidence": ROOT

@@ -104,6 +104,22 @@ def test_edge_actor_clamps_bounded_residuals_over_applied_feedback() -> None:
     assert torch.equal(action, torch.tensor(((1.0, 0.0, 0.0, -1.0),)))
 
 
+def test_edge_actor_can_reverse_a_saturated_yaw_command_in_one_step() -> None:
+    actor = EdgeNavigationActor(hidden_size=48)
+    observation = _valid_observation(1)
+    telemetry_start = EDGE_FRAME_PIXELS
+    observation[0, telemetry_start + 18] = 1.0
+    with torch.no_grad():
+        actor.action_head[0].bias[1] = -2.0
+
+    action, _grounding, _state = actor.forward_step(
+        observation,
+        actor.initial_state(1),
+    )
+
+    assert action[0, 3] == -1.0
+
+
 def test_edge_grounding_is_conditioned_on_active_target() -> None:
     actor = EdgeNavigationActor(hidden_size=48)
     with torch.no_grad():

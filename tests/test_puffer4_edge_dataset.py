@@ -45,7 +45,7 @@ def _native_observation() -> np.ndarray:
         -0.6,
     )
     native[EDGE_FRAME_PIXELS + 19] = 1.0
-    native[EDGE_OBSERVATION_DIM:] = (
+    native[EDGE_OBSERVATION_DIM : EDGE_OBSERVATION_DIM + 8] = (
         0.8,
         0.0,
         0.0,
@@ -55,6 +55,7 @@ def _native_observation() -> np.ndarray:
         0.25,
         0.4,
     )
+    native[-1] = 109.0
     return native
 
 
@@ -87,6 +88,7 @@ def test_native_adapter_preserves_exact_edge_prefix_and_training_tail() -> None:
     assert record.done_after_action is False
     assert record.teacher_action == pytest.approx((0.8, 0.0, 0.0, -0.25))
     assert record.grounding == pytest.approx((1.0, -0.5, 0.25, 0.4))
+    assert record.scene_group_id == 109
     assert record.telemetry[15:] == pytest.approx((0.7, 0.0, 0.0, -0.6))
     assert model.shape == (EDGE_OBSERVATION_DIM,)
     assert model.dtype == np.float32
@@ -136,7 +138,8 @@ def test_adapter_rejects_non_gray4_or_mismatched_target() -> None:
 
 def test_adapter_rejects_invalid_absent_grounding_or_flags() -> None:
     native = _native_observation()
-    native[-4:] = (0.0, 0.1, 0.0, 0.0)
+    start = EDGE_OBSERVATION_DIM + 4
+    native[start : start + 4] = (0.0, 0.1, 0.0, 0.0)
     with pytest.raises(ValueError, match="absent"):
         adapt_native_door_observation(
             native,
@@ -162,6 +165,7 @@ def test_batch_adapter_derives_exact_native_target_ids() -> None:
     batch = adapt_native_door_observation_batch(np.stack((door, monitor)))
 
     assert batch.target_ids.tolist() == [0, 1]
+    assert batch.scene_group_ids.tolist() == [109, 109]
     assert batch.packed_frames.shape == (2, EDGE_FRAME_PIXELS // 2)
     np.testing.assert_array_equal(
         batch.teacher_actions[0], door[EDGE_OBSERVATION_DIM : EDGE_OBSERVATION_DIM + 4]
@@ -182,4 +186,13 @@ def test_batch_adapter_rejects_noncanonical_native_mission_token() -> None:
     native[EDGE_FRAME_PIXELS + 19 : EDGE_OBSERVATION_DIM] = (0.5, 0.5, 0.0)
 
     with pytest.raises(ValueError, match="one-hot"):
+        adapt_native_door_observation_batch(native[None, :])
+
+
+@pytest.mark.parametrize("scene_group", (1.5, 128.0))
+def test_batch_adapter_rejects_invalid_scene_group(scene_group: float) -> None:
+    native = _native_observation()
+    native[-1] = scene_group
+
+    with pytest.raises(ValueError, match="scene group"):
         adapt_native_door_observation_batch(native[None, :])

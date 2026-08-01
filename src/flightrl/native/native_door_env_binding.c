@@ -115,6 +115,12 @@ static void c_reset(Env *env) {
     env->truncation = 0;
     write_door_observation(env, 1);
     capture_door_episode_group(env, (uint8_t)low_light);
+#ifdef FLIGHTRL_EDGE_STUDENT_LANE
+    flightrl_edge_student_scene_group_tail(
+        env->scene_group_id,
+        env->observations
+    );
+#endif
 }
 
 static void c_step(Env *env) {

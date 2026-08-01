@@ -35,6 +35,7 @@ def _native_observation(agents: int) -> torch.Tensor:
     values[:, EDGE_FRAME_PIXELS + 14] = 1.0
     values[:, EDGE_FRAME_PIXELS + 19] = 1.0
     values[:, EDGE_OBSERVATION_DIM] = 0.8
+    values[:, -1] = 64.0
     return values
 
 

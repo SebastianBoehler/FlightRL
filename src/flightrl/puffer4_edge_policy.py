@@ -6,6 +6,7 @@ from torch import nn
 from flightrl.puffer4_edge_action_contract import (
     EDGE_CONTROLLED_ACTION_AXES,
     EDGE_CONTROLLED_TELEMETRY_INDICES,
+    EDGE_LEARNED_DELTA_LIMIT,
 )
 from flightrl.puffer4_edge_contract import (
     EDGE_ACTION_DIM,
@@ -82,7 +83,7 @@ class EdgeNavigationActor(nn.Module):
         self.recurrent = HardGatedRecurrentCell(hidden_size)
         self.action_head = nn.Sequential(
             nn.Linear(hidden_size, len(EDGE_CONTROLLED_ACTION_AXES)),
-            nn.Hardtanh(-1.0, 1.0),
+            nn.Hardtanh(-EDGE_LEARNED_DELTA_LIMIT, EDGE_LEARNED_DELTA_LIMIT),
         )
         nn.init.zeros_(self.action_head[0].weight)
         nn.init.zeros_(self.action_head[0].bias)

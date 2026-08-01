@@ -100,6 +100,7 @@ void flightrl_edge_student_observation(
     float target_mean,
     int scene_seed,
     float camera_randomization,
+    int control_step,
     float camera_mask,
     float takeoff_origin_z,
     const float *mission_origin_position,
@@ -110,7 +111,7 @@ void flightrl_edge_student_observation(
 ) {
     flightrl_sixdof_edge_door_observation_scene(
         position, quaternion, room, door, obstacle, target_mean, scene_seed,
-        camera_randomization, grounding, observation
+        camera_randomization, control_step, grounding, observation
     );
     if (camera_mask > 0.5f) {
         memset(observation, 0, sizeof(float) * SIXDOF_VISION_PIXELS);
@@ -146,6 +147,7 @@ int flightrl_edge_student_update_target_observed(
 void flightrl_edge_student_training_tail(
     const float *teacher_action,
     const float *grounding,
+    uint8_t scene_group_id,
     float *observation
 ) {
     int tail = FLIGHTRL_EDGE_ACTOR_OBS_DIM;
@@ -158,4 +160,16 @@ void flightrl_edge_student_training_tail(
         grounding,
         sizeof(float) * FLIGHTRL_EDGE_GROUNDING_DIM
     );
+    flightrl_edge_student_scene_group_tail(scene_group_id, observation);
+}
+
+void flightrl_edge_student_scene_group_tail(
+    uint8_t scene_group_id,
+    float *observation
+) {
+    int offset = (
+        FLIGHTRL_EDGE_ACTOR_OBS_DIM + FLIGHTRL_EDGE_ACTION_DIM
+        + FLIGHTRL_EDGE_GROUNDING_DIM
+    );
+    observation[offset] = (float)scene_group_id;
 }

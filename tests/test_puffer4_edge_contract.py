@@ -47,7 +47,7 @@ def test_edge_contract_is_single_frame_and_host_detector_free() -> None:
         "kind": "bounded_residual_over_stm32_applied_previous_action",
         "feedback_telemetry_indices": [15, 18],
         "feedback_index_space": "zero_based_telemetry_segment",
-        "learned_delta_clip": [-1.0, 1.0],
+        "learned_delta_clip": [-2.0, 2.0],
         "final_clip": [-1.0, 1.0],
         "delta_head_initialization": "exact_zero_weights_and_bias",
         "initial_policy": "controlled_axis_persistence",

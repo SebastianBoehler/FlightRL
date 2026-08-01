@@ -536,4 +536,5 @@ void flightrl_sixdof_door_observation_scene(
     );
 }
 
+#include "native_edge_sensor_camera.inc"
 #include "native_edge_student_vision.inc"

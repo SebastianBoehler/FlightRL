@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -94,6 +95,12 @@ def write_sequence(path: Path, split: str, seed: int, fingerprint: dict) -> Path
     grounding[bright] = (1.0, 0.25, -0.25, 0.4)
     resets = np.zeros((steps, agents), dtype=np.uint8)
     resets[0] = 1
+    episode_ids = np.broadcast_to(
+        np.arange(agents, dtype=np.uint64), (steps, agents)
+    ).copy()
+    scene_groups = np.broadcast_to(
+        np.where(bright[0], 0, 64).astype(np.uint8), (steps, agents)
+    ).copy()
     profile = {
         "obstacle_probability": 0.5,
         "camera_randomization": 1.0,
@@ -109,6 +116,8 @@ def write_sequence(path: Path, split: str, seed: int, fingerprint: dict) -> Path
         behavior_actions=actions.copy(),
         execution_student_mask=np.zeros(agents, dtype=np.uint8),
         grounding=grounding,
+        episode_ids=episode_ids,
+        scene_group_ids=scene_groups,
         resets=resets,
         dones=np.zeros((steps, agents), dtype=np.uint8),
         metadata=edge_dataset_metadata(
@@ -143,11 +152,24 @@ def training_report(
 
     train_dataset = load_edge_sequence_dataset(train)
     selection_dataset = load_edge_sequence_dataset(selection)
-    trained, report = train_edge_student(
-        train_dataset,
-        selection_dataset,
-        EdgeTrainConfig(epochs=8, tbptt_steps=2, learning_rate=5.0e-3),
-    )
+    coverage = {
+        "train": _fixture_coverage(train_dataset),
+        "selection": _fixture_coverage(selection_dataset),
+    }
+    with patch(
+        "flightrl.puffer4_edge_training.require_edge_training_coverage",
+        return_value=coverage,
+    ):
+        trained, report = train_edge_student(
+            train_dataset,
+            selection_dataset,
+            EdgeTrainConfig(
+                epochs=8,
+                tbptt_steps=2,
+                warmup_batch_size=4,
+                learning_rate=5.0e-3,
+            ),
+        )
     actor.load_state_dict(trained.state_dict(), strict=True)
     report["datasets"] = {
         "train": file_identity(train),
@@ -158,6 +180,12 @@ def training_report(
     ]
     report["source_identity"] = edge_training_source_identity()
     return report
+
+
+def _fixture_coverage(dataset) -> dict[str, int]:
+    from flightrl.puffer4_edge_coverage import edge_realized_coverage
+
+    return edge_realized_coverage(dataset)
 
 
 def checkpoint_artifacts(

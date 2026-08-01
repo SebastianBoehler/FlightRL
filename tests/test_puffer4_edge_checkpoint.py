@@ -180,6 +180,7 @@ def test_edge_checkpoint_rejects_contract_and_source_identity_tampering(
             "baseline gate",
         ),
         ("baselines", {}, "baselines"),
+        ("realized_coverage", {}, "coverage"),
         ("source_identity", {}, "source identity"),
     ],
 )

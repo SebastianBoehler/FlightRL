@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("artifacts/edge_v3/edge_door_training.json"),
     )
     parser.add_argument("--epochs", type=int, default=8)
+    parser.add_argument("--warmup-epochs", type=int, default=2)
+    parser.add_argument("--warmup-batch-size", type=int, default=512)
     parser.add_argument("--learning-rate", type=float, default=2.0e-3)
     parser.add_argument("--tbptt-steps", type=int, default=40)
     parser.add_argument("--seed", type=int, default=17)
@@ -59,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
 
     config = EdgeTrainConfig(
         epochs=args.epochs,
+        warmup_epochs=args.warmup_epochs,
+        warmup_batch_size=args.warmup_batch_size,
         learning_rate=args.learning_rate,
         tbptt_steps=args.tbptt_steps,
         seed=args.seed,

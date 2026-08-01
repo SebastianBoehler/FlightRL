@@ -103,10 +103,11 @@ def _evaluation_observation_views(
     observations: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     action_end = EDGE_OBSERVATION_DIM + EDGE_ACTION_DIM
+    grounding_end = action_end + 4
     return (
         observations[:, :EDGE_OBSERVATION_DIM],
         observations[:, EDGE_OBSERVATION_DIM:action_end],
-        observations[:, action_end:EDGE_STUDENT_OBSERVATION_DIM],
+        observations[:, action_end:grounding_end],
     )
 
 

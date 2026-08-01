@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flightrl.evidence_scope import file_identity, require_existing_file_identity
 from flightrl.puffer4_edge_budget import edge_actor_budget
+from flightrl.puffer4_edge_coverage import edge_realized_coverage
 from flightrl.puffer4_edge_native_build import (
     require_matching_edge_native_build_fingerprints,
 )
@@ -26,6 +27,7 @@ from flightrl.puffer4_edge_training import (
 )
 from flightrl.puffer4_edge_training_data import edge_sequence_loss_weights
 from flightrl.puffer4_edge_training_evidence import (
+    require_perception_warmup_evidence,
     require_training_selection_evidence,
 )
 from flightrl.puffer4_edge_training_state import edge_state_dict_sha256
@@ -63,6 +65,8 @@ _TRAINING_FIELDS = {
     "best_selection_visual_ablation_metrics",
     "selected_actor_state_sha256",
     "history",
+    "perception_warmup",
+    "realized_coverage",
     "datasets",
     "native_build_fingerprint",
     "source_identity",
@@ -116,6 +120,12 @@ def require_edge_training_evidence(
     train, selection = _require_training_datasets(
         report["datasets"], selection_identity
     )
+    realized = {
+        "train": edge_realized_coverage(train),
+        "selection": edge_realized_coverage(selection),
+    }
+    if report["realized_coverage"] != realized:
+        raise ValueError("edge training realized coverage does not reproduce")
     require_even_edge_tbptt_chunks(train, config)
     expected_targets = list(trained_target_ids)
     for dataset in (train, selection):
@@ -132,6 +142,9 @@ def require_edge_training_evidence(
         selection.metadata["native_build_fingerprint"],
     )
     weights = edge_sequence_loss_weights(selection)
+    require_perception_warmup_evidence(
+        report["perception_warmup"], config, actor, train, selection
+    )
     require_training_selection_evidence(
         report,
         selection,

@@ -26,7 +26,8 @@ def test_evaluation_observation_views_follow_contract_dimensions() -> None:
     assert model.shape == (1, EDGE_OBSERVATION_DIM)
     assert action.shape == (1, EDGE_ACTION_DIM)
     assert grounding.shape == (1, 4)
-    assert torch.equal(torch.cat((model, action, grounding), dim=1), observations)
+    expected = observations[:, : EDGE_OBSERVATION_DIM + EDGE_ACTION_DIM + 4]
+    assert torch.equal(torch.cat((model, action, grounding), dim=1), expected)
 
 
 def _passing_metrics() -> dict[str, float]:

@@ -14,6 +14,10 @@ from flightrl.evidence_scope import file_identity
 from flightrl.puffer4_config import Puffer4ExportSettings
 from flightrl.puffer4_door_mission import FIXED_DOOR_MISSION_METRIC_V1
 from flightrl.puffer4_edge_checkpoint import load_edge_checkpoint
+from flightrl.puffer4_edge_collection_arrays import (
+    EdgeEpisodeIdTracker,
+    allocate_edge_collection_arrays,
+)
 from flightrl.puffer4_edge_dataset import (
     EDGE_STUDENT_OBSERVATION_DIM,
     adapt_native_door_observation_batch,
@@ -184,7 +188,8 @@ def collect_dataset(
         )
         if terminals.shape != (agents,) or terminals.dtype != torch.float32:
             raise ValueError("native edge terminal buffer is incompatible")
-        arrays = _allocate(steps, agents)
+        arrays = allocate_edge_collection_arrays(steps, agents)
+        episode_ids = EdgeEpisodeIdTracker.create(agents)
         reset = np.ones(agents, dtype=np.uint8)
         state = execution_actor.initial_state(agents) if execution_actor else None
         mask = fixed_student_mask(metadata, agents)
@@ -200,6 +205,8 @@ def collect_dataset(
             arrays["target_ids"][step] = batch.target_ids
             arrays["teacher_actions"][step] = batch.teacher_actions
             arrays["grounding"][step] = batch.grounding
+            arrays["episode_ids"][step] = episode_ids.assign(reset)
+            arrays["scene_group_ids"][step] = batch.scene_group_ids
             arrays["resets"][step] = reset
             teacher_actions = torch.from_numpy(batch.teacher_actions)
             if execution_actor is not None:
@@ -232,21 +239,6 @@ def collect_dataset(
     dataset = EdgeSequenceDataset(metadata=metadata, **arrays)
     require_edge_sequence_dataset(dataset)
     return dataset
-
-
-def _allocate(steps: int, agents: int) -> dict[str, np.ndarray]:
-    prefix = (steps, agents)
-    return {
-        "packed_frames": np.empty(prefix + (1536,), dtype=np.uint8),
-        "telemetry": np.empty(prefix + (19,), dtype=np.float32),
-        "target_ids": np.empty(prefix, dtype=np.uint8),
-        "teacher_actions": np.empty(prefix + (4,), dtype=np.float32),
-        "behavior_actions": np.empty(prefix + (4,), dtype=np.float32),
-        "execution_student_mask": np.empty(agents, dtype=np.uint8),
-        "grounding": np.empty(prefix + (4,), dtype=np.float32),
-        "resets": np.empty(prefix, dtype=np.uint8),
-        "dones": np.empty(prefix, dtype=np.uint8),
-    }
 
 
 @torch.no_grad()

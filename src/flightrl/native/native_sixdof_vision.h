@@ -84,6 +84,7 @@ void flightrl_sixdof_edge_door_observation_scene(
     float target_mean,
     int scene_seed,
     float camera_randomization,
+    int control_step,
     float *door_grounding,
     float *observation
 );

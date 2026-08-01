@@ -34,6 +34,7 @@ DOOR_NATIVE_FILES = (
     "native_sixdof_vision.c",
     "native_sixdof_vision.h",
     "native_sixdof_vision_surfaces.inc",
+    "native_edge_sensor_camera.inc",
     "native_edge_student_vision.inc",
     "native_door_scene.c",
     "native_door_scene.h",

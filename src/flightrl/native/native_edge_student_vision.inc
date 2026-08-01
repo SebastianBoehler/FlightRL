@@ -48,6 +48,7 @@ void flightrl_sixdof_edge_door_observation_scene(
     float target_mean,
     int scene_seed,
     float camera_randomization,
+    int control_step,
     float *door_grounding,
     float *observation
 ) {
@@ -65,7 +66,9 @@ void flightrl_sixdof_edge_door_observation_scene(
         door_mask,
         current
     );
-    randomize_door_camera(current, camera_randomization, scene_seed);
+    randomize_edge_door_camera(
+        current, camera_randomization, scene_seed, control_step
+    );
     flightrl_mask_door_airframe(
         current,
         SIXDOF_VISION_WIDTH,

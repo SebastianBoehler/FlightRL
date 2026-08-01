@@ -15,7 +15,7 @@ NATIVE = ROOT / "src/flightrl/native"
 PIXELS = 64 * 48
 TELEMETRY = 19
 ACTOR_OBS = PIXELS + TELEMETRY + 3
-STUDENT_OBS = ACTOR_OBS + 8
+STUDENT_OBS = ACTOR_OBS + 9
 
 
 @pytest.fixture(scope="module")
@@ -180,6 +180,7 @@ def test_training_tail_is_teacher_four_then_grounding_four(edge_native) -> None:
     tail_fn.argtypes = (
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
+        ctypes.c_uint8,
         ctypes.POINTER(ctypes.c_float),
     )
     output = np.full(STUDENT_OBS, np.nan, dtype=np.float32)
@@ -187,13 +188,14 @@ def test_training_tail_is_teacher_four_then_grounding_four(edge_native) -> None:
     tail_fn(
         _floats(0.8, -0.25),
         _floats(1.0, -0.5, 0.25, 0.4),
+        109,
         output.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
     )
 
     np.testing.assert_array_equal(
         output[ACTOR_OBS:],
         np.asarray(
-            (0.8, 0.0, 0.0, -0.25, 1.0, -0.5, 0.25, 0.4),
+            (0.8, 0.0, 0.0, -0.25, 1.0, -0.5, 0.25, 0.4, 109.0),
             dtype=np.float32,
         ),
     )
@@ -206,6 +208,7 @@ def test_full_edge_observation_is_gray4_exact_and_door_conditioned(edge_native) 
         ctypes.c_float,
         ctypes.c_int,
         ctypes.c_float,
+        ctypes.c_int,
         ctypes.c_float,
         ctypes.c_float,
         ctypes.POINTER(ctypes.c_float),
@@ -228,6 +231,7 @@ def test_full_edge_observation_is_gray4_exact_and_door_conditioned(edge_native) 
         60.0,
         13,
         0.0,
+        0,
         0.0,
         0.0,
         _floats(0.0, 0.0, 0.8),
@@ -254,3 +258,6 @@ def test_episode_group_captures_authoritative_reset_visibility() -> None:
     assert reset_body.index("write_door_observation(env, 1)") < reset_body.index(
         "capture_door_episode_group(env, (uint8_t)low_light)"
     )
+    assert reset_body.index(
+        "capture_door_episode_group(env, (uint8_t)low_light)"
+    ) < reset_body.index("flightrl_edge_student_scene_group_tail")

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from pathlib import Path
-import re
 from typing import Sequence
 
 import numpy as np
@@ -26,61 +24,10 @@ from flightrl.puffer4_edge_schema import (
 from flightrl.puffer4_edge_wire_codec import pack_gray4, unpack_gray4
 
 
-EDGE_STUDENT_TRAINING_TAIL_DIM = EDGE_ACTION_DIM + 4
+EDGE_STUDENT_TRAINING_TAIL_DIM = EDGE_ACTION_DIM + 4 + 1
 EDGE_STUDENT_OBSERVATION_DIM = EDGE_OBSERVATION_DIM + EDGE_STUDENT_TRAINING_TAIL_DIM
 
 pack_gray4_nibbles, unpack_gray4_nibbles = pack_gray4, unpack_gray4
-
-
-def edge_execution_provenance(
-    execution_policy: object,
-    checkpoint_identity: object,
-    *,
-    split: object,
-    agents: object,
-    student_fraction: object = None,
-    mix_seed: object = None,
-) -> dict:
-    if execution_policy not in {"privileged_teacher", "dagger_student"}:
-        raise ValueError("edge dataset execution policy is unsupported")
-    if execution_policy == "dagger_student":
-        if split != "train":
-            raise ValueError("edge DAgger data is restricted to the train split")
-        _validate_checkpoint_identity(checkpoint_identity)
-        if type(agents) is not int or agents <= 0:
-            raise ValueError("edge DAgger agents must be positive")
-        if (
-            isinstance(student_fraction, bool)
-            or not isinstance(student_fraction, (int, float))
-            or not isfinite(float(student_fraction))
-            or not 0.0 < float(student_fraction) <= 1.0
-        ):
-            raise ValueError("edge DAgger student fraction must be in (0, 1]")
-        student_agents = round(float(student_fraction) * agents)
-        if abs(float(student_fraction) * agents - student_agents) > 1.0e-12:
-            raise ValueError("edge DAgger student fraction must select exact agents")
-        if type(mix_seed) is not int or not 0 <= mix_seed < 2**32:
-            raise ValueError("edge DAgger execution mix seed must be uint32")
-        student = student_agents / agents
-        teacher = 1.0 - student
-        identity = dict(checkpoint_identity)
-        schedule = "fixed_per_agent_sha256_rank_v1"
-    else:
-        provenance = (checkpoint_identity, student_fraction, mix_seed)
-        if any(value is not None for value in provenance):
-            raise ValueError("edge teacher data cannot bind checkpoint provenance")
-        teacher, student, identity = 1.0, 0.0, None
-        schedule = "privileged_teacher"
-    return {
-        "execution_policy": execution_policy,
-        "execution_checkpoint_identity": identity,
-        "execution_mix": {
-            "teacher": teacher,
-            "student": student,
-            "schedule": schedule,
-            "seed": mix_seed,
-        },
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +37,7 @@ class EdgeTeacherRecord:
     target_id: int
     teacher_action: tuple[float, ...]
     grounding: tuple[float, ...]
+    scene_group_id: int
     reset: bool
     done_after_action: bool
 
@@ -103,6 +51,7 @@ class EdgeTeacherRecord:
         object.__setattr__(self, "telemetry", telemetry)
         object.__setattr__(self, "teacher_action", action)
         object.__setattr__(self, "grounding", grounding)
+        _validate_scene_group_id(self.scene_group_id)
         validate_edge_target_id(self.target_id)
         _validate_flag(self.reset, "reset")
         _validate_flag(self.done_after_action, "done-after-action")
@@ -126,6 +75,7 @@ class EdgeTeacherBatch:
     target_ids: np.ndarray
     teacher_actions: np.ndarray
     grounding: np.ndarray
+    scene_group_ids: np.ndarray
 
 
 def adapt_native_door_observation(
@@ -148,6 +98,7 @@ def adapt_native_door_observation(
         target_id=validated_target,
         teacher_action=tuple(float(value) for value in batch.teacher_actions[0]),
         grounding=tuple(float(value) for value in batch.grounding[0]),
+        scene_group_id=int(batch.scene_group_ids[0]),
         reset=reset,
         done_after_action=done_after_action,
     )
@@ -161,6 +112,7 @@ def adapt_native_door_observation_batch(
     telemetry_end = frame_end + EDGE_TELEMETRY_DIM
     actor_end = telemetry_end + EDGE_MISSION_TOKEN_COUNT
     action_end = actor_end + EDGE_ACTION_DIM
+    grounding_end = action_end + 4
     frames = values[:, :frame_end]
     levels = frames * 15.0
     if np.any((frames < 0.0) | (frames > 1.0)) or not np.allclose(
@@ -175,14 +127,20 @@ def adapt_native_door_observation_batch(
     telemetry = values[:, frame_end:telemetry_end]
     mission = values[:, telemetry_end:actor_end]
     actions = values[:, actor_end:action_end]
-    grounding = values[:, action_end:]
+    grounding = values[:, action_end:grounding_end]
+    scene_groups = values[:, grounding_end]
     _validate_batch_values(telemetry, mission, actions, grounding)
+    if np.any(scene_groups != np.rint(scene_groups)) or np.any(
+        (scene_groups < 0.0) | (scene_groups > 127.0)
+    ):
+        raise ValueError("native edge scene group ID is invalid")
     return EdgeTeacherBatch(
         packed_frames=packed.copy(),
         telemetry=telemetry.copy(),
         target_ids=np.argmax(mission, axis=1).astype(np.uint8),
         teacher_actions=actions.copy(),
         grounding=grounding.copy(),
+        scene_group_ids=scene_groups.astype(np.uint8),
     )
 
 
@@ -284,16 +242,7 @@ def _validate_flag(value: object, label: str) -> bool:
     return value
 
 
-def _validate_checkpoint_identity(identity: object) -> None:
-    if not isinstance(identity, dict) or set(identity) != {"path", "sha256"}:
-        raise ValueError("edge DAgger execution checkpoint identity is invalid")
-    path = identity["path"]
-    digest = identity["sha256"]
-    if (
-        not isinstance(path, str)
-        or not path
-        or not Path(path).is_absolute()
-        or not isinstance(digest, str)
-        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-    ):
-        raise ValueError("edge DAgger execution checkpoint identity is invalid")
+def _validate_scene_group_id(value: object) -> int:
+    if type(value) is not int or not 0 <= value <= 127:
+        raise ValueError("edge scene group ID is invalid")
+    return value

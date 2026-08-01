@@ -5,7 +5,13 @@ from math import isfinite
 
 import torch
 
+from flightrl.puffer4_edge_coverage import require_edge_training_coverage
 from flightrl.puffer4_edge_policy import EdgeNavigationActor
+from flightrl.puffer4_edge_perception_warmup import (
+    edge_control_state_dict,
+    require_edge_perception_warmup_batches,
+    warmup_edge_perception,
+)
 from flightrl.puffer4_edge_native_build import (
     require_matching_edge_native_build_fingerprints,
 )
@@ -51,6 +57,8 @@ def edge_training_baselines(
 @dataclass(frozen=True, slots=True)
 class EdgeTrainConfig:
     epochs: int = 8
+    warmup_epochs: int = 2
+    warmup_batch_size: int = 512
     learning_rate: float = 2.0e-3
     tbptt_steps: int = 40
     seed: int = 17
@@ -59,7 +67,9 @@ class EdgeTrainConfig:
     box_loss_weight: float = 0.20
 
     def __post_init__(self) -> None:
-        for name in ("epochs", "tbptt_steps"):
+        for name in (
+            "epochs", "warmup_epochs", "warmup_batch_size", "tbptt_steps"
+        ):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f"edge training {name} must be a positive integer")
         if type(self.seed) is not int or self.seed < 0:
@@ -95,10 +105,18 @@ def train_edge_student(
     if selection.shape[1] < 2:
         raise ValueError("visual ablation requires at least two selection agents")
     require_even_edge_tbptt_chunks(train, config)
+    require_edge_perception_warmup_batches(train, config)
+    realized_coverage = require_edge_training_coverage(train, selection)
     torch.manual_seed(config.seed)
     actor = EdgeNavigationActor(hidden_size=48)
+    warmup = warmup_edge_perception(actor, train, selection, config)
+    control_names = set(edge_control_state_dict(actor))
     optimizer = torch.optim.AdamW(
-        actor.parameters(),
+        (
+            parameter
+            for name, parameter in actor.named_parameters()
+            if name in control_names
+        ),
         lr=config.learning_rate,
         weight_decay=1.0e-5,
     )
@@ -153,6 +171,8 @@ def train_edge_student(
                 config,
                 history,
                 baselines,
+                warmup,
+                realized_coverage,
                 status="rejected",
                 selected_record=fallback_record,
             )
@@ -164,6 +184,8 @@ def train_edge_student(
         config,
         history,
         baselines,
+        warmup,
+        realized_coverage,
         status="complete",
         selected_record=history[best_epoch - 1],
     )
@@ -255,7 +277,8 @@ def _train_epoch(actor, optimizer, dataset, config, weights) -> dict[str, float]
                 state,
             )
             losses = _losses(
-                action, grounding, visibility_logit, dataset, weights, step, config
+                action, grounding, visibility_logit, dataset, weights, step, config,
+                training=True,
             )
             chunk_loss = chunk_loss + losses["total"]
             _accumulate(totals, losses)

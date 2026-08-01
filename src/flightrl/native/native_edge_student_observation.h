@@ -11,12 +11,13 @@
 #define FLIGHTRL_EDGE_TARGET_DIM 3
 #define FLIGHTRL_EDGE_ACTION_DIM 4
 #define FLIGHTRL_EDGE_GROUNDING_DIM 4
+#define FLIGHTRL_EDGE_SCENE_GROUP_DIM 1
 #define FLIGHTRL_EDGE_ACTOR_OBS_DIM \
     (SIXDOF_VISION_PIXELS + FLIGHTRL_EDGE_TELEMETRY_DIM \
         + FLIGHTRL_EDGE_TARGET_DIM)
 #define FLIGHTRL_EDGE_STUDENT_OBS_DIM \
     (FLIGHTRL_EDGE_ACTOR_OBS_DIM + FLIGHTRL_EDGE_ACTION_DIM \
-        + FLIGHTRL_EDGE_GROUNDING_DIM)
+        + FLIGHTRL_EDGE_GROUNDING_DIM + FLIGHTRL_EDGE_SCENE_GROUP_DIM)
 
 void flightrl_edge_student_telemetry(
     const float *position,
@@ -41,6 +42,7 @@ void flightrl_edge_student_observation(
     float target_mean,
     int scene_seed,
     float camera_randomization,
+    int control_step,
     float camera_mask,
     float takeoff_origin_z,
     const float *mission_origin_position,
@@ -60,6 +62,12 @@ int flightrl_edge_student_update_target_observed(
 void flightrl_edge_student_training_tail(
     const float *teacher_action,
     const float *grounding,
+    uint8_t scene_group_id,
+    float *observation
+);
+
+void flightrl_edge_student_scene_group_tail(
+    uint8_t scene_group_id,
     float *observation
 );
 

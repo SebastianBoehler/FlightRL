@@ -40,6 +40,7 @@ static int write_door_observation(Env *env, uint8_t reset_temporal) {
         env->camera_mean,
         env->scene_seed,
         env->camera_randomization,
+        env->control_step,
         env->camera_mask,
         env->takeoff_origin_z,
         env->origin_position,
@@ -68,6 +69,7 @@ static int write_door_observation(Env *env, uint8_t reset_temporal) {
     flightrl_edge_student_training_tail(
         teacher,
         grounding,
+        reset_temporal ? 0u : env->scene_group_id,
         env->observations
     );
     return visible;

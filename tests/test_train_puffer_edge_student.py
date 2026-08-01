@@ -36,7 +36,10 @@ def test_rejected_training_writes_bound_report_without_checkpoint(
         },
     }
 
-    def reject(*_args, **_kwargs):
+    captured = {}
+
+    def reject(_train, _selection, config):
+        captured["config"] = config
         raise EdgeTrainingRejected(rejection_report)
 
     def checkpoint_must_not_be_built(*_args, **_kwargs):
@@ -61,6 +64,10 @@ def test_rejected_training_writes_bound_report_without_checkpoint(
             str(report_path),
             "--epochs",
             "1",
+            "--warmup-epochs",
+            "3",
+            "--warmup-batch-size",
+            "64",
         ]
     )
 
@@ -73,12 +80,17 @@ def test_rejected_training_writes_bound_report_without_checkpoint(
         "selection": file_identity(selection),
     }
     assert report["native_build_fingerprint"] == fingerprint
+    assert captured["config"].warmup_epochs == 3
+    assert captured["config"].warmup_batch_size == 64
     assert set(report["source_identity"]) == {
         "script",
         "artifact_paths",
+        "coverage",
         "trainer",
+        "perception_warmup",
         "policy",
         "training_data",
+        "training_math",
         "training_report",
         "selection_gate",
         "state_digest",
