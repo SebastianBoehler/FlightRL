@@ -11,7 +11,7 @@ ESP_REPO="https://github.com/larics/aideck-esp-firmware-udp.git"
 GAP8_REPO="https://github.com/bitcraze/aideck-gap8-examples.git"
 ESP_COMMIT="2b7152366048bbfa98eea343f68264c52ba0bd0d"
 GAP8_COMMIT="70b84590baa0a5fa7b98ea98842ed407de4dabd6"
-CFLOADER="${CFLOADER:-/Users/sebastianboehler/.local/bin/cfloader}"
+CFLOADER="${CFLOADER:-cfloader}"
 AIDECK_URI="${AIDECK_URI:-radio://0/80/2M/E7E7E7E7E7}"
 AIDECK_GAP8_URI="${AIDECK_GAP8_URI:-usb://0}"
 GAP8_FLASHER="$ROOT/scripts/flash_aideck_gap8.py"
@@ -21,6 +21,8 @@ ESP_IMAGE="$ESP_DIR/build/aideck_esp.bin"
 GAP8_IMAGE="$GAP8_DIR/examples/other/wifi-img-streamer/BUILD/GAP8_V2/GCC_RISCV_FREERTOS/target.board.devices.flash.img"
 GAP8_STABLE_IMAGE="$ARTIFACT_DIR/aideck-gap8-udp-jpeg-3fps.img"
 GAP8_MAX_IMAGE="$ARTIFACT_DIR/aideck-gap8-udp-jpeg-maxfps.img"
+GAP8_SEMANTIC_SAFE_IMAGE="$ARTIFACT_DIR/aideck-gap8-qvga-jpeg-pipelined-60fps-frame-safe.img"
+GAP8_POLICY_SAFE_IMAGE="$ARTIFACT_DIR/aideck-gap8-qqvga-gray4-pipelined-65fps-frame-safe.img"
 GAP8_BENCHMARK_VARIANTS=(qvga-fc qvga-cluster qqvga-fc qqvga-cluster)
 GAP8_CAPTURE_VARIANTS=(
   qvga-continuous
@@ -58,7 +60,11 @@ Commands:
   flash-benchmark VARIANT
              Flash one previously built GAP8 benchmark variant
   flash-semantic
-             Flash the 162x122 pipelined JPEG profile used for text grounding
+             Flash the frame-safe 324x244 JPEG profile used for text grounding
+  flash-semantic-highres
+             Alias for the frame-safe semantic profile
+  flash-policy-safe
+             Flash the frame-safe 64x48 packed gray4 policy profile
 
 The flash command requires:
   AIDECK_UDP_FLASH_CONFIRM=FLASH_AIDECK_UDP
@@ -104,10 +110,7 @@ prepare_sources() {
 validate_sources() {
   prepare_sources
   require_command docker
-  test -x "$CFLOADER" || {
-    echo "cfloader is not executable: $CFLOADER" >&2
-    exit 1
-  }
+  require_command "$CFLOADER"
   test -s "$GAP8_FLASHER" || {
     echo "GAP8 flasher is missing: $GAP8_FLASHER" >&2
     exit 1
@@ -411,7 +414,30 @@ flash_max_image() {
 }
 
 flash_semantic_image() {
-  flash_benchmark_variant qqvga-pipelined-65fps
+  flash_prebuilt_image "$GAP8_SEMANTIC_SAFE_IMAGE" "semantic QVGA JPEG"
+}
+
+flash_semantic_highres_image() {
+  flash_semantic_image
+}
+
+flash_policy_safe_image() {
+  flash_prebuilt_image "$GAP8_POLICY_SAFE_IMAGE" "policy gray4"
+}
+
+flash_prebuilt_image() {
+  local image="$1"
+  local profile="$2"
+  test "${AIDECK_UDP_FLASH_CONFIRM:-}" = "FLASH_AIDECK_UDP" || {
+    echo "Refusing to flash without AIDECK_UDP_FLASH_CONFIRM=FLASH_AIDECK_UDP" >&2
+    exit 1
+  }
+  test -s "$image" || {
+    echo "Missing frame-safe image: $image" >&2
+    exit 1
+  }
+  flash_gap8_image "$image"
+  echo "Flashed and restarted frame-safe $profile profile."
 }
 
 flash_benchmark_variant() {
@@ -466,6 +492,12 @@ case "${1:-}" in
     ;;
   flash-semantic)
     flash_semantic_image
+    ;;
+  flash-semantic-highres)
+    flash_semantic_highres_image
+    ;;
+  flash-policy-safe)
+    flash_policy_safe_image
     ;;
   *)
     usage

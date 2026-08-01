@@ -8,6 +8,7 @@ from .mission_spec import TargetAnchor
 
 
 Point3 = tuple[float, float, float]
+Color3 = tuple[float, float, float]
 Color4 = tuple[float, float, float, float]
 
 
@@ -55,6 +56,7 @@ class SemanticObject:
     approach_yaw_rad: float | None = None
     collision: bool = True
     rgba: Color4 = (0.45, 0.45, 0.45, 1.0)
+    shape: str = "box"
 
     def __post_init__(self) -> None:
         if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", self.object_id) is None:
@@ -71,6 +73,8 @@ class SemanticObject:
             raise ValueError("approach yaw must be finite")
         if len(self.rgba) != 4 or not all(0.0 <= value <= 1.0 for value in self.rgba):
             raise ValueError("object RGBA values must be in [0, 1]")
+        if self.shape not in {"box", "cylinder"}:
+            raise ValueError("semantic object shape must be box or cylinder")
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -87,12 +91,29 @@ class ResolvedTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class RoomAppearance:
+    floor_rgb1: Color3 = (0.58, 0.60, 0.62)
+    floor_rgb2: Color3 = (0.72, 0.74, 0.76)
+    wall_rgb1: Color3 = (0.72, 0.74, 0.76)
+    wall_rgb2: Color3 = (0.86, 0.88, 0.90)
+    checker_repeat: float = 4.0
+
+    def __post_init__(self) -> None:
+        colors = (*self.floor_rgb1, *self.floor_rgb2, *self.wall_rgb1, *self.wall_rgb2)
+        if not all(0.0 <= value <= 1.0 for value in colors):
+            raise ValueError("room appearance RGB values must be in [0, 1]")
+        if self.checker_repeat <= 0.0 or not isfinite(self.checker_repeat):
+            raise ValueError("room checker repeat must be finite and positive")
+
+
+@dataclass(frozen=True, slots=True)
 class SemanticScene:
     room: Bounds3D
     objects: tuple[SemanticObject, ...]
     flight_altitude_m: float = 0.8
     waypoint_clearance_m: float = 0.25
     boundary_margin_m: float = 0.12
+    appearance: RoomAppearance = RoomAppearance()
 
     def __post_init__(self) -> None:
         if not self.room.minimum[2] < self.flight_altitude_m < self.room.maximum[2]:

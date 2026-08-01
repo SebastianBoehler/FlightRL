@@ -150,6 +150,29 @@ the 65 Hz control rate. The GAP8 path can later receive a distilled
 closed-vocabulary detector or tracker, while the same navigation policy and
 target-observation contract remain unchanged.
 
+The Mac-hosted Grounding DINO path is development scaffolding, not the intended
+final runtime. The primary deployment design is one shared target-conditioned
+recurrent policy:
+
+```text
+validated mission or prompt
+  -> compact target token
+  -> on-edge detector/tracker and recurrent visual navigation policy
+  -> bounded velocity and yaw-rate setpoints
+  -> Crazyflie firmware stabilizer
+```
+
+Free-form language may initially be compiled to the target token on the host at
+mission start; it does not need to remain in the control loop. A checkpoint
+compiled with one constant token can be useful for a small “always find the
+monitor” deployment test, but training one separate navigation policy per
+object is not the target architecture because it duplicates exploration,
+avoidance, and approach behavior.
+
+The current simulator vocabulary is `door`, `monitor`, and `sink`. Adding
+`window` requires a scene object, command-token entry, detector examples, and
+held-out evaluation; it is not implemented by the current checkpoint.
+
 A privileged simulation teacher may see object poses and labels. The deployed
 student must see only camera data, IMU/odometry, previous action, mission state,
 and the grounder's relative target signal. Ground-truth target direction must
@@ -336,3 +359,280 @@ explicitly returns to that bearing before visual tracking. The fixes passed the
 focused controller and stream tests but have not been flown yet. Battery
 rebounded to 40 percent after the window run, so another live iteration requires
 charging first.
+
+### Resolution and bit-depth ablation
+
+`scripts/evaluate_semantic_resolution_sweep.py` evaluates matched source frames
+at:
+
+```text
+324x244, 243x183, 162x122, 128x96, 96x72, 64x48, 48x36
+```
+
+Each spatial resolution is tested at 8-bit and 4-bit grayscale. The report
+compares each variant with the QVGA 8-bit baseline using frame-level target
+recall, new false positives, confidence, and box IoU. Raw, degraded, and
+annotated frames are retained for inspection.
+
+A preliminary ten-frame screen sweep is stored in
+`artifacts/semantic/screen-resolution-sweep-qvga-10frame-20260726/`. The
+screens are large and close in this archive, so this is a pipeline validation,
+not the final operating-distance result:
+
+- QVGA through `128x96`, at both bit depths, retained all detections with at
+  least 0.97 median box IoU.
+- `96x72` 8-bit retained the signal, while 4-bit fell to 0.40 recall.
+- `64x48` happened to retain all detections, demonstrating that model
+  degradation is not monotonic under resizing.
+- `48x36` continued to emit monitor detections but switched between monitor
+  instances, producing zero IoU against the QVGA-selected monitor. It therefore
+  fails localization stability even though class confidence remains.
+
+The real boundary must be measured from one QVGA capture set containing the
+same screen at known distances, preferably 1.0, 1.5, 2.0, 2.5, and 3.0 meters.
+Only the highest-resolution stream is captured live; every lower-resolution
+input is generated from the same frames. This isolates resolution and bit depth
+from exposure, pose, and scene changes.
+
+The QVGA capture profile is:
+
+```bash
+AIDECK_UDP_FLASH_CONFIRM=FLASH_AIDECK_UDP \
+  scripts/aideck_udp_streamer.sh flash-semantic-highres
+```
+
+### Frame-integrity correction
+
+The first QVGA monitor flight exposed raster-wrap seams: a sharp horizontal
+boundary followed by a vertical boundary inside an otherwise decodable JPEG.
+These regions are pieces of different sensor frames, not dark objects in the
+room. The affected capture loop allowed both camera DMA buffers to drain while
+JPEG and CPX processing ran, then queued the next transfer while the sensor was
+already partway through a frame.
+
+The GAP SDK camera contract requires at least two buffers to stay queued while
+the camera is running. PRs
+[#157](https://github.com/bitcraze/aideck-gap8-examples/pull/157) and
+[#158](https://github.com/bitcraze/aideck-gap8-examples/pull/158) now use three
+buffers: two remain queued for capture and one is reserved for the consumer.
+When processing is slower than capture, complete frames are discarded.
+
+Both corrected profiles build successfully:
+
+- QVGA JPEG, pipelined, 60 FPS sensor timing:
+  `246b1b7534483bf1238e5725dab8e55c8a27a66b2aab1ff0477784fd2e7490a5`
+- `64x48` packed gray4, pipelined, 65 FPS sensor timing:
+  `94cbee3a07eba2e7fb7a978f60f4c179c6d7f8bd3b8850fcaf532120cfbf9e9a`
+
+The corrected QVGA image passed:
+
+- 100 stationary frames at 13.71 Hz, with one dropped frame and no visible
+  raster-wrap seam;
+- 220 hand-moved frames at 13.77 Hz, with zero dropped frames and no visible
+  seam across large yaw and pitch changes;
+- monitor grounding in `13/18` sampled live frames under the final calibrated
+  gate, with detections aligned to the real screen.
+
+Do not use the earlier QVGA flight to assess grounding precision: corrupt frame
+regions produced several accepted proposals.
+
+The first no-screen view exposed a wide dark wall feature that reached CLIP
+probability `0.555`. A second view initially labeled as a wall negative contains
+a monitor-shaped object at the upper-left edge and is therefore not a valid
+negative.
+
+Adding desk, window, and wall as competing Grounding DINO labels suppressed the
+real monitor proposals. On the same 12 positive frames, this produced `2/12`
+detections, while target-only proposals produced `10/12`. The final camera and
+replay gate therefore uses:
+
+- target-only Grounding DINO proposals with confidence at least `0.25`;
+- CLIP target probability at least `0.60`;
+- CLIP target-to-negative margin at least `0.45`.
+
+The final live reacquisition retained `13/18` monitor frames. Replay retained
+`18/23` frames from the preceding positive capture and rejected `0/17` frames
+from the clear wide-wall view. The ambiguous upper-left view was accepted in
+`17/17` frames and must not be counted as a false-positive measurement until the
+physical object is identified.
+
+This is enough for continued camera-only and shadow testing, but it is not
+evidence of general object grounding. Each new mission noun needs positive and
+physically verified hard-negative calibration before it can control flight.
+
+The corrected gray4 image remains build-verified only until it receives the same
+moving hardware gate.
+
+### Height-controlled monitor shadow flight
+
+The `0.55 m` shadow flight produced no monitor detections because the camera saw
+under the desk; only the bottom edge of the displays entered the top pixels. A
+later `1.0 m` run produced `8/24` in-flight detections, but the desk height was
+changed during the run and the result cannot be used as a controlled comparison.
+
+With the desk fixed at its raised height, the final `1.3 m` run produced:
+
+- `20/21` sampled in-flight frames with accepted monitor detections;
+- accepted boxes aligned with the physical displays across the `45` degree yaw
+  sweep and return;
+- altitude between `1.301` and `1.378 m` during the logged sequence;
+- maximum estimated horizontal drift of `0.233 m`;
+- battery sag to `3.669 V`, with no tumbled flag.
+
+The post-flight check reported motors zero, no flying or tumbled state, and
+`20%` battery. Charge before any further flight.
+
+### First recurrent Puffer semantic checkpoint
+
+The first accepted semantic-navigation checkpoint is:
+
+```text
+artifacts/puffer_semantic/semantic_nav_seed726_8192.pt
+SHA-256 727d7e02b54247c9e1cc38b68a2f7efb39e61ce51ec1bdc01300debe8f3b4c1e
+```
+
+It was trained from randomized MuJoCo rooms and simulator expert actions, not
+from supervised labels copied from the earlier real flights. The actor has
+59,745 parameters and consumes `64x48` gray4 appearance/delta/motion, a
+`16x16` egocentric semantic map at `0.5 m/cell`, 13 proprioceptive values, and
+a three-category command token. A CNN, target-evidence centroid, and MinGRU
+produce firmware-level body velocity, vertical velocity, and yaw-rate
+setpoints. Crazyflie firmware remains responsible for stabilization.
+
+The PufferLib PPO continuation degraded the bootstrap policy and was rejected.
+The selected simulator-bootstrap state achieved the following over 16 episodes
+in four unseen rooms:
+
+- full observation: `31.25%` success and `0%` collision;
+- target evidence removed: `0%` success;
+- raw vision removed: `18.75%` success;
+- command token rotated: `31.25%` success.
+
+The command result is expected at this stage: Grounding DINO and CLIP resolve
+the text prompt into the target-evidence map before the actor. This is a
+camera-grounded semantic-navigation policy, not yet an independently
+language-grounded actor.
+
+The checkpoint also replayed 86 frames from an earlier real QVGA flight,
+including 13 accepted monitor detections. It produced finite proposals, but
+the raw median proposal was about `0.26 m/s` forward and `20 deg/s` yaw, so it
+is approved only for shadow logging. The reusable replay artifacts are:
+
+```text
+artifacts/puffer_semantic/semantic_nav_seed726_8192_live_replay.csv
+artifacts/puffer_semantic/semantic_nav_seed726_8192_live_replay.summary.json
+```
+
+The next live run must use the corrected semantic QVGA profile because the
+host grounder needs more than the optimized `64x48` gray4 stream. The policy
+adapter downsamples QVGA back to its exact `64x48` contract:
+
+```bash
+AIDECK_UDP_FLASH_CONFIRM=FLASH_AIDECK_UDP \
+  scripts/aideck_udp_streamer.sh flash-semantic-highres
+
+uv run --extra semantic --extra hardware \
+  python scripts/crazyflie_semantic_find.py \
+  --prompt "computer monitor" \
+  --shadow-checkpoint artifacts/puffer_semantic/semantic_nav_seed726_8192.pt \
+  --height-m 0.8 \
+  --duration-s 20 \
+  --flight \
+  --confirm-flight \
+  --confirm-semantic-yaw-control
+```
+
+This command leaves bounded reposition disabled. The existing discovery
+controller controls only yaw while firmware holds height; every Puffer proposal
+is written under `policy_shadow` with `controls_drone=false`. Recheck battery,
+deck detection, frame integrity, and monitor visibility at or below `0.8 m`
+immediately before launching.
+
+### Yaw-only Puffer live gate
+
+The visibility-conditioned v2 checkpoint reached the next live-flight gate:
+
+```text
+artifacts/puffer_semantic/semantic_nav_v2_seed726_8192.pt
+SHA-256 65fce7eea317e52e32f13ce8b421bd73a9f54895c325640117478ca1562705fa
+```
+
+It passed the recorded-flight replay gate with zero pre-acquisition and
+detection-suppressed translation, `100%` directional yaw agreement, detected
+yaw capped at `8 deg/s`, and search yaw below `20 deg/s`. The unseen-room
+simulation gate had zero collisions and correct bounded yaw, but zero complete
+missions. Therefore this checkpoint is approved only for yaw authority.
+Firmware stabilization, takeoff, altitude hold, timeout, and landing remain
+unchanged, while learned `vx`, `vy`, and `vz` are hard-clamped to zero.
+
+The generated gate contract is:
+
+```text
+artifacts/puffer_semantic/semantic_nav_v2_seed726_8192_next_live_readiness.json
+```
+
+It binds the evidence to the checkpoint hash. The live command refuses a
+mismatched checkpoint, a failed report, translation authority, missing
+confirmation, or bounded exploration. The next live run, after the user
+confirms the drone is charged and positioned, is:
+
+```bash
+uv run --extra semantic --extra hardware \
+  python scripts/crazyflie_semantic_find.py \
+  --prompt "computer monitor" \
+  --shadow-checkpoint \
+    artifacts/puffer_semantic/semantic_nav_v2_seed726_8192.pt \
+  --puffer-readiness-report \
+    artifacts/puffer_semantic/semantic_nav_v2_seed726_8192_next_live_readiness.json \
+  --puffer-yaw-control \
+  --height-m 0.8 \
+  --duration-s 20 \
+  --flight \
+  --confirm-flight \
+  --confirm-semantic-yaw-control \
+  --confirm-puffer-yaw-control
+```
+
+This is the first policy-authority gate, not a navigation success claim.
+Forward mission control stays disabled until an unseen-room simulator gate
+demonstrates reliable mission completion without collisions.
+
+#### First yaw-authority flight
+
+The gated run completed on 2026-07-27:
+
+```text
+artifacts/semantic/20260727T152639Z-computer-monitor
+```
+
+The drone flew for `20 s` at a `0.8 m` target height with no safety abort.
+Puffer yaw authority was active for all 57 processed frames, while every
+applied and logged translation command remained exactly zero. The host
+grounder accepted a monitor in 51 frames. Selected annotated frames show boxes
+on the physical displays rather than the bright floor or window region.
+
+The policy spent only six frames in no-detection search because a monitor
+entered view early. It reached the `20 deg/s` search cap and the `8 deg/s`
+detected-target cap, then settled to a median yaw command of `0.28 deg/s`.
+Telemetry estimated yaw from `-1.1` to `52.1` degrees, with a `-1.3` to `59.0`
+degree range. This validates acquisition and tracking, not a complete
+360-degree search.
+
+Altitude remained between `0.762` and `0.919 m`; maximum relative horizontal
+estimator displacement was `0.344 m`. Despite sunlight and reported airflow,
+maximum absolute roll and pitch were `1.95` and `1.30` degrees. A separate
+postflight sample recorded motors zero, `sys.isFlying=0`, `sys.isTumbled=0`,
+and approximately `4.05 V`.
+
+The next policy must not be trained or evaluated against a forced 360-degree
+scan. Rotation is only one possible information-gathering action. The intended
+mission is active semantic exploration: use recurrent map state to remember
+observed and unexplored space, move through visually free space, avoid
+obstacles, acquire the requested object whenever it enters view, and approach
+it safely. The live orchestrator therefore defaults to no mandatory initial
+scan and may complete as soon as a valid target is centered.
+
+Room-scale translation remains disabled at this gate. It should receive live
+authority only after the active-exploration policy demonstrates randomized-room
+mission completion, collision avoidance, target-hidden recovery, and bounded
+setpoint behavior in simulation and recorded-flight replay.

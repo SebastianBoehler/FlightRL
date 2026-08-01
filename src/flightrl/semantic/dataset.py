@@ -33,6 +33,7 @@ class SemanticRunWriter:
         *,
         command: DiscoveryCommand | None = None,
         telemetry: Mapping[str, Any] | None = None,
+        policy_shadow: Mapping[str, Any] | None = None,
         controls_drone: bool = False,
     ) -> Path:
         frame_path = self.frame_dir / f"frame-{frame.index:06d}.png"
@@ -48,6 +49,7 @@ class SemanticRunWriter:
             "grounding": grounding.to_dict(),
             "command": None if command is None else asdict(command),
             "telemetry": dict(telemetry or {}),
+            "policy_shadow": dict(policy_shadow or {}),
             "controls_drone": bool(controls_drone),
         }
         self._events.write(json.dumps(event, sort_keys=True) + "\n")

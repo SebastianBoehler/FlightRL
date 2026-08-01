@@ -117,6 +117,39 @@ class MinGRU(nn.Module):
             hidden = self._highway(hidden, out, highway)
         return hidden
 
+    def forward_train_stateful(
+        self,
+        hidden: torch.Tensor,
+        state: tuple[torch.Tensor],
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor]]:
+        recurrent = state[0]
+        state_out = []
+        for index, layer in enumerate(self.layers):
+            inner, gate, highway = layer(hidden).chunk(3, dim=-1)
+            log_coeffs = -F.softplus(gate)
+            log_values = -F.softplus(-gate) + self._log_g(inner)
+            accum = log_coeffs.cumsum(dim=1)
+            log_out = accum + (log_values - accum).logcumsumexp(dim=1)
+            initial = recurrent[index].clamp_min(1e-30).log().unsqueeze(1)
+            out = torch.logaddexp(log_out, initial + accum).exp()
+            hidden = self._highway(hidden, out, highway)
+            state_out.append(out[:, -1])
+        return hidden, (torch.stack(state_out, dim=0),)
+
+    def forward_train_stateful_masked(
+        self,
+        hidden: torch.Tensor,
+        state: tuple[torch.Tensor],
+        terminals: torch.Tensor,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor]]:
+        outputs = []
+        for step in range(hidden.shape[1]):
+            alive = (1.0 - terminals[:, step]).reshape(1, -1, 1)
+            state = tuple(value * alive for value in state)
+            output, state = self.forward_eval(hidden[:, step], state)
+            outputs.append(output)
+        return torch.stack(outputs, dim=1), state
+
 
 class FlightPolicy(nn.Module):
     def __init__(self, env, hidden_size: int = 128, num_layers: int = 2) -> None:

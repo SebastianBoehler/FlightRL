@@ -5,9 +5,9 @@ from time import time
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from flightrl.hardware.aideck_stream import AiDeckFrame
-from flightrl.semantic.grounding_dino import _detection, _matches_target
 from flightrl.semantic import (
     DiscoveryConfig,
     DiscoveryController,
@@ -15,8 +15,17 @@ from flightrl.semantic import (
     GroundingDetection,
     GroundingResult,
     NormalizedBox,
+    ResolutionVariant,
     SemanticRunWriter,
+    degrade_frame,
     require_semantic_frame,
+)
+from flightrl.semantic.clip_verifier import ClipVerifierConfig, padded_crop, target_description
+from flightrl.semantic.grounding_dino import (
+    GroundingDinoConfig,
+    _candidate_rows,
+    _detection,
+    _matches_target,
 )
 
 
@@ -191,6 +200,7 @@ def test_semantic_writer_persists_frame_detection_and_control(tmp_path) -> None:
             result,
             command=command,
             telemetry={"stateEstimate.z": 0.3},
+            policy_shadow={"controls_drone": False, "action_yaw": 0.25},
             controls_drone=False,
         )
 
@@ -199,6 +209,8 @@ def test_semantic_writer_persists_frame_detection_and_control(tmp_path) -> None:
     assert (tmp_path / "frames" / "frame-000004.png").exists()
     assert event["grounding"]["detections"][0]["label"] == "door"
     assert event["command"]["phase"] == "hold"
+    assert event["policy_shadow"]["controls_drone"] is False
+    assert event["policy_shadow"]["action_yaw"] == pytest.approx(0.25)
     assert event["controls_drone"] is False
 
 
@@ -237,3 +249,47 @@ def test_grounding_adapter_drops_empty_labels_and_degenerate_boxes() -> None:
     assert _detection("door", 0.4, (5.0, 1.0, 5.0, 5.0), 10, 10) is None
     assert _matches_target("door", "door")
     assert not _matches_target("door wall", "door")
+
+
+def test_target_only_candidates_do_not_depend_on_processor_text_labels() -> None:
+    processed = {
+        "text_labels": ["monitor", "extra label"],
+        "scores": [0.8],
+        "boxes": [(1.0, 2.0, 3.0, 4.0)],
+    }
+
+    assert _candidate_rows(
+        processed,
+        target="computer monitor",
+        target_only=True,
+    ) == (("computer monitor", 0.8, (1.0, 2.0, 3.0, 4.0)),)
+
+
+def test_resolution_degradation_has_requested_shape_and_bit_depth() -> None:
+    source = np.arange(324 * 244, dtype=np.uint8).reshape(244, 324)
+
+    gray4 = degrade_frame(source, ResolutionVariant(64, 48, 4))
+
+    assert gray4.shape == (48, 64)
+    assert len(np.unique(gray4)) <= 16
+
+
+def test_clip_verifier_target_description_and_padding() -> None:
+    config = ClipVerifierConfig()
+    grounder_config = GroundingDinoConfig()
+    detection = GroundingDetection(
+        "computer monitor",
+        0.8,
+        NormalizedBox(0.8, 0.2, 1.0, 0.4),
+    )
+    image = Image.fromarray(np.zeros((100, 200), dtype=np.uint8))
+
+    crop = padded_crop(image, detection, padding=0.5)
+
+    assert target_description("computer monitor") == "a computer monitor on a desk"
+    assert grounder_config.threshold == 0.25
+    assert grounder_config.distractor_labels == ()
+    assert config.minimum_probability == 0.60
+    assert config.minimum_margin == 0.45
+    assert crop.width == 60
+    assert crop.height == 40

@@ -11,6 +11,8 @@ from PIL import Image
 
 from flightrl.hardware.aideck_stream import AiDeckFrame
 from flightrl.semantic import (
+    ClipCropVerifier,
+    ClipVerifierConfig,
     GroundingDinoConfig,
     GroundingDinoGrounder,
     SemanticRunWriter,
@@ -27,18 +29,28 @@ def main() -> None:
     parser.add_argument("--model-id", default="IDEA-Research/grounding-dino-tiny")
     parser.add_argument("--device", choices=("cpu", "mps"), default="mps")
     parser.add_argument("--threshold", type=float, default=0.25)
+    parser.add_argument("--verifier-minimum-probability", type=float, default=0.60)
+    parser.add_argument("--verifier-minimum-margin", type=float, default=0.45)
     parser.add_argument("--max-frames", type=int, default=20)
     parser.add_argument("--min-frame-width", type=int, default=128)
     parser.add_argument("--require-detection", action="store_true")
     args = parser.parse_args()
 
     paths = image_paths(Path(args.input), args.max_frames)
+    verifier = ClipCropVerifier(
+        ClipVerifierConfig(
+            device=args.device,
+            minimum_probability=args.verifier_minimum_probability,
+            minimum_margin=args.verifier_minimum_margin,
+        )
+    )
     grounder = GroundingDinoGrounder(
         GroundingDinoConfig(
             model_id=args.model_id,
             device=args.device,
             threshold=args.threshold,
-        )
+        ),
+        verifier=verifier,
     )
     inference_ms: list[float] = []
     detected = 0
@@ -50,6 +62,9 @@ def main() -> None:
         "model_id": args.model_id,
         "device": args.device,
         "threshold": args.threshold,
+        "verifier_model_id": verifier.config.model_id,
+        "verifier_minimum_probability": verifier.config.minimum_probability,
+        "verifier_minimum_margin": verifier.config.minimum_margin,
         "distractor_labels": list(grounder.config.distractor_labels),
         "sources": [str(path) for path in paths],
     }
@@ -82,6 +97,7 @@ def main() -> None:
         "prompt": args.prompt,
         "model_id": args.model_id,
         "threshold": args.threshold,
+        "verifier_model_id": verifier.config.model_id,
         "frames_with_detection": detected,
         "detection_rate": detected / len(paths),
         "inference_ms_median": median(inference_ms),

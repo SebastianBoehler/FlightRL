@@ -1,31 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import gymnasium
 import numpy as np
 
+from flightrl.mujoco.camera_model import (
+    randomize_gray4_frame,
+    sample_gray4_camera_parameters,
+)
 from flightrl.mujoco.env import MuJoCoCrazyflieEnv
+from flightrl.mujoco.setpoint_control import VisualSetpointConfig, firmware_setpoint_actions
 from flightrl.navigation.semantic_scene import SemanticScene
 from flightrl.sixdof.env import quat_to_yaw, wrap_angle
 from flightrl.sixdof.geometry import quat_to_matrix
-from flightrl.sixdof.policies import roll_pitch_from_quat
 from flightrl.vision import VisionObservationConfig, VisionObservationEncoder
 
 
 INTENT_DIM = 6
-
-
-@dataclass(frozen=True, slots=True)
-class VisualSetpointConfig:
-    max_horizontal_speed_m_s: float = 0.20
-    max_vertical_speed_m_s: float = 0.10
-    max_yawrate_deg_s: float = 60.0
-    physics_substeps: int = 2
-    velocity_gain: float = 3.0
-    attitude_gain: float = 6.0
-    vertical_gain: float = 2.0
-    success_radius_m: float = 0.16
 
 
 class MuJoCoVisionPufferEnv:
@@ -140,47 +130,7 @@ class MuJoCoVisionPufferEnv:
         self.renderer.close()
 
     def _firmware_controller_actions(self, commands: np.ndarray) -> np.ndarray:
-        target_body_velocity = commands[:, :3] * np.asarray(
-            [
-                self.control.max_horizontal_speed_m_s,
-                self.control.max_horizontal_speed_m_s,
-                self.control.max_vertical_speed_m_s,
-            ],
-            dtype=np.float32,
-        )
-        yaw = quat_to_yaw(self.sim.quaternion)
-        cosine, sine = np.cos(yaw), np.sin(yaw)
-        current_body_velocity = np.column_stack(
-            (
-                cosine * self.sim.velocity[:, 0] + sine * self.sim.velocity[:, 1],
-                -sine * self.sim.velocity[:, 0] + cosine * self.sim.velocity[:, 1],
-            )
-        )
-        velocity_error_body = target_body_velocity[:, :2] - current_body_velocity
-        desired_pitch = np.clip(
-            self.control.velocity_gain * velocity_error_body[:, 0] / self.sim.gravity,
-            -0.25,
-            0.25,
-        )
-        desired_roll = np.clip(
-            -self.control.velocity_gain * velocity_error_body[:, 1] / self.sim.gravity,
-            -0.25,
-            0.25,
-        )
-        roll, pitch = roll_pitch_from_quat(self.sim.quaternion)
-        roll_rate = self.control.attitude_gain * (desired_roll - roll)
-        pitch_rate = self.control.attitude_gain * (desired_pitch - pitch)
-        thrust = self.control.vertical_gain * (
-            target_body_velocity[:, 2] - self.sim.velocity[:, 2]
-        ) / max(self.sim.gravity, 1e-6)
-        return np.column_stack(
-            (
-                np.clip(thrust, -1.0, 1.0),
-                np.clip(roll_rate / self.sim.max_rate[0], -1.0, 1.0),
-                np.clip(pitch_rate / self.sim.max_rate[1], -1.0, 1.0),
-                commands[:, 3],
-            )
-        ).astype(np.float32)
+        return firmware_setpoint_actions(self.sim, commands, self.control)
 
     def _write_observations(self) -> None:
         intent = self._intent_observation()
@@ -209,17 +159,20 @@ class MuJoCoVisionPufferEnv:
         ).astype(np.float32)
 
     def _camera_randomization(self, gray: np.ndarray, index: int) -> np.ndarray:
-        normalized = np.clip(gray / 255.0, 0.0, 1.0)
-        normalized = normalized ** self.gammas[index]
-        current_mean = max(float(normalized.mean() * 255.0), 1.0)
-        adjusted = normalized * (self.target_means[index] / current_mean)
-        noisy = adjusted * 255.0 + self.rng.normal(0.0, 2.0, size=gray.shape)
-        return (np.rint(np.clip(noisy, 0.0, 255.0) / 17.0) * 17.0).astype(np.uint8)
+        return randomize_gray4_frame(
+            gray,
+            target_mean=float(self.target_means[index]),
+            gamma=float(self.gammas[index]),
+            rng=self.rng,
+        )
 
     def _sample_camera_randomization(self, mask: np.ndarray) -> None:
-        count = int(np.sum(mask))
-        self.target_means[mask] = self.rng.uniform(35.0, 90.0, size=count)
-        self.gammas[mask] = self.rng.uniform(0.8, 1.2, size=count)
+        sample_gray4_camera_parameters(
+            self.rng,
+            mask,
+            self.target_means,
+            self.gammas,
+        )
 
     def _distance_to_target(self) -> np.ndarray:
         return np.linalg.norm(self.sim.target_position - self.sim.position, axis=1).astype(np.float32)

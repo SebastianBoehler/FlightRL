@@ -30,7 +30,7 @@ frames need a separate capture and timestamp-sync path.
   A post-capture radio check still reported `deck.bcAI=1`.
 - Crazyflie radio URI seen earlier: `radio://0/80/2M`.
 - Flow-only telemetry config works when the radio link is healthy.
-- `cfclient` and `cfloader` exist at `/Users/sebastianboehler/.local/bin`.
+- `cfclient` and `cfloader` were installed as user-level commands.
 - The active conda Python does not have `cfloader`, `cfclient`, or `cv2`.
 - The `cfclient` uv tool Python has `cflib` and `cfclient`, but not `cv2`.
 - Docker is available locally.
@@ -98,7 +98,7 @@ The important steps are:
 4. Flash the WiFi image streamer GAP8 app:
 
    ```bash
-   /Users/sebastianboehler/.local/bin/cfloader flash \
+   cfloader flash \
      aideck_gap8_wifi_img_streamer_with_ap.bin \
      deck-bcAI:gap8-fw \
      -w radio://0/80/2M
@@ -470,6 +470,19 @@ The runner rejects `64x48` input and dark frames before any radio connection or
 motor command. Each accepted run writes its manifest, raw and annotated frames,
 grounding events, and summary below `artifacts/semantic/`.
 
+For distance and resolution ablations, use the existing QVGA profile:
+
+```bash
+AIDECK_UDP_FLASH_CONFIRM=FLASH_AIDECK_UDP \
+  scripts/aideck_udp_streamer.sh flash-semantic-highres
+```
+
+This selects `qvga-pipelined-60fps`: `324x244` JPEG at a measured 17.12 FPS
+with zero drops. The host grounder runs at roughly 3 FPS, so this stream rate is
+already sufficient. Capture QVGA once and use
+`scripts/evaluate_semantic_resolution_sweep.py` to derive matched lower
+resolutions and 4-bit variants offline.
+
 The next optimization order is:
 
 1. Add measured ESP32 send backpressure and allocation-failure counters.
@@ -668,3 +681,88 @@ direct reset-to-firmware fallback probes could not reattach on the tested radio
 URI variants, and the final scan returned no Crazyflie interfaces. The next
 practical step is Bitcraze support/discussion or a hardware recovery path such
 as verified USB/DFU/JTAG guidance from Bitcraze.
+
+## 2026-07-26 frame tearing found during flight
+
+The `qvga-pipelined-60fps` image produced decodable JPEGs containing raster
+wrap seams during motion. A frame could contain the tail of one sensor frame
+followed by the beginning of another, visible as a horizontal boundary and one
+vertical discontinuity. UDP drop counts and JPEG decode success do not detect
+this failure.
+
+The cause was the continuous capture loop draining its DMA queue while the
+current frame was encoded and transferred. The GAP camera API starts a newly
+queued transfer immediately when the sensor is already running. PR
+[#157](https://github.com/bitcraze/aideck-gap8-examples/pull/157) now keeps two
+capture buffers queued continuously and reserves a third for processing. PR
+[#158](https://github.com/bitcraze/aideck-gap8-examples/pull/158) includes the
+same correction for gray4 output. Whole frames are dropped when the consumer
+falls behind.
+
+Clean Docker builds passed for the corrected QVGA/JPEG and `64x48` gray4
+profiles. FlightRL's `flash-semantic` and `flash-semantic-highres` commands now
+select the corrected QVGA image; `flash-policy-safe` selects corrected gray4.
+
+The corrected QVGA image then passed a 220-frame hand-movement capture at
+13.77 FPS with zero receiver drops and no visible raster-wrap seam. A separate
+100-frame stationary capture reached 13.71 FPS with one receiver drop and no
+visible seam. The earlier 17.12 FPS figure is therefore superseded by 13.77
+clean moving FPS for this implementation. The old 64.83 FPS gray4 figure
+remains a transport-rate measurement until the corrected gray4 image receives
+the same moving hardware gate.
+
+The first post-fix semantic gate also showed that frame integrity alone does not
+prevent false grounding. The final monitor gate uses target-only Grounding DINO
+proposals at confidence `>= 0.25`, CLIP target probability `>= 0.60`, and CLIP
+margin `>= 0.45`. Removing the competing desk, window, and wall labels improved
+the same positive sample from `2/12` to `10/12` detections.
+
+The final live reacquisition detected the real monitor in `13/18` sampled frames.
+Offline replay retained `18/23` frames from the preceding positive capture and
+rejected `0/17` frames from the clear wide-wall view. A second view previously
+labeled as a wall negative contains a monitor-shaped object at the upper-left
+edge; target-only grounding accepts it in `17/17` frames, so it cannot be used as
+a false-positive measurement without identifying that physical object.
+
+## 2026-07-27 low-light policy profile gate
+
+The corrected frame-safe `64x48` gray4 image was restored over `usb://0`:
+
+`artifacts/ai_deck/udp_firmware/aideck-gap8-qqvga-gray4-pipelined-65fps-frame-safe.img`
+
+Its SHA-256 is
+`94cbee3a07eba2e7fb7a978f60f4c179c6d7f8bd3b8850fcaf532120cfbf9e9a`.
+The v5 Puffer visual checkpoint then ran without hardware commands for 650
+nighttime frames at 64.86 FPS with zero receiver drops. The live input passed
+contrast and temporal-stability checks; median Mac inference was 0.217 ms and
+maximum inference was 12.06 ms.
+
+Checkpoint:
+
+`artifacts/puffer_visual/flightrl_visual_fast16_lowlight_v5_1048576.bin`
+
+Checkpoint SHA-256:
+
+`e599a351901d65336a08484457f39de9250c6f756573a433dd6308eb6eed27ed`
+
+Gate report:
+
+`artifacts/puffer_visual/flightrl_visual_fast16_lowlight_v5_policy_profile_gate.summary.json`
+
+The run was monitor-only. No motor, arm, takeoff, or setpoint command was sent.
+
+The monitor detector is now ready for camera-only and shadow runs. Keep it out
+of the flight-control path until positive and physically verified hard-negative
+gates cover the intended mission scene.
+
+The first height-controlled shadow run at `0.55 m` saw under the desk and
+produced no in-flight detections. A `1.0 m` run produced `8/24`, but the
+height-adjustable desk was moved during capture and that result is confounded.
+With the desk fixed in its raised position, a final `1.3 m` firmware-controlled
+shadow run detected monitors in `20/21` sampled in-flight frames across a
+`45` degree yaw sweep and return. The boxes visually aligned with the real
+displays. Logged altitude was `1.301-1.378 m`, maximum estimated horizontal
+drift was `0.233 m`, and minimum loaded battery voltage was `3.669 V`.
+
+The aircraft landed cleanly with motors zero and no flying or tumbled flags.
+Post-flight battery was `20%`; do not run another flight before charging.

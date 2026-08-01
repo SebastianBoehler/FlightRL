@@ -37,12 +37,25 @@ class GroundingDetection:
     label: str
     confidence: float
     box: NormalizedBox
+    verification_confidence: float | None = None
+    verification_margin: float | None = None
 
     def __post_init__(self) -> None:
         if not self.label.strip():
             raise ValueError("grounding label cannot be empty")
         if not isfinite(self.confidence) or not 0.0 <= self.confidence <= 1.0:
             raise ValueError("grounding confidence must be in [0, 1]")
+        optional_values = (
+            self.verification_confidence,
+            self.verification_margin,
+        )
+        if any(value is not None and not isfinite(value) for value in optional_values):
+            raise ValueError("verification scores must be finite when provided")
+        if (
+            self.verification_confidence is not None
+            and not 0.0 <= self.verification_confidence <= 1.0
+        ):
+            raise ValueError("verification confidence must be in [0, 1]")
 
 
 @dataclass(frozen=True, slots=True)

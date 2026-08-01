@@ -6,12 +6,82 @@ import gymnasium
 import numpy as np
 import torch
 
-from flightrl.policy import NativeFlightPolicy, create_policy_for_checkpoint
+from flightrl.policy import MinGRU, NativeFlightPolicy, create_policy_for_checkpoint
 
 
 class DummyEnv:
     single_observation_space = gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
     single_action_space = gymnasium.spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+
+
+def test_mingru_stateful_parallel_scan_matches_stepwise_inference() -> None:
+    torch.manual_seed(7)
+    network = MinGRU(hidden_size=5, num_layers=2)
+    inputs = torch.randn(3, 11, 5)
+    state = (torch.rand(2, 3, 5),)
+
+    parallel, parallel_state = network.forward_train_stateful(inputs, state)
+    sequential = []
+    sequential_state = state
+    for step in range(inputs.shape[1]):
+        output, sequential_state = network.forward_eval(
+            inputs[:, step],
+            sequential_state,
+        )
+        sequential.append(output)
+
+    assert torch.allclose(
+        parallel,
+        torch.stack(sequential, dim=1),
+        atol=1e-5,
+        rtol=1e-5,
+    )
+    assert torch.allclose(
+        parallel_state[0],
+        sequential_state[0],
+        atol=1e-5,
+        rtol=1e-5,
+    )
+
+
+def test_mingru_masked_training_matches_stepwise_episode_resets() -> None:
+    torch.manual_seed(11)
+    network = MinGRU(hidden_size=4, num_layers=2)
+    inputs = torch.randn(3, 7, 4)
+    initial_state = (torch.rand(2, 3, 4),)
+    terminals = torch.zeros(3, 7)
+    terminals[0, 3] = 1.0
+    terminals[2, 1] = 1.0
+    terminals[2, 5] = 1.0
+
+    parallel, parallel_state = network.forward_train_stateful_masked(
+        inputs,
+        initial_state,
+        terminals,
+    )
+    sequential = []
+    sequential_state = initial_state
+    for step in range(inputs.shape[1]):
+        alive = (1.0 - terminals[:, step]).reshape(1, -1, 1)
+        sequential_state = tuple(value * alive for value in sequential_state)
+        output, sequential_state = network.forward_eval(
+            inputs[:, step],
+            sequential_state,
+        )
+        sequential.append(output)
+
+    assert torch.allclose(
+        parallel,
+        torch.stack(sequential, dim=1),
+        atol=1e-5,
+        rtol=1e-5,
+    )
+    assert torch.allclose(
+        parallel_state[0],
+        sequential_state[0],
+        atol=1e-5,
+        rtol=1e-5,
+    )
 
 
 def test_native_checkpoint_loader_reads_aligned_weights(tmp_path: Path) -> None:

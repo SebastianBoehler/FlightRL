@@ -41,4 +41,9 @@ float flightrl_sixdof_avoidance_alignment(
     const float *residual_setpoint
 );
 
+float flightrl_sixdof_clearance_deficit(
+    const float *position,
+    const float *obstacle
+);
+
 #endif

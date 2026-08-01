@@ -23,6 +23,26 @@ def test_semantic_objects_are_named_renderable_mujoco_geometries() -> None:
     assert root.find(".//camera[@name='aideck']") is not None
 
 
+def test_door_rendering_has_noncolliding_structural_cues() -> None:
+    root = ET.fromstring(build_crazyflie_mjcf(_scene()))
+    names = (
+        "semantic_door_frame_left",
+        "semantic_door_frame_right",
+        "semantic_door_frame_top",
+        "semantic_door_panel_upper",
+        "semantic_door_handle",
+    )
+
+    geoms = [root.find(f".//geom[@name='{name}']") for name in names]
+
+    assert all(geom is not None for geom in geoms)
+    assert all(
+        geom.attrib["contype"] == "0"
+        for geom in geoms
+        if geom is not None
+    )
+
+
 def test_mujoco_backend_loads_semantic_geometry_and_range_colliders() -> None:
     env = MuJoCoCrazyflieEnv(num_envs=1, semantic_scene=_scene())
     try:

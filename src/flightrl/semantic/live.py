@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from statistics import median
 from time import sleep, time
 from typing import Any
 
-from flightrl.hardware.aideck_stream import AiDeckFrame
 from flightrl.hardware.avoidance_live import safety_abort_reason
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
 from flightrl.hardware.config import load_hardware_config
@@ -42,6 +40,9 @@ SEMANTIC_LOG_VARIABLES = (
     "stateEstimate.x",
     "stateEstimate.y",
     "stateEstimate.z",
+    "stateEstimate.vx",
+    "stateEstimate.vy",
+    "stateEstimate.vz",
     "stateEstimate.roll",
     "stateEstimate.pitch",
     "stateEstimate.yaw",
@@ -78,55 +79,6 @@ class SemanticFlightConfig:
             raise ValueError("minimum semantic frame mean must be in [0, 255]")
 
 
-def require_semantic_frame(
-    frame: AiDeckFrame,
-    *,
-    min_width: int,
-    min_mean: float,
-) -> None:
-    mean = float(frame.pixels.mean())
-    if frame.width < min_width:
-        raise RuntimeError(
-            f"semantic camera requires width >= {min_width}, got "
-            f"{frame.width}x{frame.height}; flash the semantic JPEG profile"
-        )
-    if mean < min_mean:
-        raise RuntimeError(
-            f"semantic camera frame is too dark: mean={mean:.2f} < {min_mean:.2f}"
-        )
-
-
-def collect_camera_only(
-    pipeline: AsyncGroundingPipeline,
-    writer: SemanticRunWriter,
-    *,
-    duration_s: float,
-) -> dict[str, Any]:
-    deadline = time() + duration_s
-    last_frame_index = -1
-    written = 0
-    detected = 0
-    inference_ms: list[float] = []
-    while time() < deadline:
-        latest = pipeline.latest()
-        if latest is not None and latest[0].index != last_frame_index:
-            frame, result = latest
-            writer.write(frame, result, controls_drone=False)
-            last_frame_index = frame.index
-            written += 1
-            detected += int(result.best is not None)
-            inference_ms.append(result.inference_ms)
-        sleep(0.02)
-    return {
-        "mode": "camera",
-        "processed_frames": written,
-        "frames_with_detection": detected,
-        "detection_rate": detected / written if written else 0.0,
-        "inference_ms_median": median(inference_ms) if inference_ms else None,
-        "inference_ms_max": max(inference_ms, default=None),
-    }
-
-
 def run_semantic_flight(
     pipeline: AsyncGroundingPipeline,
     writer: SemanticRunWriter,
@@ -134,6 +86,8 @@ def run_semantic_flight(
     hardware_config_path: str | Path,
     flight: SemanticFlightConfig,
     discovery: DiscoveryConfig,
+    policy_shadow=None,
+    policy_authority=None,
 ) -> dict[str, Any]:
     config = load_hardware_config(hardware_config_path)
     config = replace(
@@ -150,6 +104,11 @@ def run_semantic_flight(
         "telemetry_samples": 0,
         "abort_reason": None,
         "final_phase": None,
+        "policy_authority": (
+            policy_authority.approved_authority
+            if policy_authority is not None
+            else "none"
+        ),
     }
     telemetry_path = writer.output_dir / "telemetry.csv"
 
@@ -212,6 +171,26 @@ def run_semantic_flight(
                         assert controller is not None
                         grounded = pipeline.latest()
                         result = grounded[1] if grounded is not None else None
+                        policy_output: dict[str, Any] = {}
+                        new_frame = (
+                            grounded is not None
+                            and grounded[0].index != last_frame_index
+                        )
+                        if new_frame:
+                            if policy_authority is not None:
+                                policy_output = policy_authority.update(
+                                    grounded[0],
+                                    grounded[1],
+                                    latest_telemetry,
+                                    now_s=now_s,
+                                )
+                            else:
+                                policy_output = _policy_shadow(
+                                    policy_shadow,
+                                    grounded[0],
+                                    grounded[1],
+                                    latest_telemetry,
+                                )
                         command = controller.step(
                             now_s=now_s,
                             grounding=result,
@@ -219,18 +198,24 @@ def run_semantic_flight(
                             origin_xy_m=origin_xy,
                             yaw_deg=latest_telemetry.get("stateEstimate.yaw", 0.0),
                         )
+                        if policy_authority is not None:
+                            command = policy_authority.apply(
+                                command,
+                                now_s=now_s,
+                            )
                         motion.start_linear_motion(
                             command.vx_body_m_s,
                             command.vy_body_m_s,
                             0.0,
                             rate_yaw=command.yawrate_deg_s,
                         )
-                        if grounded is not None and grounded[0].index != last_frame_index:
+                        if new_frame:
                             writer.write(
                                 grounded[0],
                                 grounded[1],
                                 command=command,
                                 telemetry=latest_telemetry,
+                                policy_shadow=policy_output,
                                 controls_drone=True,
                             )
                             last_frame_index = grounded[0].index
@@ -268,5 +253,19 @@ def write_summary(output_dir: str | Path, summary: dict[str, Any]) -> Path:
 def _require_flow_deck(scf, config) -> None:
     report = inspect_decks(scf, config)
     if not report.ok:
-        details = "; ".join((*report.warnings, *(f"{k}={v}" for k, v in report.details.items())))
+        details = "; ".join(
+            (*report.warnings, *(f"{k}={v}" for k, v in report.details.items()))
+        )
         raise HardwareSafetyError(f"Flow Deck preflight failed: {details}")
+
+
+def _policy_shadow(policy_shadow, frame, result, telemetry) -> dict:
+    if policy_shadow is None:
+        return {}
+    detection = None if result.best is None else asdict(result.best)
+    return policy_shadow.step(
+        frame=frame.pixels,
+        telemetry=telemetry,
+        prompt=result.prompt,
+        detection=detection,
+    )

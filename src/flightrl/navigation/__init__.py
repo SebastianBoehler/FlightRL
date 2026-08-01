@@ -13,6 +13,11 @@ from .mission_spec import (
     ResolvedMissionPlan,
     TargetAnchor,
 )
+from .room_generation import (
+    SEMANTIC_TARGET_CATEGORIES,
+    SemanticRoomGenerationConfig,
+    generate_semantic_room,
+)
 from .scenarios import DEFAULT_NAVIGATION_SCENARIOS, NavigationScenario, scenario_by_name
 from .semantic_scene import Bounds3D, SemanticObject, SemanticScene
 
@@ -30,12 +35,15 @@ __all__ = [
     "NavigationScenario",
     "ResolvedMissionPlan",
     "SemanticObject",
+    "SemanticRoomGenerationConfig",
     "SemanticScene",
+    "SEMANTIC_TARGET_CATEGORIES",
     "TargetAnchor",
     "build_candidate_bundle",
     "build_navigation_benchmark_report",
     "compile_mission",
     "evaluate_scenario_record",
+    "generate_semantic_room",
     "next_state",
     "phase_limits",
     "resolve_mission",

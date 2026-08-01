@@ -246,8 +246,11 @@ class SixDofCrazyflieEnv:
 
     def _update_ranges(self) -> None:
         rays = body_rays_world(self.quaternion)
-        for sensor_idx in range(6):
-            self.ranges_m[:, sensor_idx] = self.room.raycast(self.position, rays[:, sensor_idx, :])
+        positions = np.repeat(self.position, rays.shape[1], axis=0)
+        self.ranges_m[:] = self.room.raycast(
+            positions,
+            rays.reshape(-1, 3),
+        ).reshape(self.num_envs, rays.shape[1])
 
     def _integrate_orientation(self) -> None:
         omega = self.body_rates

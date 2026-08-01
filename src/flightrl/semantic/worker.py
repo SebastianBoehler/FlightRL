@@ -27,7 +27,9 @@ class FrameGrounder(Protocol):
 
 
 class AsyncGroundingPipeline:
-    def __init__(self, stream: FrameStream, grounder: FrameGrounder, prompt: str) -> None:
+    def __init__(
+        self, stream: FrameStream, grounder: FrameGrounder, prompt: str
+    ) -> None:
         self.stream = stream
         self.grounder = grounder
         self.prompt = prompt
@@ -72,6 +74,11 @@ class AsyncGroundingPipeline:
         self._raise_error()
         with self._lock:
             return self._latest_processed
+
+    def latest_frame(self) -> AiDeckFrame | None:
+        self._raise_error()
+        with self._lock:
+            return self._latest_frame
 
     def close(self) -> None:
         self._stop.set()
@@ -131,4 +138,6 @@ class AsyncGroundingPipeline:
         with self._lock:
             error = self._error
         if error is not None:
-            raise RuntimeError(f"asynchronous grounding pipeline failed: {error}") from error
+            raise RuntimeError(
+                f"asynchronous grounding pipeline failed: {error}"
+            ) from error

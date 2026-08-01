@@ -17,6 +17,7 @@ VISUAL_NATIVE_FILES = (
     "native_sixdof_setpoint.h",
     "native_sixdof_vision.c",
     "native_sixdof_vision.h",
+    "native_sixdof_vision_surfaces.inc",
 )
 
 
@@ -27,8 +28,18 @@ class VisualPufferExportResult:
     config_path: Path
 
 
-def render_visual_puffer4_binding() -> str:
-    return r"""#include <math.h>
+def render_visual_puffer4_binding(
+    vision_width: int = 64,
+    vision_height: int = 48,
+) -> str:
+    _validate_vision_shape(vision_width, vision_height)
+    dimensions = (
+        f"#define SIXDOF_VISION_WIDTH {vision_width}\n"
+        f"#define SIXDOF_VISION_HEIGHT {vision_height}\n"
+    )
+    return (
+        dimensions
+        + r"""#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -39,14 +50,14 @@ def render_visual_puffer4_binding() -> str:
 #include "native_sixdof_vision.h"
 #include "native_sixdof_vision.c"
 
-#define OBS_SIZE SIXDOF_VISION_OBS_DIM
+#define OBS_SIZE (SIXDOF_VISION_OBS_DIM + 1)
 #define NUM_ATNS 4
 #define ACT_SIZES {1, 1, 1, 1}
 #define OBS_TENSOR_T FloatTensor
 #define PROGRESS_REWARD_SCALE 20.0f
 #define ACTION_COST_SCALE 0.0005f
 #define TERMINAL_REWARD 10.0f
-#define AVOIDANCE_REWARD_SCALE 0.03f
+#define CLEARANCE_POTENTIAL_SCALE 20.0f
 
 typedef struct {
     float score;
@@ -76,12 +87,15 @@ typedef struct {
     float vertical_gain;
     float camera_mean_min;
     float camera_mean_max;
+    float domain_randomization;
     float obstacle_probability;
     float navigation_residual_scale;
     float waypoint_slowdown_distance;
     float camera_mean;
     int scene_seed;
+    float base_room[7];
     float room[7];
+    float base_physics[SIXDOF_PHYSICS_DIM];
     float physics[SIXDOF_PHYSICS_DIM];
     float position[3];
     float velocity[3];
@@ -94,6 +108,7 @@ typedef struct {
     float low_level_action[4];
     float state_observation[28];
     float obstacle[6];
+    float teacher_lateral;
     uint8_t previous_frame[SIXDOF_VISION_PIXELS];
     int control_step;
     int physics_step;
@@ -129,13 +144,35 @@ static int collides(Env* env) {
     return room_hit || obstacle_hit;
 }
 
+static void randomize_domain(Env* env) {
+    float strength = clampf(env->domain_randomization, 0.0f, 1.0f);
+    memcpy(env->room, env->base_room, sizeof(env->room));
+    memcpy(env->physics, env->base_physics, sizeof(env->physics));
+    float room_x_half = env->base_room[1] * (
+        1.0f + strength * rnd(&env->rng, -0.10f, 0.10f)
+    );
+    float room_y_half = env->base_room[3] * (
+        1.0f + strength * rnd(&env->rng, -0.12f, 0.12f)
+    );
+    env->room[0] = -room_x_half;
+    env->room[1] = room_x_half;
+    env->room[2] = -room_y_half;
+    env->room[3] = room_y_half;
+    env->room[5] *= 1.0f + strength * rnd(&env->rng, -0.08f, 0.08f);
+    env->physics[0] *= 1.0f + strength * rnd(&env->rng, -0.08f, 0.08f);
+    env->physics[2] *= 1.0f + strength * rnd(&env->rng, -0.30f, 0.30f);
+    env->physics[3] *= 1.0f + strength * rnd(&env->rng, -0.15f, 0.15f);
+    env->physics[4] *= 1.0f + strength * rnd(&env->rng, -0.08f, 0.08f);
+    env->physics[8] *= 1.0f + strength * rnd(&env->rng, -0.20f, 0.20f);
+}
+
 static void sample_scene(Env* env) {
     float side = rnd(&env->rng, 0.0f, 1.0f) < 0.5f ? -1.0f : 1.0f;
-    env->position[0] = -1.25f * side;
-    env->position[1] = rnd(&env->rng, -0.35f, 0.35f);
+    env->position[0] = -1.55f * side;
+    env->position[1] = rnd(&env->rng, -0.10f, 0.10f);
     env->position[2] = rnd(&env->rng, 0.50f, 0.75f);
-    env->target_position[0] = 1.25f * side;
-    env->target_position[1] = rnd(&env->rng, -0.35f, 0.35f);
+    env->target_position[0] = 1.55f * side;
+    env->target_position[1] = rnd(&env->rng, -0.10f, 0.10f);
     env->target_position[2] = env->position[2];
     float yaw = side > 0.0f ? 0.0f : 3.14159265f;
     env->quaternion[0] = cosf(0.5f * yaw);
@@ -143,20 +180,26 @@ static void sample_scene(Env* env) {
     env->quaternion[2] = 0.0f;
     env->quaternion[3] = sinf(0.5f * yaw);
     env->target_yaw = yaw;
-    float center_y = 0.5f * (env->position[1] + env->target_position[1]) + rnd(&env->rng, -0.30f, 0.30f);
+    float obstacle_side = rnd(&env->rng, 0.0f, 1.0f) < 0.5f ? -1.0f : 1.0f;
     float half_x = rnd(&env->rng, 0.16f, 0.28f);
-    float half_y = rnd(&env->rng, 0.35f, 0.55f);
     env->obstacle[0] = -half_x;
     env->obstacle[1] = half_x;
-    env->obstacle[2] = center_y - half_y;
-    env->obstacle[3] = center_y + half_y;
+    if (obstacle_side > 0.0f) {
+        env->obstacle[2] = -rnd(&env->rng, 0.10f, 0.25f);
+        env->obstacle[3] = env->room[3] + 0.15f;
+    } else {
+        env->obstacle[2] = env->room[2] - 0.15f;
+        env->obstacle[3] = rnd(&env->rng, 0.10f, 0.25f);
+    }
     env->obstacle[4] = 0.0f;
     env->obstacle[5] = rnd(&env->rng, 1.10f, 1.55f);
+    env->teacher_lateral = -obstacle_side * side;
     if (rnd(&env->rng, 0.0f, 1.0f) >= env->obstacle_probability) {
         for (int i = 0; i < 3; ++i) {
             env->obstacle[2 * i] = 10.0f;
             env->obstacle[2 * i + 1] = 11.0f;
         }
+        env->teacher_lateral = 0.0f;
     }
     update_ranges(env->position, env->quaternion, env->ranges, env->room);
 }
@@ -177,13 +220,15 @@ void my_init(Env* env, Dict* kwargs) {
     env->vertical_gain = (float)dict_get(kwargs, "vertical_gain")->value;
     env->camera_mean_min = (float)dict_get(kwargs, "camera_mean_min")->value;
     env->camera_mean_max = (float)dict_get(kwargs, "camera_mean_max")->value;
+    env->domain_randomization = (float)dict_get(kwargs, "domain_randomization")->value;
     env->obstacle_probability = (float)dict_get(kwargs, "obstacle_probability")->value;
     env->navigation_residual_scale = (float)dict_get(kwargs, "navigation_residual_scale")->value;
     env->waypoint_slowdown_distance = (float)dict_get(kwargs, "waypoint_slowdown_distance_m")->value;
     const char* room_keys[7] = {"room_x_min", "room_x_max", "room_y_min", "room_y_max", "room_z_min", "room_z_max", "max_range_m"};
     const char* physics_keys[9] = {"mass_kg", "gravity_m_s2", "linear_drag", "rate_tau_s", "thrust_scale", "max_rate_roll", "max_rate_pitch", "max_rate_yaw", "motor_tau_s"};
-    for (int i = 0; i < 7; ++i) env->room[i] = (float)dict_get(kwargs, room_keys[i])->value;
-    for (int i = 0; i < 9; ++i) env->physics[i] = (float)dict_get(kwargs, physics_keys[i])->value;
+    for (int i = 0; i < 7; ++i) env->base_room[i] = (float)dict_get(kwargs, room_keys[i])->value;
+    for (int i = 0; i < 9; ++i) env->base_physics[i] = (float)dict_get(kwargs, physics_keys[i])->value;
+    randomize_domain(env);
 }
 
 void my_log(Log* log, Dict* out) {
@@ -198,9 +243,11 @@ static void write_visual_observation(Env* env, uint8_t reset_temporal) {
     flightrl_sixdof_visual_observation_scene(
         env->position, env->quaternion, env->target_position, env->target_yaw, env->room, env->obstacle,
         env->camera_mean, env->scene_seed, env->previous_frame, reset_temporal, env->observations);
+    env->observations[SIXDOF_VISION_OBS_DIM] = env->teacher_lateral;
 }
 
 static void c_reset(Env* env) {
+    randomize_domain(env);
     env->rng = flightrl_sixdof_reset_one(
         env->position, env->velocity, env->quaternion, env->body_rates, env->ranges, &env->thrust_state,
         env->physics, env->target_position, &env->target_yaw, env->low_level_action, &env->physics_step,
@@ -223,6 +270,10 @@ static void c_step(Env* env) {
     float residual[4];
     for (int i = 0; i < 4; ++i) residual[i] = clampf(env->actions[i], -1.0f, 1.0f);
     float previous_distance = distance_to_target(env);
+    float previous_clearance_deficit = flightrl_sixdof_clearance_deficit(
+        env->position,
+        env->obstacle
+    );
     flightrl_sixdof_waypoint_residual_actions_batch(
         env->position, env->velocity, env->quaternion, env->target_position, &env->target_yaw,
         residual, env->physics, env->low_level_action, 1, env->max_horizontal_speed,
@@ -242,11 +293,11 @@ static void c_step(Env* env) {
     env->terminal = collision || success;
     float action_cost = residual[0]*residual[0] + residual[1]*residual[1] +
         residual[2]*residual[2] + residual[3]*residual[3];
-    float avoidance = flightrl_sixdof_avoidance_alignment(env->position, env->quaternion, env->obstacle, residual);
+    float clearance_progress = previous_clearance_deficit -
+        flightrl_sixdof_clearance_deficit(env->position, env->obstacle);
     env->rewards[0] = PROGRESS_REWARD_SCALE*(previous_distance - distance) -
-        ACTION_COST_SCALE*action_cost + AVOIDANCE_REWARD_SCALE*avoidance -
+        ACTION_COST_SCALE*action_cost + CLEARANCE_POTENTIAL_SCALE*clearance_progress -
         TERMINAL_REWARD*collision + TERMINAL_REWARD*success;
-    env->scene_seed += 1;
     write_visual_observation(env, 0);
     env->terminals[0] = (env->terminal || env->truncation) ? 1.0f : 0.0f;
     env->current_return += env->rewards[0];
@@ -268,12 +319,17 @@ static void c_step(Env* env) {
 static void c_render(Env* env) { (void)env; }
 static void c_close(Env* env) { (void)env; }
 """
+    )
 
 
 def export_visual_puffer4_assets(
     pufferlib_root: str | Path,
     settings: Puffer4ExportSettings | None = None,
+    *,
+    vision_width: int = 64,
+    vision_height: int = 48,
 ) -> VisualPufferExportResult:
+    _validate_vision_shape(vision_width, vision_height)
     resolved = settings or Puffer4ExportSettings(
         env_name="flightrl_visual_navigation",
         total_agents=128,
@@ -290,6 +346,15 @@ def export_visual_puffer4_assets(
     native_dir = Path(__file__).resolve().parent / "native"
     for filename in VISUAL_NATIVE_FILES:
         shutil.copy2(native_dir / filename, env_dir / filename)
-    (env_dir / "binding.c").write_text(render_visual_puffer4_binding())
-    config_path.write_text(render_puffer4_ini(build_visual_navigation_sections(resolved)))
+    (env_dir / "binding.c").write_text(
+        render_visual_puffer4_binding(vision_width, vision_height)
+    )
+    config_path.write_text(
+        render_puffer4_ini(build_visual_navigation_sections(resolved))
+    )
     return VisualPufferExportResult(resolved.env_name, env_dir, config_path)
+
+
+def _validate_vision_shape(width: int, height: int) -> None:
+    if width < 8 or height < 8 or width * 3 != height * 4:
+        raise ValueError("native vision must be at least 8 pixels high with 4:3 aspect")

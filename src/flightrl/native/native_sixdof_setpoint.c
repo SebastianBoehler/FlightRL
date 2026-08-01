@@ -150,3 +150,26 @@ float flightrl_sixdof_avoidance_alignment(
     float preferred_side = body_y >= 0.0f ? -1.0f : 1.0f;
     return approach * preferred_side * residual_setpoint[1];
 }
+
+float flightrl_sixdof_clearance_deficit(
+    const float *position,
+    const float *obstacle
+) {
+    if (obstacle[0] > 5.0f) {
+        return 0.0f;
+    }
+    float center_x = 0.5f * (obstacle[0] + obstacle[1]);
+    float center_y = 0.5f * (obstacle[2] + obstacle[3]);
+    float half_x = 0.5f * (obstacle[1] - obstacle[0]);
+    float half_y = 0.5f * (obstacle[3] - obstacle[2]);
+    float influence = setpoint_clamp(
+        1.0f - fabsf(position[0] - center_x) / (half_x + 0.55f),
+        0.0f,
+        1.0f
+    );
+    float lateral_deficit = fmaxf(
+        half_y + 0.16f - fabsf(position[1] - center_y),
+        0.0f
+    );
+    return influence * lateral_deficit;
+}

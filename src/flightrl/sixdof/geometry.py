@@ -39,23 +39,31 @@ class AxisAlignedObstacle:
         return x_ok & y_ok & z_ok
 
     def raycast(self, positions: np.ndarray, directions: np.ndarray, max_range_m: float) -> np.ndarray:
-        distances = np.full(positions.shape[0], max_range_m, dtype=np.float32)
         eps = 1e-6
-        for axis, (low, high) in enumerate(self.bounds):
-            for plane in (low, high):
-                denom = directions[:, axis]
-                active = np.abs(denom) > eps
-                t = np.full(positions.shape[0], np.inf, dtype=np.float32)
-                t[active] = (plane - positions[active, axis]) / denom[active]
-                hit = t > eps
-                for other_axis, (other_low, other_high) in enumerate(self.bounds):
-                    if other_axis == axis:
-                        continue
-                    coord = np.full(positions.shape[0], np.inf, dtype=np.float32)
-                    coord[active] = positions[active, other_axis] + t[active] * directions[active, other_axis]
-                    hit &= (coord >= other_low - eps) & (coord <= other_high + eps)
-                distances = np.where(hit & (t < distances), t, distances)
-        return np.clip(distances, 0.0, max_range_m)
+        lower = np.asarray((self.x_min, self.y_min, self.z_min), dtype=np.float32)
+        upper = np.asarray((self.x_max, self.y_max, self.z_max), dtype=np.float32)
+        parallel = np.abs(directions) <= eps
+        inverse = np.divide(
+            1.0,
+            directions,
+            out=np.zeros_like(directions),
+            where=~parallel,
+        )
+        first = (lower - positions) * inverse
+        second = (upper - positions) * inverse
+        near = np.minimum(first, second)
+        far = np.maximum(first, second)
+        inside_parallel = (positions >= lower - eps) & (positions <= upper + eps)
+        near = np.where(parallel & inside_parallel, -np.inf, near)
+        far = np.where(parallel & inside_parallel, np.inf, far)
+        invalid_parallel = np.any(parallel & ~inside_parallel, axis=1)
+        enter = np.max(near, axis=1)
+        leave = np.min(far, axis=1)
+        distance = np.where(enter > eps, enter, leave)
+        hit = ~invalid_parallel & (leave >= np.maximum(enter, eps))
+        return np.where(hit, np.minimum(distance, max_range_m), max_range_m).astype(
+            np.float32
+        )
 
 
 @dataclass(frozen=True, slots=True)
