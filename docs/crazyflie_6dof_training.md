@@ -104,20 +104,13 @@ python scripts/export_sixdof_puffer4.py \
 
 `scripts/train_sixdof_puffer4.py` and the sweep scripts are desktop training
 tools. Their `.bin` outputs are Puffer trainer artifacts, not edge-v3 weights.
-Import a selected raw state dict through the strict desktop contract before
-evaluation:
-
-```bash
-python scripts/wrap_puffer_sixdof_checkpoint.py \
-  --raw-checkpoint ../PufferLib-4-flightrl/experiments/<run>/model.bin \
-  --output artifacts/experiments/puffer_position_yaw_seed42.pt \
-  --task position_yaw
-```
-
-The wrapper verifies network dimensions against the declared task and
-observation mode and records the raw artifact hash. The result remains a
-desktop checkpoint; it needs a separate exact edge-v3 distillation boundary
-before it can contribute to the onboard actor.
+They are intentionally rejected by current checkpoint loaders: a raw
+same-shaped state dict does not prove which task, observation, action, or
+simulator contract produced it. Do not relabel or import one. Before Puffer
+training can produce evaluable candidates, its producer must emit the current
+checkpoint envelope itself and bind that envelope to the exact exported source
+and configuration. It would still require a separate exact edge-v3 distillation
+boundary before contributing to the onboard actor.
 
 ## Desktop export
 
