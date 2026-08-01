@@ -18,7 +18,7 @@ from flightrl.puffer4_edge_training_selection import (
 from flightrl.puffer4_edge_training_state import edge_state_dict_sha256
 
 
-EDGE_TRAINING_REPORT_SCHEMA = "flightrl.edge_v3.training_report.v4"
+EDGE_TRAINING_REPORT_SCHEMA = "flightrl.edge_v3.training_report.v5"
 EDGE_SELECTION_RULE = (
     "minimum_clean_decision_action_loss_after_previous_action_"
     "constant_grounding_and_visual_dependence_gates"
@@ -34,6 +34,7 @@ EDGE_LOSS_CONTRACT = {
     "previous_action": "exact_stm32_applied_feedback_without_value_masking",
     "visual_ablation": ("selection_only_cyclic_shift_1_of_current_frame_across_agents"),
     "perception_warmup": "weighted_grounding_only_then_bit_exact_freeze",
+    "optimizer_rates": "explicit_disjoint_perception_and_control_learning_rates",
 }
 EDGE_WEIGHTING_CONTRACT = {
     "episode": "equal_mass_per_episode_or_censored_tail",

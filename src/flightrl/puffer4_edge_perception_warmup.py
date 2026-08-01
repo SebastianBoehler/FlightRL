@@ -123,7 +123,7 @@ def warmup_edge_perception(
     ]
     optimizer = torch.optim.AdamW(
         parameters,
-        lr=config.learning_rate,
+        lr=config.perception_learning_rate,
         weight_decay=1.0e-5,
     )
     weights = edge_sequence_loss_weights(train)

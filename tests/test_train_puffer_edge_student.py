@@ -68,6 +68,10 @@ def test_rejected_training_writes_bound_report_without_checkpoint(
             "3",
             "--warmup-batch-size",
             "64",
+            "--perception-learning-rate",
+            "0.004",
+            "--learning-rate",
+            "0.001",
         ]
     )
 
@@ -82,6 +86,8 @@ def test_rejected_training_writes_bound_report_without_checkpoint(
     assert report["native_build_fingerprint"] == fingerprint
     assert captured["config"].warmup_epochs == 3
     assert captured["config"].warmup_batch_size == 64
+    assert captured["config"].perception_learning_rate == pytest.approx(0.004)
+    assert captured["config"].learning_rate == pytest.approx(0.001)
     assert set(report["source_identity"]) == {
         "script",
         "artifact_paths",

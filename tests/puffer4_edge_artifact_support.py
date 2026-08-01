@@ -167,6 +167,7 @@ def training_report(
                 epochs=8,
                 tbptt_steps=2,
                 warmup_batch_size=4,
+                perception_learning_rate=5.0e-3,
                 learning_rate=5.0e-3,
             ),
         )

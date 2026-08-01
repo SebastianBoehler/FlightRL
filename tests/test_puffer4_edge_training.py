@@ -244,7 +244,11 @@ def test_sequence_trainer_selects_strict_door_only_edge_checkpoint_parent() -> N
     train = training_dataset("train", 11)
     selection = training_dataset("selection", 21)
     config = EdgeTrainConfig(
-        epochs=8, tbptt_steps=2, warmup_batch_size=4, learning_rate=5.0e-3
+        epochs=8,
+        tbptt_steps=2,
+        warmup_batch_size=4,
+        perception_learning_rate=5.0e-3,
+        learning_rate=5.0e-3,
     )
     torch.manual_seed(config.seed)
     initial = EdgeNavigationActor(hidden_size=48)

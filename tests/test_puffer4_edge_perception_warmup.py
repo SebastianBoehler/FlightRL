@@ -176,12 +176,14 @@ def test_warmup_evidence_reproduces_and_rejects_forged_state_digest() -> None:
 def test_trainer_uses_fresh_disjoint_optimizers_and_reports_warmup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[set[int]] = []
+    calls: list[tuple[set[int], float]] = []
     real_adamw = torch.optim.AdamW
 
     def tracked_adamw(parameters, *args, **kwargs):
         materialized = tuple(parameters)
-        calls.append({id(parameter) for parameter in materialized})
+        calls.append(
+            ({id(parameter) for parameter in materialized}, float(kwargs["lr"]))
+        )
         return real_adamw(materialized, *args, **kwargs)
 
     monkeypatch.setattr(torch.optim, "AdamW", tracked_adamw)
@@ -194,16 +196,22 @@ def test_trainer_uses_fresh_disjoint_optimizers_and_reports_warmup(
         _actor, report = training.train_edge_student(
             training_dataset("train", 11),
             training_dataset("selection", 21),
-            _config(epochs=1),
+            _config(
+                epochs=1,
+                perception_learning_rate=2.0e-3,
+                learning_rate=5.0e-4,
+            ),
         )
     except EdgeTrainingRejected as exc:
         report = exc.report
 
     assert len(calls) == 2
-    assert calls[0]
-    assert calls[1]
-    assert calls[0].isdisjoint(calls[1])
-    assert report["schema"] == "flightrl.edge_v3.training_report.v4"
+    assert calls[0][0]
+    assert calls[1][0]
+    assert calls[0][0].isdisjoint(calls[1][0])
+    assert calls[0][1] == pytest.approx(2.0e-3)
+    assert calls[1][1] == pytest.approx(5.0e-4)
+    assert report["schema"] == "flightrl.edge_v3.training_report.v5"
     assert set(report["perception_warmup"]) == warmup.WARMUP_REPORT_FIELDS
 
 

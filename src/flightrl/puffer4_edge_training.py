@@ -59,6 +59,7 @@ class EdgeTrainConfig:
     epochs: int = 8
     warmup_epochs: int = 2
     warmup_batch_size: int = 512
+    perception_learning_rate: float = 2.0e-3
     learning_rate: float = 2.0e-3
     tbptt_steps: int = 40
     seed: int = 17
@@ -75,6 +76,7 @@ class EdgeTrainConfig:
         if type(self.seed) is not int or self.seed < 0:
             raise ValueError("edge training seed must be nonnegative")
         for name in (
+            "perception_learning_rate",
             "learning_rate",
             "gradient_clip_norm",
             "visibility_loss_weight",
