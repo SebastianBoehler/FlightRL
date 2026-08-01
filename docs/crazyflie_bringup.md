@@ -1,117 +1,105 @@
-# Crazyflie Hardware Bring-Up
+# Crazyflie hardware bring-up
 
-This guide prepares FlightRL for a Bitcraze Crazyflie 2.1 Brushless with Flow deck v2 and Multi-ranger deck. The current hardware layer is for safe scripted bring-up and telemetry collection only. Learned policies must stay in simulation until FlightRL has a 6-DoF model, replay comparison, and hardware safety gates.
+This guide covers explicit-profile inspection, telemetry, a nonlearned scripted
+demo, and propeller-off motor diagnostics. There is no learned-policy launcher
+in the reviewed tree. The edge-v3 PyTorch actor is a Mac reference, not a GAP8
+artifact or flight checkpoint.
 
-## Install
+## Install and choose the exact profile
 
 ```bash
 python -m pip install -e ".[hardware,dev]" --no-build-isolation
 ```
 
-The `hardware` extra installs Bitcraze `cflib`. It is optional because normal simulator training and tests do not need radio hardware.
+Every hardware command requires `--config`. Select the file matching the
+physical aircraft and deck stack; never infer deck presence from a previous
+run or filename.
 
-## Physical Checklist
+- `configs/hardware/crazyflie_2_1_brushless_flow_only.toml`
+- `configs/hardware/crazyflie_2_1_brushless_aideck_flow2.toml`
+- `configs/hardware/crazyflie_2_1_brushless.toml` for the separately defined
+  base stack
 
-- Update and test the Crazyflie with the official Bitcraze client before using FlightRL scripts.
-- Put the Flow deck v2 underneath the drone.
-- Put the Multi-ranger deck above the drone.
-- Run all checks with propellers off first.
-- Use a clear indoor area with no people close to the flight path.
-- Keep the drone within reach for power removal and be ready to interrupt the script.
+The AI Deck profile explicitly expects AI Deck, Flow Deck v2, and Z-ranger and
+does not expect a Multi-ranger.
 
-## Config
+## Propeller-off checks
 
-The default config is:
+Charge and inspect the battery, remove propellers, mount only the decks named by
+the selected profile, and place the aircraft still on a clear surface.
 
-```text
-configs/hardware/crazyflie_2_1_brushless.toml
-```
-
-It uses the default Bitcraze radio URI `radio://0/80/2M/E7E7E7E7E7`, a 0.3 m hover height, conservative velocity, Flow deck v2 expectation, Multi-ranger expectation, and `requires_manual_confirm = true`.
-
-## Bring-Up Commands
-
-Dry-run commands do not import `cflib`, do not scan radio hardware, and do not write fake telemetry.
+Dry-run validates parsing/control flow without importing `cflib`:
 
 ```bash
-python scripts/crazyflie_bringup.py --dry-run scan
-python scripts/crazyflie_bringup.py --dry-run check
-python scripts/crazyflie_bringup.py --dry-run demo
+python scripts/crazyflie_bringup.py \
+  --config configs/hardware/crazyflie_2_1_brushless_aideck_flow2.toml \
+  --dry-run check
 ```
 
-When the replacement board is ready, scan and check the drone:
+Read-only connection and deck/supervisor inspection:
 
 ```bash
-python scripts/crazyflie_bringup.py scan
-python scripts/crazyflie_bringup.py check
+python scripts/crazyflie_bringup.py \
+  --config configs/hardware/crazyflie_2_1_brushless_aideck_flow2.toml \
+  check
 ```
 
-Only run the demo with props on after the prop-off checks pass:
-
-```bash
-python scripts/crazyflie_bringup.py demo --confirm
-```
-
-The demo takes off to roughly 0.3 m, hovers, turns left and right in place, hovers again, and lands.
+Stop on any unexpected/missing deck, estimator/supervisor failure, low battery,
+link instability, timeout, or nonfinite telemetry. Resolving a historical URI
+or connecting once does not clear the aircraft.
 
 ## Telemetry
 
-Dry-run logging validates config and prints the intended output path without creating fake rows:
+Validate then record with the same explicit profile:
 
 ```bash
-python scripts/crazyflie_log.py --dry-run
+python scripts/crazyflie_log.py \
+  --config configs/hardware/crazyflie_2_1_brushless_aideck_flow2.toml \
+  --duration-s 10 \
+  --dry-run
+
+python scripts/crazyflie_log.py \
+  --config configs/hardware/crazyflie_2_1_brushless_aideck_flow2.toml \
+  --duration-s 10 \
+  --output artifacts/crazyflie_logs/bringup.csv \
+  --console-output artifacts/crazyflie_logs/bringup_console.jsonl
 ```
 
-Real logging writes replay-friendly CSV under `artifacts/crazyflie_logs/`:
+The logger filters requested variables against the connected firmware TOC but
+fails if no usable log blocks remain. Record the firmware/deck/config identity
+with data used for calibration or replay; an available variable name does not
+guarantee identical units or semantics across firmware revisions.
+
+## Propeller-off motor bench
+
+This is a material hardware operation even without propellers. First review the
+dry-run plan:
 
 ```bash
-python scripts/crazyflie_log.py --duration-s 10
-```
-
-CSV columns start with `host_time_s` and `crazyflie_time_ms`, followed by configured cflib log variables. These logs are intended for later parameter fitting and sim-to-real replay checks.
-
-By default, FlightRL asks for a broad replay profile instead of a narrow control-only profile. The default includes:
-
-- state estimate: position, velocity, attitude, quaternion, and Kalman variance
-- sensors: accelerometer, gyroscope, multi-ranger, and z-ranger
-- power and link state: battery voltage/current fields, battery level/state, radio counters, supervisor/sys flags
-- controller and actuator state: controller commands, control targets, motor commands, RPM, and basic health flags
-
-The request is filtered against the connected Crazyflie's log Table of Contents before live logging starts. This keeps one config usable across firmware/deck differences while still capturing every default field the drone actually exposes.
-
-This is still CRTP/radio telemetry, not an unlimited data bus. The Crazyflie log protocol limits one log packet to roughly one small block of packed values, and cflib exposes a finite number of blocks/operations. FlightRL therefore keeps the default profile under the practical 16-block budget and splits it into multiple blocks. If we need raw, high-rate system-identification traces, use a Bitcraze micro-SD card deck: that path logs firmware variables locally at much higher rates and is better suited for dense IMU/motor-side data than live radio streaming.
-
-## Ranger Hold Policy
-
-The current learned hardware policy runs above the Crazyflie firmware stabilizer. It emits bounded velocity, vertical velocity, and yaw-rate setpoints; it does not command motors directly.
-
-Train the checkpoint:
-
-```bash
-python scripts/train_ranger_hold.py --checkpoint artifacts/checkpoints/ranger_hold.pt
-```
-
-Dry-run the loader and command serialization:
-
-```bash
-python scripts/crazyflie_hold_policy.py \
-  --checkpoint artifacts/checkpoints/ranger_hold.pt \
+python scripts/crazyflie_motor_bench.py \
+  --config configs/hardware/crazyflie_2_1_brushless_flow_only.toml \
   --dry-run
 ```
 
-After charging the battery and checking that the Bitcraze client is closed, run a cautious live test:
+A real run additionally requires `--confirm-props-off`, supervisor approval,
+bounded powers, live telemetry, and the watchdog. It zeros all motors and
+disarms in cleanup. Execute it only when the physical setup and intended output
+are separately confirmed.
 
-```bash
-python scripts/crazyflie_hold_policy.py \
-  --checkpoint artifacts/checkpoints/ranger_hold.pt \
-  --confirm-flight \
-  --duration-s 15 \
-  --max-speed-m-s 0.20 \
-  --max-vertical-speed-m-s 0.14
-```
+## Scripted demo boundary
 
-By default, the live runner captures the current `stateEstimate.x/y` after takeoff and holds that point. Pass `--target X Y Z` only when you intentionally want it to fly toward an explicit world-frame target.
+`crazyflie_bringup.py ... demo --confirm` uses the firmware stabilizer for a
+short takeoff/hover/turn/land sequence from the selected config. It is not a
+policy test. Props-on execution requires a fresh physical checklist, protected
+area, charged battery, operator abort, and explicit approval for that run.
 
-## RL Boundary
+Do not proceed from a passing `check`, telemetry log, simulator gate, teacher
+result, dry-run, or desktop export to physical motion automatically.
 
-The current simulator is still planar and useful for fast hover/reach experiments. Hardware policy deployment must stay at the setpoint layer until FlightRL has a 6-DoF model, replay comparison, and broader safety gates. Learned policies should emit bounded velocity, altitude, and yaw setpoints through cflib; they should not command direct motors.
+## Learned-policy boundary
+
+Learned proposals remain blocked until the exact edge-v3 student, float/int8/
+GAP8 parity, measured target budget, CPX sequence/freshness protocol, STM32
+safety consumer, typed deployment bundle, and staged hardware evidence all
+exist and pass. Generic manifests and legacy checkpoint names cannot authorize
+control.

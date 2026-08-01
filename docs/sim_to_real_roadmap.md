@@ -1,93 +1,104 @@
-# FlightRL Sim-To-Real Roadmap
+# Mac-to-AI-Deck roadmap
 
-## Goal
+## End state
 
-Build an indoor-first drone learning stack that can train fast stabilization and command-following policies in simulation, validate them on a small real drone, and later scale the same architecture toward larger PX4-class or industrial platforms.
-
-The target autonomy split is hierarchical:
-
-```text
-camera / range / telemetry -> semantic navigator -> command policy -> stabilizer -> motor mixer
-```
-
-The vision-language-action layer should issue slow, high-level commands such as "fly to the right corner", "hold position", "approach", "circle", or "land". The low-level stabilizer should stay small, fast, local, and safety-gated.
-
-## Hardware Path
-
-Start with a small indoor platform instead of a large drone.
-
-Recommended first platform:
-
-- Bitcraze Crazyflie 2.1+ with Flow deck v2 and Crazyradio 2.0.
-- The current Bitcraze STEM Drone Bundle is about USD 320 and includes those parts.
-- The STEM Ranging Bundle is about USD 410 and adds Multi-ranger obstacle sensing.
-
-Budget note:
-
-- A USD 100 class drone is attractive for camera experiments, but usually lacks the telemetry, low-level control access, repeatability, and safety hooks needed for serious sim-to-real RL.
-- Tello-style drones can be useful for simple Python command or camera demos, but they are a weak fit for training and deploying custom stabilization policies.
-- Crazyflie costs more, but it is the better research platform because it has an open ecosystem, logging, Python APIs, optical flow, range decks, firmware access, and a realistic indoor safety profile.
-
-## Phases
-
-### Phase 1: Make FlightRL Physically Useful
-
-- Replace the planar model with full 6-DoF quadrotor state.
-- Model roll, pitch, yaw, angular velocity, motor layout, yaw torque, thrust, drag, and gravity.
-- Keep the existing planar configs as smoke-test tasks, but move real-hardware work to 6-DoF configs.
-- Add command-level action modes before relying on raw motor actions.
-
-### Phase 2: Add Real Actuator And Sensor Models
-
-- Add motor RPM or normalized motor state with first-order lag.
-- Fit thrust and torque curves from bench or manufacturer data.
-- Add battery voltage scaling and actuator saturation.
-- Add IMU bias/noise, optical-flow noise, range noise, latency, and packet loss.
-- Make domain randomization operate on measured hardware parameters.
-- Use the optional MuJoCo backend as a physics-reference lane for rigid-body/contact checks, then port only validated fast-path effects into the native C/Ocean env for sweep-scale training.
-- Treat MuJoCo model and solver settings as sweepable sim-to-real hyperparameters once the MuJoCo lane is active. Candidate knobs include timestep/substeps, solver iterations/tolerances, contact parameters, actuator gains/limits, damping/friction, body inertias, drag approximations, and sensor noise. The goal is not to overfit MuJoCo, but to find parameter regions where policies remain stable before porting the useful ranges into the fast native env.
-
-### Phase 3: Train Stabilization And Command Following
-
-- Train hover, attitude hold, altitude hold, velocity tracking, yaw tracking, and local waypoint tasks.
-- Prefer high-rate stabilizer policies over direct VLA-to-motor control.
-- Use RL where it can react quickly to disturbances, but keep emergency limits and termination checks deterministic.
-- Track success, crash rate, energy use, action smoothness, and recovery after perturbations.
-
-### Phase 4: Build The Real-Hardware Bridge
-
-- Implement a Crazyflie bridge for telemetry, command setpoints, logging, and emergency stop.
-- Start with high-level setpoints instead of direct motor commands.
-- Record every flight as replay data.
-- Add parameter-fitting scripts that compare real logs to simulated rollouts.
-- Gate deployment with a short preflight checklist and a maximum-risk profile.
-
-### Phase 5: Add Perception And VLA Control
-
-- Start with explicit room targets and range/flow telemetry.
-- Add camera perception only after stable command following works.
-- Convert language commands into structured goals, not motor actions.
-- Use the VLA layer for semantic intent and the command policy for local execution.
-
-Example:
+Train and verify a small target-conditioned indoor-navigation actor on the Mac,
+then lower that same versioned actor to the AI Deck. The actor proposes bounded
+velocity and yaw-rate setpoints. The Crazyflie STM32 remains authoritative for
+state estimation, safety checks, stabilization, and motor mixing.
 
 ```text
-"fly to the right corner" -> target region -> local waypoint -> velocity/yaw/altitude setpoints -> stabilizer
+Mac research                              Onboard runtime
+
+native C / MuJoCo scenes                  AI Deck camera preprocessing
+privileged teachers                       edge-v3 recurrent actor
+RL / imitation / distillation      ->     bounded CPX proposal
+held-out evaluation                              |
+                                                  v
+                                      STM32 safety + stabilizer
+                                                  |
+                                                  v
+                                                motors
 ```
 
-### Phase 6: Scale Up
+The current deployment contract is `aideck-navigation-policy-v3`. Pre-review
+learned actor families are not intermediate deployment stages.
 
-- Transfer the architecture, not the exact policy, to larger drones.
-- Move from Crazyflie to PX4/ArduPilot-class hardware after indoor validation.
-- Refit mass, inertia, actuator, drag, and sensor models for each platform.
-- Keep the same evaluation harness and command API so larger drones become a parameter and integration problem, not a rewrite.
+## Stage 1: Establish trustworthy desktop supervision
 
-## Near-Term Issues
+- Validate task, reset, reward, action, and success semantics with focused
+  tests and independent native/MuJoCo checks where appropriate.
+- Use privileged teachers to establish feasibility and generate labels.
+- Keep task selection fixed within each episode and evaluation seeds disjoint.
+- Bind reports to the clean source commit, exact metric/configuration, source
+  hashes, dependency/runtime identities, and generated artifact hashes.
 
-- Use `docs/crazyflie_bringup.md` for the first Crazyflie 2.1 Brushless setup, scripted MotionCommander demo, and telemetry logging.
-- Implement 6-DoF quadrotor dynamics.
-- Add motor/prop actuator model and parameter schema.
-- Add Crazyflie hardware bridge research and bring-up checklist.
-- Add command-level action mode for velocity, yaw, altitude, and local waypoint tracking.
-- Extend replay calibration beyond log-quality gates and per-signal scale/bias toward physical parameter fitting.
-- Add perception/VLA interface that emits structured goals.
+The fixed-door privileged teacher is useful evidence that its obstacle-free
+approach/settle objective is solvable. It is not a learned policy, a general
+navigation result, or a deployment candidate.
+
+## Stage 2: Train the exact edge-v3 actor on the Mac
+
+Implement one explicit adapter from simulator/teacher state and camera output
+to the exact 64x48 gray4 plus 19-telemetry plus target-ID contract. Train or
+distill the existing edge-shaped PyTorch reference and evaluate complete
+recurrent sequences, including reset and invalid-input cases.
+
+Promotion at this stage requires fresh held-out results for target-present,
+target-absent, hard-negative, obstacle, lighting, latency/drop, and room-layout
+variation. A desktop checkpoint remains non-deployable.
+
+## Stage 3: Freeze and lower
+
+Freeze and hash preprocessing, operator choices, tensor layouts, weights,
+calibration data, rounding, saturation, and recurrent reset semantics. Then
+establish:
+
+1. PyTorch-float to host-float-C sequence parity;
+2. calibrated int8 task-quality regression;
+3. host-int8-C to GAP8 bit-exact sequence parity;
+4. actual ELF L1/L2/stack/workspace fit;
+5. sustained GAP8 latency under camera and communication load.
+
+Static parameter, prospective byte, and MAC counts only support planning. They
+do not prove embedded fit or speed.
+
+## Stage 4: Build the command boundary
+
+Define a byte-bound CPX proposal protocol with version, mission/reset epoch,
+target identity, source frame sequence/time, proposal sequence, and finite
+bounded outputs. The STM32 must reject stale, duplicate, reordered, malformed,
+nonfinite, or contract-mismatched proposals without advancing applied-action
+feedback.
+
+Independent STM32 logic must enforce estimator/deck health, altitude/ranger
+constraints, geofence, action clamps, slew limits, and a deadman. Actor boot,
+mission/target change, estimator reset, invalid input, and excessive frame gap
+must reset recurrent state.
+
+## Stage 5: Promote hardware evidence gradually
+
+The order is intentionally one-way:
+
+1. grounded camera and telemetry capture;
+2. synchronized offline replay;
+3. on-device inference parity and timing with no proposals applied;
+4. passive shadow against independent safety telemetry;
+5. tethered bounded-axis proposal tests;
+6. only then, separately authorized mission flights.
+
+Every stage has its own abort criteria and produces evidence, not authority for
+the next stage. Physical execution is never implied by a passing software gate.
+
+## Current gaps
+
+- exact edge-v3 observation/supervision adapter and trainer;
+- fresh learned edge-v3 checkpoint and held-out evaluation;
+- float-C, calibrated-int8, and GAP8 implementations;
+- measured target memory/latency and recurrent sequence parity;
+- CPX proposal transport and STM32 proposal-safety runtime;
+- typed deployment bundle binding every binary, contract, and evidence input;
+- positive learned-hardware approval path.
+
+Until these are closed, the valid work surface is Mac simulation/training and
+non-actuating hardware capture, telemetry, replay, and inference measurement.

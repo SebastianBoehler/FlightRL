@@ -17,6 +17,9 @@ python scripts/smoke_test.py --config configs/tasks/hover.toml
 
 If you are working in a shared Python environment, prefer a dedicated virtualenv. Upstream PufferLib packaging can influence the installed NumPy version during `pip install`.
 
+Build release artifacts with `make package`. It clears prior build state first
+so a deleted module cannot leak into a wheel through a stale `build/` tree.
+
 Training uses an upstream PufferLib 4 checkout. Set `PUFFERLIB_ROOT` or pass `--pufferlib-root` to `scripts/train.py`.
 
 ## Making Changes

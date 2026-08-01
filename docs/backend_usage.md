@@ -39,11 +39,14 @@ The Puffer export should reuse the same native 6-DoF core instead of duplicating
 Use only for supervised Crazyflie work:
 
 - deck checks and telemetry logging
-- motor bench and calibration flights
+- bounded propeller-off motor bench diagnostics
 - replay evidence collection
 - manually confirmed scripted demos
 
-Learned checkpoint control must stay behind sim-to-real approval manifests and hardware blockers. Do not use hardware scripts for unattended experiments.
+Generic checkpoint manifests cannot authorize learned control. No learned live
+launcher exists. An exact typed edge-v3 deployment bundle must bind the
+policy bytes, contracts, runtime, firmware, hardware configuration, and safety
+mode. Do not use hardware scripts for unattended experiments.
 
 ## Rule Of Thumb
 

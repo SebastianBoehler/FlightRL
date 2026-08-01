@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "lifecycle": "historical_reference",
+  "authority": "none",
+  "scope": "transport_frame_integrity_only",
+  "edge_v3_training_eligible": false,
+  "notes": "These July captures establish only coherent frame transport. They do not establish current labels, split freshness, telemetry synchronization, policy compatibility, promotion eligibility, or flight authority.",
+  "datasets": [
+    {
+      "path": "artifacts/semantic/live-flight-monitor-qvga-clip-20260726/frames",
+      "status": "known_corrupt",
+      "evidence": "Pre-fix moving QVGA capture contains raster-wrapped pieces of multiple sensor frames."
+    },
+    {
+      "path": "artifacts/ai_deck/frame_safe_qvga_confirmed_hand_motion_20260726/frames",
+      "status": "frame_safe",
+      "evidence": "Corrected three-buffer firmware, 220-frame moving review, zero visible raster-wrap seams."
+    },
+    {
+      "path": "artifacts/semantic/qvga-frame-safe-monitor-positive-reacquisition-20260726/frames",
+      "status": "frame_safe",
+      "evidence": "Post-fix QVGA reacquisition capture using complete-frame buffering."
+    },
+    {
+      "path": "artifacts/semantic/20260727T152639Z-computer-monitor/frames",
+      "status": "frame_safe",
+      "evidence": "Post-fix gray4 yaw-authority capture; inspected frames contain one coherent camera view."
+    },
+    {
+      "path": "artifacts/semantic/live-qvga-v8-monitor-shadow-20260728-run3-height080/frames",
+      "status": "frame_safe",
+      "evidence": "Latest post-fix high-resolution capture confirmed coherent after the frame-boundary correction."
+    },
+    {
+      "path": "artifacts/ai_deck/door-observability-positive-20260729-run1/frames",
+      "status": "frame_safe",
+      "evidence": "Reviewed 300-frame moving QVGA door sweep; rigid guards, coherent views, one whole-frame drop."
+    },
+    {
+      "path": "artifacts/ai_deck/door-observability-negative-20260729-run1/frames",
+      "status": "frame_safe",
+      "evidence": "Reviewed 300-frame moving QVGA distractor sweep; rigid guards, coherent views, zero drops, no door."
+    }
+  ]
+}

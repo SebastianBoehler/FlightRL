@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "catalogued_at": "2026-08-01",
+  "default_authority": "none",
+  "active_navigation_policy_checkpoints": [],
+  "policy_checkpoint_status": "No policy checkpoint in the working repository is current, approved, or deployable.",
+  "retained_workspace_evidence": [
+    {
+      "artifact_id": "aideck-gray4-platform-firmware",
+      "lifecycle": "platform_fixture",
+      "authority": "none",
+      "files": [
+        {
+          "path": "artifacts/ai_deck/udp_firmware/aideck-gap8-qqvga-gray4-64x48-pipelined-65fps-maxfps.img",
+          "bytes": 62496,
+          "sha256": "da8fef120813f162d144a969a24e08ae8e7843b855ae2710478b7556b91ab08d"
+        },
+        {
+          "path": "artifacts/ai_deck/udp_firmware/aideck-gap8-qqvga-gray4-pipelined-65fps-frame-safe.img",
+          "bytes": 59424,
+          "sha256": "0bf29f98c52962589c9d70ba78ca0aac05ae928d37d69c5bc97c2159765b2403"
+        }
+      ],
+      "notes": "Firmware fixtures only; neither file contains a navigation policy or grants flight authority."
+    }
+  ],
+  "cleanup": {
+    "recoverable_trash": "local-trash://FlightRL-cleanup-20260801-first-review",
+    "recoverable_trash_file_count_reported": 2324,
+    "recoverable_trash_disk_size_reported": "2.1G",
+    "recoverable_trash_post_move_check": "macOS_terminal_access_denied",
+    "additional_recoverable_trash": "local-trash://FlightRL-cleanup-2026-08-01-pass2",
+    "wandb_recoverable_trash": "local-trash://FlightRL-wandb-invalidated-20260801",
+    "wandb_run_directories": 320,
+    "wandb_files": 2333,
+    "wandb_disk_size_reported": "17M",
+    "wandb_test_regrowth_recoverable_trash": "local-trash://FlightRL-wandb-test-regrowth-20260801",
+    "wandb_test_regrowth_runs": 3,
+    "wandb_test_regrowth_files": 24,
+    "cold_archive": "local-archive://2026-08-01",
+    "local_archive_resolver": "local-archive://<date>/<path> resolves under the user-local Documents/FlightRL-archive directory and is not portable or an off-machine backup",
+    "invalidated_reference_tree": "local-archive://2026-08-01/invalidated_reference",
+    "invalidated_reference_files": 27,
+    "invalidated_reference_kib": 2032,
+    "invalidated_reference_tree_sha256": "c2d31aaf0c3311a7d9d7626b66b7379970de7c08bf13b7bca1eb2e446062379d",
+    "archived_learnings_tree": "local-archive://2026-08-01/learnings",
+    "archived_learnings_files": 17,
+    "archived_learnings_kib": 88,
+    "archived_learnings_tree_sha256": "d51b8291fd3a80534651522b758cc429fb45eb021647c562225e826c1d074bee",
+    "replay_tree_files": 2236,
+    "replay_tree_kib": 303764,
+    "replay_tree_sha256": "7810eb0204aee223c34ae35c41c8f485f7cfce4497da5a19b983f7eb648ae8c5",
+    "tree_hash_command": "from the tree root: find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256",
+    "physical_working_cache_preserved": true
+  }
+}

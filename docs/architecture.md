@@ -1,122 +1,148 @@
 # Architecture
 
-## Data Flow
+## System boundary
 
-1. Python loads a TOML config into typed dataclasses.
-2. `DronePlanarEnv` converts that config into numeric keyword arguments for the native binding.
-3. The C binding allocates per-env state, points into shared NumPy buffers, and stores sim/task/reward/sensor parameters.
-4. `vec_step` advances every native environment, writes observations and rewards in place, and aggregates episodic metrics through `vec_log`.
-5. Local Python utilities use that wrapper for rollout export, checkpoint evaluation, and rendering.
+FlightRL has three deliberately separate layers:
 
-For training, the flow continues into upstream PufferLib 4 after step 1:
+```text
+desktop research                    future deployed runtime
 
-1. FlightRL flattens the same TOML config into a PufferLib `4.0` `.ini`.
-2. FlightRL copies the native simulator modules into a target `ocean/<env_name>/` directory in an upstream PufferLib checkout.
-3. FlightRL generates a thin Puffer 4 `binding.c` adapter that wraps the existing single-agent simulator into the static `vecenv.h` interface.
-4. Upstream `build.sh` compiles that exported environment into the PufferLib 4 backend.
+native C / MuJoCo environments      AI Deck GAP8
+privileged teachers                 camera preprocessing
+PPO / imitation / distillation  ->  edge-v3 recurrent actor
+held-out challenge evaluation             |
+                                             v CPX proposal
+                                       STM32 safety layer
+                                       estimator/stabilizer
+                                             |
+                                             v
+                                           motors
+```
 
-## Native Boundaries
+The desktop layers may use privileged state, larger critics, and richer
+diagnostics. The deployed actor may consume only the exact edge-v3 observation
+contract. The STM32 must independently decide whether and how a proposal is
+applied; the actor never owns motor authority.
 
-The native side is intentionally split into small modules:
+## Edge-v3 actor
 
-- `native_actions.c`: normalized action handling and actuator smoothing
-- `native_dynamics.c`: planar rigid-body integration
-- `native_reset.c`: reset sampling and domain randomization
-- `native_tasks.c`: hover, waypoint, and waypoint-sequence progress logic
-- `native_reward.c`: transparent reward decomposition
-- `native_termination.c`: crash, timeout, and bounds checks
-- `native_observation.c`: configurable observation assembly
-- `native_logging.c`: episodic metric aggregation
-- `native_env.c`: `c_reset` and `c_step` orchestration
+`aideck-navigation-policy-v3` is the only current deployment target. Its model
+input is one current 64x48 gray4 frame, 19 normalized telemetry values, and a
+closed-vocabulary target ID (`door`, `monitor`, or `sink`). Its outputs are
+normalized body-frame `vx`/`vy`, world-up `vz`, and world-up yaw-rate proposals.
 
-The binding layer is also modular:
+The reference implementation is split into:
 
-- `binding_helpers.h`: NumPy/Python helpers
-- `binding_env.h`: per-env handle lifecycle
-- `binding_vec.h`: vectorized reset, step, log, and close
-- `binding.c`: native config parsing and exported methods
+- `puffer4_edge_contract.py`: units, frames, normalization, wire records,
+  sequence/reset rules, target vocabulary, and action scales;
+- `puffer4_edge_policy.py`: edge-shaped PyTorch visual/recurrent actor;
+- `puffer4_edge_budget.py`: parameter, prospective quantized-byte, MAC, and
+  activation estimates.
 
-The PufferLib 4 export path reuses the same simulator modules but swaps in a generated `binding.c` that targets `vecenv.h` instead of the local Python C extension entrypoints.
+The PyTorch graph is a design reference. It becomes an exact deployment graph
+only after preprocessing/operator freeze, float-C parity, calibrated int8
+validation, GAP8 sequence parity, and measured target memory/latency.
 
-## C Core Vs Python Wrapper
+## Desktop environments
 
-The C core owns:
+### Native C
 
-- world state
-- drone state
-- reward terms
-- termination flags
-- task progression
-- reset sampling
-- observation generation
+The local extension owns contiguous vector state and writes observations,
+rewards, terminations, truncations, and episodic metrics in place. The generic
+native simulator is divided by responsibility:
 
-The Python side owns:
+- `native_actions.c`: bounded action handling and actuator smoothing;
+- `native_dynamics.c`: planar dynamics;
+- `native_sixdof.c`: six-DoF dynamics/reward integration;
+- `native_tasks.c`: task progression;
+- `native_reward.c`: reward decomposition;
+- `native_observation.c`: observation assembly;
+- `native_reset.c`: reset and randomization;
+- `native_termination.c`: crash, timeout, and bounds checks;
+- `native_logging.c`: episodic aggregation;
+- `binding.c` and binding headers: NumPy/Python vector interface.
 
-- config loading
-- action and observation space declaration
-- extension handles
-- training and evaluation scripts
-- rollout export and plotting
+The fixed-door environment has a separate generated Ocean binding and explicit
+mission metric and privileged-teacher action contract. Its success metric
+requires approach and settle at the configured standoff, pose and velocity
+tolerances, continued visibility, and a 33-step hold. The retired fixed-door
+student actor is not loaded or reinterpreted as edge-v3.
 
-This keeps training headless and fast while leaving experiment management readable on the Python side.
+### MuJoCo
 
-## Future Sim-To-Real Path
+MuJoCo is an independent validation/calibration lane for rigid-body dynamics,
+contacts, room geometry, sensor semantics, and orbit/circle behavior. It shares
+task/reward contracts where exact parity is intended and rejects conflicting
+explicit physics/control settings. Its current rate-lag approximation is not
+claimed to be identical to native dynamics.
 
-The key extension points for sim-to-real work are already separated:
+### PufferLib export
 
-- `drone` config for mass, inertia, thrust, drag, and limits
-- `environment.action_mode` for switching between stabilized and actuator-centric control
-- `sensors` for moving from ideal state to noisier derived channels
-- `domain_randomization` for per-episode perturbations
-- hardware profile TOMLs under `configs/hardware/`
+FlightRL can export native environments into a separate upstream PufferLib 4
+checkout. The exporter copies the selected C modules, emits a thin Ocean
+`binding.c`, and writes the corresponding `.ini`. PufferLib checkpoints remain
+desktop research artifacts unless a later typed edge-v3 distillation and
+deployment bundle binds them to the onboard graph.
 
-The MVP does not implement real hardware IO. It only keeps the configuration and action/sensor abstractions ready for that later work.
+## Episode and action semantics
 
-## Future Hierarchical Autonomy Path
+Task identity is established before the first observation and remains stable
+for the episode. Only completed environments receive a new task. Probability
+vectors must be finite, nonnegative, correctly shaped, and have positive total
+mass.
 
-The intended autonomy split is hierarchical rather than end-to-end motor control:
+Continuous stochastic actors use a tanh-transformed normal distribution. PPO
+stores/reuses the pre-tanh sample for log-probability evaluation; it does not
+apply an inverse transform to an already saturated/clamped mode. Distribution
+locations, scales, and bounds must be finite, and scales must be positive.
 
-- `camera + telemetry + mission context -> VLA navigator`
-- `VLA navigator -> high-level command setpoints`
-- `stabilizer/controller -> motor mixing -> quadrotor`
+These desktop action contracts are not the edge-v3 setpoint ABI. Translation is
+explicit and byte/contract bound; shape equality is never sufficient evidence
+of semantic compatibility.
 
-For this project, that means future perception-heavy models should target high-level commands such as:
+## Evidence and authority
 
-- velocity targets
-- heading or yaw targets
-- altitude targets
-- local waypoint updates
-- discrete modes like `hold`, `approach`, `circle`, or `land`
+Reports are evidence, not authority. Inputs that affect a claim must be bound by
+resolved path and SHA-256 and parsed with exact JSON boolean semantics. A
+record saying `ready=true` while also carrying failures is blocked.
 
-The low-level stabilizer remains responsible for:
+The generic sim-to-real manifest intentionally emits zero hardware-approved
+checkpoints. `require_hardware_approved()` unconditionally blocks learned live
+control because no typed edge-v3 deployment bundle producer exists. This is the
+correct current safety state, not an unfinished positive approval route.
 
-- attitude stabilization
-- disturbance rejection
-- actuator smoothing and limits
-- emergency recovery behavior
+A future deployment bundle must bind at least:
 
-This keeps the fast PufferLib/Ocean C backend useful for stabilization and control research while leaving room for a slower multimodal navigator on external compute later. It also avoids coupling future VLA work to unsafe or brittle direct motor-command outputs.
+- source commit and dependency/toolchain identities;
+- observation, action, mission, target-vocabulary, and model-format contracts;
+- exact float/int8 weights, preprocessing, quantization, and tensor layouts;
+- host/GAP8 recurrent-sequence parity and reset/error vectors;
+- GAP8 ELF, firmware, CPX, STM32 safety configuration, and runtime identities;
+- calibration/held-out evidence provenance and freshness.
 
-The executable semantic mission contract and the MuJoCo/Ocean rollout plan are
-documented in `docs/research/semantic_mission_architecture_20260726.md`.
+## Hardware code
 
-## Future Multi-Agent Path
+Hardware modules exist for Crazyflie connection/preflight, camera/firmware
+capture, telemetry, nonlearned bring-up, calibration evidence, and
+non-actuating grounding. They do not contain a learned edge-v3 flight runtime.
 
-The current MVP is single-drone, but the core already separates drone state from world/task state. To extend toward multiple drones later:
+Physical work is staged independently from policy promotion. Camera or
+telemetry evidence may be retained even when every learned checkpoint is
+invalidated. Generated checkpoints/runs are not retained merely because they
+were once successful.
 
-- store an array of `DroneState` structs instead of one drone in the env
-- keep one shared world/task object per environment
-- make task, reward, and sensor functions operate on `(env, drone_index)`
-- expand the wrapper so `num_agents` becomes `num_envs * drones_per_env`
+## Current deliberate gaps
 
-The current file layout is meant to make that refactor incremental instead of a rewrite.
+- no edge-v3 observation adapter, distillation/training entrypoint, or held-out
+  student evaluator;
+- no frozen float-C or calibrated int8 implementation;
+- no GAP8 kernel, ELF memory proof, or sustained target latency measurement;
+- no CPX proposal transport or STM32 proposal-safety implementation;
+- no typed edge-v3 deployment bundle or positive learned-flight authority;
+- no claim that the corrected fixed-door teacher covers arbitrary obstacles,
+  lighting, latency, other room footprints, a learned student, or physical
+  flight;
+- no multi-drone stepping or swarm policy.
 
-## Deliberate MVP Omissions
-
-- no live native renderer
-- no obstacle avoidance task
-- no range or vision simulation output
-- no replay ingestion from real logs
-- no multi-agent stepping
-
-Unsupported features fail fast instead of silently substituting fake data.
+Unsupported paths fail closed instead of substituting legacy checkpoints,
+partial state loading, mock data, or inferred authority.
