@@ -1,7 +1,7 @@
 PYTHON ?= python
 CONFIG ?= configs/tasks/hover.toml
 
-.PHONY: dev build package clean test smoke benchmark rollout train eval compare
+.PHONY: dev build package clean test smoke benchmark rollout compare
 
 dev:
 	$(PYTHON) -m pip install -e . --no-build-isolation
@@ -28,12 +28,6 @@ benchmark:
 
 rollout:
 	$(PYTHON) scripts/rollout_random.py --config $(CONFIG)
-
-train:
-	$(PYTHON) scripts/train.py --config $(CONFIG)
-
-eval:
-	$(PYTHON) scripts/eval.py --config $(CONFIG)
 
 compare:
 	$(PYTHON) scripts/compare_rewards.py

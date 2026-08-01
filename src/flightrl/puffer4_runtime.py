@@ -6,11 +6,6 @@ import subprocess
 import sys
 from typing import Sequence
 
-from .config import FlightConfig
-from .puffer4_config import Puffer4ExportSettings
-from .puffer4_export import Puffer4ExportResult, export_puffer4_assets
-
-
 BUILD_MODE_FLAGS = {
     "default": [],
     "float": ["--float"],
@@ -100,52 +95,3 @@ def ensure_puffer_build_matches(
             f"PufferLib native extension is built for {compiled!r}, not {expected_env_name!r}; "
             "rerun without --no-build or use the compiled --env-name."
         )
-
-
-def export_and_build(
-    config: FlightConfig,
-    *,
-    pufferlib_root: str | Path,
-    settings: Puffer4ExportSettings,
-    build_mode: str,
-    no_build: bool,
-) -> tuple[Path, Puffer4ExportResult]:
-    root = resolve_pufferlib_root(pufferlib_root)
-    result = export_puffer4_assets(config, root, settings=settings)
-    if not no_build:
-        subprocess.run(
-            ["bash", "build.sh", settings.env_name, *BUILD_MODE_FLAGS[build_mode]],
-            cwd=root,
-            check=True,
-            env=puffer_subprocess_env(build_mode, ()),
-        )
-    return root, result
-
-
-def run_train(
-    config: FlightConfig,
-    *,
-    pufferlib_root: str | Path,
-    settings: Puffer4ExportSettings,
-    build_mode: str,
-    no_build: bool = False,
-    puffer_args: Sequence[str] = (),
-    python_executable: str | None = None,
-) -> subprocess.CompletedProcess[None]:
-    root, _ = export_and_build(
-        config,
-        pufferlib_root=pufferlib_root,
-        settings=settings,
-        build_mode=build_mode,
-        no_build=no_build,
-    )
-    ensure_puffer_build_matches(root, settings.env_name, no_build=no_build, python_executable=python_executable, build_mode=build_mode)
-    command = [
-        python_executable or sys.executable,
-        "-m",
-        "pufferlib.pufferl",
-        "train",
-        settings.env_name,
-        *normalize_puffer_args(puffer_args, build_mode),
-    ]
-    return subprocess.run(command, cwd=root, check=True, env=puffer_subprocess_env(build_mode, puffer_args))

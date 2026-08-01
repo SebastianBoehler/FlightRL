@@ -199,29 +199,3 @@ def test_room_visualizer_filters_and_writes_plot(tmp_path: Path) -> None:
     )
     assert output.exists()
     assert "trajectory samples" in result.stdout
-
-
-def test_imitation_hover_training_writes_checkpoint(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "policy.pt"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/train_imitation_hover.py",
-            "--config",
-            "configs/tasks/crazyflie_hover.toml",
-            "--updates",
-            "1",
-            "--steps-per-update",
-            "4",
-            "--num-envs",
-            "8",
-            "--checkpoint",
-            str(checkpoint),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert checkpoint.exists()
-    assert "checkpoint=" in result.stdout

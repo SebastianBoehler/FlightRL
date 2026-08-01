@@ -36,12 +36,13 @@ The retained
 registry establishes only coherent frame transport and is explicitly ineligible
 for edge-v3 training, promotion, or flight authority.
 
-`manifest.json` records the empty active-policy set and the small platform
-firmware fixture. Raw AI Deck, Crazyflie, semantic, hardware, and telemetry
-evidence must be preserved separately from regenerable training outputs. New
-edge records must include parameter and quantized bytes, MACs, peak activation
-and L1 use, actual GAP8 ELF L2 use, input bytes, firmware identity, frame rate,
-latency, and sequence-parity results.
+`manifest.json` records an empty active-policy set and no portable retained
+workspace evidence. Gitignored local firmware caches are deliberately excluded
+because a fresh checkout cannot verify them. Raw AI Deck, Crazyflie, semantic,
+hardware, and telemetry evidence must be preserved separately from regenerable
+training outputs. New edge records must include parameter and quantized bytes,
+MACs, peak activation and L1 use, actual GAP8 ELF L2 use, input bytes, firmware
+identity, frame rate, latency, and sequence-parity results.
 
 `local-archive://<date>/<path>` resolves below the current user's
 `Documents/FlightRL-archive` directory. It is a same-disk convenience URI, not
@@ -53,8 +54,7 @@ find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256
 ```
 
 Historical firmware names and aggregate measurements are not active baselines.
-Use `manifest.json` for archived identity and hash information, and establish a
-fresh gate for any current binary.
+Establish a fresh, portable identity and gate for any current binary.
 
 ## Cleanup rule
 

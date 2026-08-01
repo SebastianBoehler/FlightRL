@@ -4,26 +4,7 @@
   "default_authority": "none",
   "active_navigation_policy_checkpoints": [],
   "policy_checkpoint_status": "No policy checkpoint in the working repository is current, approved, or deployable.",
-  "retained_workspace_evidence": [
-    {
-      "artifact_id": "aideck-gray4-platform-firmware",
-      "lifecycle": "platform_fixture",
-      "authority": "none",
-      "files": [
-        {
-          "path": "artifacts/ai_deck/udp_firmware/aideck-gap8-qqvga-gray4-64x48-pipelined-65fps-maxfps.img",
-          "bytes": 62496,
-          "sha256": "da8fef120813f162d144a969a24e08ae8e7843b855ae2710478b7556b91ab08d"
-        },
-        {
-          "path": "artifacts/ai_deck/udp_firmware/aideck-gap8-qqvga-gray4-pipelined-65fps-frame-safe.img",
-          "bytes": 59424,
-          "sha256": "0bf29f98c52962589c9d70ba78ca0aac05ae928d37d69c5bc97c2159765b2403"
-        }
-      ],
-      "notes": "Firmware fixtures only; neither file contains a navigation policy or grants flight authority."
-    }
-  ],
+  "retained_workspace_evidence": [],
   "cleanup": {
     "recoverable_trash": "local-trash://FlightRL-cleanup-20260801-first-review",
     "recoverable_trash_file_count_reported": 2324,

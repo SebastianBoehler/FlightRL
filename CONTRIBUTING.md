@@ -20,7 +20,8 @@ If you are working in a shared Python environment, prefer a dedicated virtualenv
 Build release artifacts with `make package`. It clears prior build state first
 so a deleted module cannot leak into a wheel through a stale `build/` tree.
 
-Training uses an upstream PufferLib 4 checkout. Set `PUFFERLIB_ROOT` or pass `--pufferlib-root` to `scripts/train.py`.
+Six-DoF Puffer training uses an upstream PufferLib 4 checkout. Pass its path to
+`scripts/train_sixdof_puffer4.py` with `--pufferlib-root`.
 
 ## Making Changes
 

@@ -102,7 +102,8 @@ be described as general navigation success.
 The repository intentionally keeps three desktop research surfaces:
 
 - the native C/Ocean and Python planar scaffold for small simulator and export
-  tests;
+  contract tests only; its legacy learned-policy producer and unversioned
+  checkpoint loader are retired;
 - native C plus MuJoCo six-DoF environments for teacher, dynamics, reward,
   PPO, imitation, challenge, and parity work;
 - the native fixed-door privileged teacher for approach/settle feasibility and

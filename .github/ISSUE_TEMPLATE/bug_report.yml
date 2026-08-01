@@ -15,7 +15,7 @@ body:
     attributes:
       label: Command
       description: Exact command you ran
-      placeholder: python scripts/train.py --config configs/tasks/hover.toml
+      placeholder: python scripts/train_sixdof_teacher.py --task position_yaw
     validations:
       required: true
   - type: input
