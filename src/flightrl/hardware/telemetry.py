@@ -38,6 +38,7 @@ class TelemetryCsvWriter:
                 *(sample.values.get(variable, "") for variable in self.variables),
             )
         )
+        self._file.flush()
 
     def close(self) -> None:
         self._file.close()
@@ -106,8 +107,8 @@ def write_sync_log(scf, modules, config: CrazyflieHardwareConfig, output_path: s
     pending_by_timestamp: dict[int, dict[str, object]] = {}
     max_pending_timestamps = max(8, 2 * len(log_configs))
     count = 0
-    with TelemetryCsvWriter(output_path, variables=variables) as writer:
-        with modules.sync_logger_cls(scf, log_configs) as logger:
+    with modules.sync_logger_cls(scf, log_configs) as logger:
+        with TelemetryCsvWriter(output_path, variables=variables) as writer:
             while (remaining := deadline - monotonic()) > 0.0:
                 packet = next_log_packet(logger, timeout_s=remaining)
                 if packet is None:

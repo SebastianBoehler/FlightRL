@@ -193,6 +193,46 @@ def test_room_summary_cli_writes_json_and_markdown(tmp_path: Path) -> None:
     assert "mapping_ready=True" in result.stdout
 
 
+def test_room_summary_cli_uses_device_time_for_bursted_flight_callbacks(
+    tmp_path: Path,
+) -> None:
+    rows = sample_rows(count=4, dt=1.0, x_step=0.1)
+    for index, row in enumerate(rows):
+        row["crazyflie_time_ms"] = str(index * 1000)
+    rows[2]["host_time_s"] = "1.001"
+    log = tmp_path / "flight.csv"
+    log.write_text(csv_text(rows))
+    output = tmp_path / "summary.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/summarize_crazyflie_room.py",
+            "--input",
+            str(log),
+            "--output",
+            str(output),
+            "--min-points",
+            "12",
+            "--min-duration-s",
+            "2",
+            "--min-trajectory-xy-span-m",
+            "0.2",
+            "--max-step-speed-m-s",
+            "5",
+            "--strict",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = json.loads(output.read_text())
+    assert data["preprocessing"]["time_source"] == "crazyflie_time_ms"
+    assert data["summary"]["trajectory_quality"]["speed_glitch_count"] == 0
+
+
 def sample_rows(*, count: int, dt: float, x_step: float, yaw_step: float = 0.0) -> list[dict[str, str]]:
     rows = []
     for index in range(count):

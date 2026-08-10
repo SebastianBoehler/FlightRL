@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from math import atan, degrees, radians, tan
 from pathlib import Path
 import subprocess
 import sys
@@ -20,13 +21,58 @@ from flightrl.mujoco.control import (
     resolve_control,
     step_actuator_targets,
 )
+from flightrl.mujoco.camera_model import randomize_gray4_frame
 from flightrl.mujoco.model import build_crazyflie_mjcf
+from flightrl.mujoco.rendering import (
+    _gap8_resize_gray4,
+    _quantize_gray4_high_nibble,
+)
 from flightrl.sixdof.env import euler_to_quat
 from flightrl.sixdof.geometry import AxisAlignedObstacle, BoxRoom
 from flightrl.sixdof.physics import SixDofPhysicsProfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_mujoco_gray4_quantization_matches_gap8_high_nibble() -> None:
+    gray = np.asarray([0, 7, 15, 16, 31, 32, 254, 255], dtype=np.uint8)
+
+    quantized = _quantize_gray4_high_nibble(gray)
+
+    np.testing.assert_array_equal(
+        quantized,
+        np.asarray([0, 0, 0, 17, 17, 34, 255, 255], dtype=np.uint8),
+    )
+
+
+def test_mujoco_gray4_resize_matches_gap8_floor_index_maps() -> None:
+    source = np.arange(8 * 6, dtype=np.uint8).reshape(6, 8)
+
+    resized = _gap8_resize_gray4(source, output_width=4, output_height=3)
+
+    expected_samples = source[np.ix_([0, 2, 4], [0, 2, 4, 6])]
+    np.testing.assert_array_equal(
+        resized,
+        _quantize_gray4_high_nibble(expected_samples),
+    )
+
+
+def test_camera_randomization_finishes_with_gap8_high_nibble_quantization() -> None:
+    gray = np.full((8, 8), 31.0, dtype=np.float32)
+    expected_noise = np.random.default_rng(91).normal(0.0, 2.0, size=gray.shape)
+    expected = _quantize_gray4_high_nibble(
+        np.clip(gray + expected_noise, 0.0, 255.0).astype(np.uint8)
+    )
+
+    randomized = randomize_gray4_frame(
+        gray,
+        target_mean=31.0,
+        gamma=1.0,
+        rng=np.random.default_rng(91),
+    )
+
+    np.testing.assert_array_equal(randomized, expected)
 
 
 def test_mujoco_model_applies_plain_room_and_physics_profile() -> None:
@@ -62,7 +108,14 @@ def test_mujoco_model_applies_plain_room_and_physics_profile() -> None:
     assert inertial.attrib["mass"] == "0.042"
     assert wall.attrib["pos"] == "1.22 0.15 0.9"
     obstacle = root.find(".//geom[@name='room_obstacle_0']")
+    camera = root.find(".//camera[@name='aideck']")
     assert obstacle is not None
+    assert camera is not None
+    vertical_fov_deg = float(camera.attrib["fovy"])
+    horizontal_fov_deg = degrees(
+        2.0 * atan(tan(radians(vertical_fov_deg) / 2.0) * 162.0 / 122.0)
+    )
+    assert horizontal_fov_deg == pytest.approx(87.0, abs=1.0e-6)
     assert obstacle.attrib["pos"] == "0.3 0.1 0.45"
     assert obstacle.attrib["size"] == "0.1 0.2 0.35"
 

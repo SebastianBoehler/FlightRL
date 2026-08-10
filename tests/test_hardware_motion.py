@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import inspect
+from types import SimpleNamespace
+
 import pytest
 
+from flightrl.hardware import motion
 from flightrl.hardware.config import CrazyflieHardwareConfig
 from flightrl.hardware.errors import HardwareSafetyError
 from flightrl.hardware.motion import (
@@ -24,8 +28,25 @@ class FakeCommander:
     def stop(self) -> None:
         self.calls.append(("stop", ()))
 
+    def start_linear_motion(
+        self,
+        velocity_x_m: float,
+        velocity_y_m: float,
+        velocity_z_m: float,
+        rate_yaw: float = 0.0,
+    ) -> None:
+        self.calls.append(
+            (
+                "start_linear_motion",
+                (velocity_x_m, velocity_y_m, velocity_z_m, rate_yaw),
+            )
+        )
+
     def turn_left(self, angle: float, rate: float) -> None:
         self.calls.append(("turn_left", (angle, rate)))
+
+    def start_turn_left(self, rate: float) -> None:
+        self.calls.append(("start_turn_left", (rate,)))
 
     def turn_right(self, angle: float, rate: float) -> None:
         self.calls.append(("turn_right", (angle, rate)))
@@ -95,6 +116,64 @@ def test_demo_rejects_total_nominal_duration_above_flight_limit() -> None:
             hover_s=0.0,
             max_flight_s=1.0,
         )
+
+
+def test_patrol_sequence_has_two_short_forward_legs_and_one_slow_turn() -> None:
+    execute = getattr(motion, "execute_patrol_flight", None)
+    assert execute is not None, "patrol flight executor is missing"
+    assert "on_phase" in inspect.signature(execute).parameters
+    commander = FakeCommander()
+    sleeps: list[float] = []
+    phases: list[str] = []
+    plan = SimpleNamespace(
+        default_height_m=0.4,
+        velocity_m_s=0.1,
+        forward_distance_m=0.3,
+        turn_angle_degrees=20.0,
+        turn_rate_deg_s=8.0,
+        hover_s=0.5,
+    )
+
+    execute(commander, plan, sleep=sleeps.append, on_phase=phases.append)
+
+    assert commander.calls == [
+        ("take_off", (0.4, 0.1)),
+        ("start_linear_motion", (0.1, 0.0, 0.0, 0.0)),
+        ("stop", ()),
+        ("start_turn_left", (8.0,)),
+        ("stop", ()),
+        ("start_linear_motion", (0.1, 0.0, 0.0, 0.0)),
+        ("stop", ()),
+        ("land", (0.1,)),
+    ]
+    assert sleeps == pytest.approx([0.5, 3.0, 0.5, 2.5, 0.5, 3.0, 0.5])
+    assert phases == [
+        "takeoff",
+        "forward_1",
+        "turn_left",
+        "forward_2",
+        "land",
+        "complete",
+    ]
+
+
+def test_patrol_plan_fits_inside_its_hard_flight_limit() -> None:
+    plan_type = getattr(motion, "PatrolFlightPlan", None)
+    assert plan_type is not None, "patrol flight plan is missing"
+
+    plan = plan_type()
+
+    assert plan.forward_distance_m == pytest.approx(0.3)
+    assert plan.nominal_duration_s() == pytest.approx(18.5)
+    assert plan.nominal_duration_s() < plan.max_flight_s
+
+
+def test_patrol_plan_rejects_motion_longer_than_hard_limit() -> None:
+    plan_type = getattr(motion, "PatrolFlightPlan", None)
+    assert plan_type is not None, "patrol flight plan is missing"
+
+    with pytest.raises(HardwareSafetyError, match="nominal duration"):
+        plan_type(forward_distance_m=1.0, max_flight_s=10.0)
 
 
 def test_arm_and_disarm_use_supervisor_requests() -> None:

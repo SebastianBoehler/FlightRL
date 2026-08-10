@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from flightrl.hardware.cflib_bridge import require_cflib, sync_crazyflie_context
-from flightrl.hardware.config import load_hardware_config
+from flightrl.hardware.config import load_hardware_config, validate_hardware_config
 from flightrl.hardware.console_capture import CrazyflieConsoleCapture
 from flightrl.hardware.errors import HardwareError
 from flightrl.hardware.telemetry import default_log_path, validate_log_duration, write_sync_log
@@ -19,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="explicit hardware/deck profile for the connected stack",
     )
+    parser.add_argument("--uri", help="override the configured read-only telemetry URI")
     parser.add_argument("--duration-s", type=float, default=10.0)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--console-output", type=Path)
@@ -32,6 +34,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_hardware_config(args.config)
+        if args.uri is not None:
+            config = replace(config, radio=replace(config.radio, uri=args.uri))
+            validate_hardware_config(config)
         output = args.output or default_log_path(config)
         if args.dry_run:
             print(f"dry_run log: uri={config.radio.uri}")

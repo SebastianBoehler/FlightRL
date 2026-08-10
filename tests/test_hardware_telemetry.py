@@ -15,6 +15,7 @@ from flightrl.hardware.telemetry import (
     with_extra_log_variables,
     write_sync_log,
 )
+import flightrl.hardware.telemetry as telemetry_module
 
 
 def test_telemetry_csv_writes_replay_friendly_rows(tmp_path) -> None:
@@ -27,12 +28,42 @@ def test_telemetry_csv_writes_replay_friendly_rows(tmp_path) -> None:
             values={"stabilizer.roll": 2.0, "pm.vbat": 3.85},
         )
     )
+    assert path.read_text().splitlines() == [
+        "host_time_s,crazyflie_time_ms,stabilizer.roll,pm.vbat",
+        "1.250000,50,2.0,3.85",
+    ]
     writer.close()
 
     assert path.read_text().splitlines() == [
         "host_time_s,crazyflie_time_ms,stabilizer.roll,pm.vbat",
         "1.250000,50,2.0,3.85",
     ]
+
+
+def test_sync_log_closes_csv_before_logger_teardown(tmp_path, monkeypatch) -> None:
+    events: list[str] = []
+
+    class TrackingWriter(TelemetryCsvWriter):
+        def close(self) -> None:
+            super().close()
+            events.append("writer_closed")
+
+    class TrackingLogger(FakeSyncLogger):
+        def __exit__(self, exc_type, exc, tb) -> None:
+            events.append("logger_exit")
+
+    monkeypatch.setattr(telemetry_module, "TelemetryCsvWriter", TrackingWriter)
+    config = SimpleNamespace(
+        logging=SimpleNamespace(variables=("a", "b", "c"), period_ms=50)
+    )
+    modules = SimpleNamespace(
+        log_config_cls=FakeLogConfig,
+        sync_logger_cls=TrackingLogger,
+    )
+
+    write_sync_log(None, modules, config, tmp_path / "ordered.csv", duration_s=0.01)
+
+    assert events == ["writer_closed", "logger_exit"]
 
 
 def test_sync_log_merges_only_packets_with_the_same_device_timestamp(tmp_path) -> None:

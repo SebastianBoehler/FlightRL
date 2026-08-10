@@ -10,10 +10,16 @@ from time import monotonic
 import numpy as np
 from PIL import Image
 
+from flightrl.hardware.aideck_protocol import (
+    AIDECK_DECODED_CAPTURE_SCHEMA,
+    AIDECK_GRAY4_FORMAT,
+    AIDECK_JPEG_FORMAT,
+    AIDECK_RAW_FORMAT,
+)
 from flightrl.hardware.aideck_stream import AiDeckStream, AiDeckUdpStream
 
 
-CAPTURE_SCHEMA = "flightrl.aideck_decoded_frame_capture.v2"
+CAPTURE_SCHEMA = AIDECK_DECODED_CAPTURE_SCHEMA
 
 
 def main() -> None:
@@ -39,6 +45,7 @@ def main() -> None:
     frames: list[np.ndarray] = []
     host_times: list[float] = []
     frame_paths: list[str] = []
+    source_contract: tuple[int, int, int, int] | None = None
     capture_error: Exception | None = None
     stream = stream_from_args(args)
     start = monotonic()
@@ -48,7 +55,19 @@ def main() -> None:
     try:
         with stream:
             for frame in stream.frames(limit=args.frames):
-                pixels = validate_frame(frame, len(frames) + 1, host_times[-1] if host_times else None)
+                pixels = validate_frame(
+                    frame,
+                    len(frames) + 1,
+                    host_times[-1] if host_times else None,
+                    expected_contract=source_contract,
+                )
+                if source_contract is None:
+                    source_contract = (
+                        frame.width,
+                        frame.height,
+                        frame.depth,
+                        frame.format,
+                    )
                 frames.append(pixels.copy())
                 host_times.append(float(frame.host_time_s))
                 if args.frame_dir is not None:
@@ -69,7 +88,16 @@ def main() -> None:
     complete = capture_error is None
     dropped_frames = validated_counter(stream, "dropped_frames")
     rejected_datagrams = validated_counter(stream, "rejected_datagrams")
-    metadata = capture_metadata(args, decoded_frames, complete, dropped_frames, rejected_datagrams)
+    if source_contract is None:
+        raise SystemExit("AI Deck capture did not retain a source frame contract")
+    metadata = capture_metadata(
+        args,
+        decoded_frames,
+        complete,
+        dropped_frames,
+        rejected_datagrams,
+        source_contract,
+    )
     metadata_json = json.dumps(metadata, sort_keys=True, allow_nan=False)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -133,7 +161,12 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         parser.error("--host must be non-empty")
 
 
-def validate_frame(frame, expected_index: int, previous_time_s: float | None) -> np.ndarray:
+def validate_frame(
+    frame,
+    expected_index: int,
+    previous_time_s: float | None,
+    expected_contract: tuple[int, int, int, int] | None = None,
+) -> np.ndarray:
     if isinstance(frame.index, bool) or not isinstance(frame.index, Integral) or frame.index != expected_index:
         raise ValueError(f"AI Deck frame index {frame.index} is not expected index {expected_index}")
     for label, value in (("width", frame.width), ("height", frame.height), ("depth", frame.depth)):
@@ -141,6 +174,9 @@ def validate_frame(frame, expected_index: int, previous_time_s: float | None) ->
             raise ValueError(f"AI Deck frame {label} must be a positive integer")
     if isinstance(frame.format, bool) or not isinstance(frame.format, Integral) or frame.format not in {0, 1, 2}:
         raise ValueError("AI Deck frame format is invalid")
+    source_contract = (frame.width, frame.height, frame.depth, frame.format)
+    if expected_contract is not None and source_contract != expected_contract:
+        raise ValueError("AI Deck source frame contract changed during capture")
     if isinstance(frame.host_time_s, bool) or not isinstance(frame.host_time_s, Real):
         raise ValueError("AI Deck frame timestamp must be finite and non-negative")
     host_time_s = float(frame.host_time_s)
@@ -170,6 +206,7 @@ def capture_metadata(
     complete: bool,
     dropped_frames: int,
     rejected_datagrams: int,
+    source_contract: tuple[int, int, int, int],
 ) -> dict[str, object]:
     udp = args.transport == "udp"
     authority_reason = (
@@ -177,12 +214,29 @@ def capture_metadata(
         if udp
         else "capture requires explicit frame-integrity review before any training use"
     )
+    width, height, depth, image_format = source_contract
+    encoding = {
+        AIDECK_RAW_FORMAT: "raw8",
+        AIDECK_JPEG_FORMAT: "jpeg",
+        AIDECK_GRAY4_FORMAT: "packed_gray4_even_high_odd_low",
+    }[image_format]
+    edge_visual_compatible = (
+        source_contract == (64, 48, 1, AIDECK_GRAY4_FORMAT)
+        and bool(np.all(decoded_frames % 17 == 0))
+    )
     return {
         "schema": CAPTURE_SCHEMA,
         "transport": args.transport,
         "configured_source_endpoint": {"host": args.host, "port": args.port},
         "decoded_frame_shape": list(decoded_frames.shape[1:]),
         "decoded_frame_dtype": str(decoded_frames.dtype),
+        "source_frame_contract": {
+            "width": width,
+            "height": height,
+            "depth": depth,
+            "format": image_format,
+            "encoding": encoding,
+        },
         "captured_frames": int(len(decoded_frames)),
         "requested_frames": int(args.frames),
         "complete": bool(complete),
@@ -190,6 +244,14 @@ def capture_metadata(
         "rejected_datagrams": rejected_datagrams,
         "policy_outputs_present": False,
         "edge_v3_preprocessing_applied": False,
+        "edge_v3_visual_segment_compatible": edge_visual_compatible,
+        "edge_v3_visual_tensor_conversion": (
+            "float32(decoded_uint8) / 255"
+            if edge_visual_compatible
+            else "not_applicable"
+        ),
+        "edge_v3_full_observation_constructed": False,
+        "firmware_identity_status": "not_recorded",
         "integrity_status": "unreviewed",
         "training_authority": False,
         "deployment_authority": False,

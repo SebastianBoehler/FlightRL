@@ -78,6 +78,29 @@ def test_semantic_writer_persists_non_actuating_evidence(tmp_path) -> None:
     assert "policy_shadow" not in event
 
 
+def test_grounding_result_distinguishes_proposals_from_verified_detections() -> None:
+    proposal = GroundingDetection(
+        "door",
+        0.7,
+        NormalizedBox(0.2, 0.2, 0.8, 0.8),
+    )
+    result = GroundingResult(
+        prompt="door",
+        frame_index=1,
+        frame_host_time_s=time(),
+        image_width=64,
+        image_height=48,
+        source_mean=50.0,
+        inference_ms=10.0,
+        detections=(),
+        proposed_detections=(proposal,),
+    )
+
+    assert result.best is None
+    assert result.best_proposal == proposal
+    assert result.to_dict()["proposed_detections"][0]["label"] == "door"
+
+
 @pytest.mark.parametrize(
     ("width", "pixels", "message"),
     (

@@ -140,6 +140,29 @@ def prepare_rows(
     return filtered
 
 
+def rows_with_mapping_time(
+    rows: Iterable[Mapping[str, str | float]],
+) -> tuple[list[dict[str, str | float]], str]:
+    copied = [dict(row) for row in rows]
+    if not copied or not any("crazyflie_time_ms" in row for row in copied):
+        return copied, "host_time_s"
+    if not all("crazyflie_time_ms" in row for row in copied):
+        raise ValueError("mapping device timestamps must be present in every row")
+    previous = -1.0
+    for row in copied:
+        timestamp_ms = finite_row_value(row, "crazyflie_time_ms")
+        if (
+            timestamp_ms is None
+            or not timestamp_ms.is_integer()
+            or not 0.0 <= timestamp_ms <= 0xFFFFFFFF
+            or timestamp_ms <= previous
+        ):
+            raise ValueError("mapping device timestamps must be ordered uint32 milliseconds")
+        previous = timestamp_ms
+        row["host_time_s"] = str(timestamp_ms / 1000.0)
+    return copied, "crazyflie_time_ms"
+
+
 def euler_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
     cr, sr = cos(roll), sin(roll)
     cp, sp = cos(pitch), sin(pitch)

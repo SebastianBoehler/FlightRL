@@ -155,6 +155,7 @@ class GroundingDinoGrounder:
             source_mean=float(source.mean()),
             inference_ms=inference_ms,
             detections=verified,
+            proposed_detections=tuple(detections),
         )
 
 

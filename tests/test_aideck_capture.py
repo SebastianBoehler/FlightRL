@@ -69,6 +69,16 @@ def test_udp_capture_is_durably_unreviewed_and_non_authoritative(
     assert metadata["deployment_authority"] is False
     assert metadata["transport_integrity"]["chunk_order_verified"] is False
     assert metadata["transport_integrity"]["firmware_sequence_field_present"] is False
+    assert metadata["source_frame_contract"] == {
+        "width": 3,
+        "height": 2,
+        "depth": 1,
+        "format": 0,
+        "encoding": "raw8",
+    }
+    assert metadata["edge_v3_visual_segment_compatible"] is False
+    assert metadata["edge_v3_full_observation_constructed"] is False
+    assert metadata["firmware_identity_status"] == "not_recorded"
     assert output.with_suffix(".npz.provenance.json").is_file()
 
     registry = load_frame_integrity_registry(frame_dir / "frame-integrity.json")
@@ -100,3 +110,23 @@ def test_capture_rejects_decreasing_timestamp_and_invalid_counter() -> None:
     stream = type("BadStream", (), {"dropped_frames": float("nan")})()
     with pytest.raises(SystemExit, match="invalid dropped_frames"):
         capture.validated_counter(stream, "dropped_frames")
+
+
+def test_capture_rejects_mixed_source_frame_contract() -> None:
+    frame = AiDeckFrame(
+        2,
+        1.1,
+        64,
+        48,
+        1,
+        2,
+        np.zeros((48, 64), dtype=np.uint8),
+    )
+
+    with pytest.raises(ValueError, match="source frame contract changed"):
+        capture.validate_frame(
+            frame,
+            expected_index=2,
+            previous_time_s=1.0,
+            expected_contract=(162, 122, 1, 2),
+        )

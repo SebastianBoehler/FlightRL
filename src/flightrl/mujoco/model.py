@@ -4,6 +4,8 @@ from math import sqrt
 import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
 
+from .camera_contract import AIDECK_MUJOCO_VERTICAL_FOV_DEG
+
 if TYPE_CHECKING:
     from flightrl.navigation.semantic_scene import SemanticScene
     from flightrl.sixdof.geometry import BoxRoom
@@ -61,7 +63,7 @@ CRAZYFLIE_MJCF = f"""
       <geom name="rotor_rear_right" type="cylinder" pos="-{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} -{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
       <geom name="rotor_front_right" type="cylinder" pos="{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} -{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
       <geom name="rotor_rear_left" type="cylinder" pos="-{BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} {BRUSHLESS_MOTOR_AXIS_OFFSET_M:.12g} 0.01" size="{BRUSHLESS_PROPELLER_RADIUS_M:g} 0.002" material="rotor"/>
-      <camera name="aideck" pos="0.035 0 0.012" xyaxes="0 -1 0 0 0 1" fovy="63"/>
+      <camera name="aideck" pos="0.035 0 0.012" xyaxes="0 -1 0 0 0 1" fovy="{AIDECK_MUJOCO_VERTICAL_FOV_DEG:.12g}"/>
     </body>
   </worldbody>
 </mujoco>

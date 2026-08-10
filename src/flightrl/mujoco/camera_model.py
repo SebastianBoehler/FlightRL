@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .rendering import _quantize_gray4_high_nibble
+
 
 def sample_gray4_camera_parameters(
     rng: np.random.Generator,
@@ -25,4 +27,6 @@ def randomize_gray4_frame(
     current_mean = max(float(normalized.mean() * 255.0), 1.0)
     adjusted = normalized * (target_mean / current_mean)
     noisy = adjusted * 255.0 + rng.normal(0.0, 2.0, size=gray.shape)
-    return (np.rint(np.clip(noisy, 0.0, 255.0) / 17.0) * 17.0).astype(np.uint8)
+    return _quantize_gray4_high_nibble(
+        np.clip(noisy, 0.0, 255.0).astype(np.uint8)
+    )

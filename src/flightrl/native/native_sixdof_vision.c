@@ -7,6 +7,11 @@
 static float vision_clamp(float value, float lo, float hi) {
     return value < lo ? lo : (value > hi ? hi : value);
 }
+
+static uint8_t gray4_high_nibble(float value) {
+    uint8_t pixel = (uint8_t)vision_clamp(value, 0.0f, 255.0f);
+    return (uint8_t)((pixel >> 4) * 17u);
+}
 #include "native_sixdof_vision_surfaces.inc"
 
 static void vision_quat_matrix(const float *q, float r[9]) {
@@ -238,7 +243,7 @@ static void render_one(
             0.0f,
             255.0f
         );
-        frame[pixel] = (uint8_t)(17.0f * floorf(adjusted / 17.0f + 0.5f));
+        frame[pixel] = gray4_high_nibble(adjusted);
     }
 }
 
@@ -473,9 +478,7 @@ static void randomize_door_camera(
                 0.0f,
                 255.0f
             );
-            frame[pixel] = (uint8_t)(
-                17.0f * floorf(adjusted / 17.0f + 0.5f)
-            );
+            frame[pixel] = gray4_high_nibble(adjusted);
         }
     }
 }

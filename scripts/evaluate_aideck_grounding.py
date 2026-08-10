@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from statistics import median
@@ -10,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from flightrl.hardware.aideck_stream import AiDeckFrame
+from flightrl.semantic.aideck_pair_gate import evaluate_paired_gray4
 from flightrl.semantic import (
     ClipCropVerifier,
     ClipVerifierConfig,
@@ -17,6 +19,15 @@ from flightrl.semantic import (
     GroundingDinoGrounder,
     SemanticRunWriter,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ArchivedFrame:
+    source: Path
+    index: int
+    host_time_s: float
+    pixels: np.ndarray
+    capture_metadata: dict[str, object]
 
 
 def main() -> None:
@@ -36,7 +47,7 @@ def main() -> None:
     parser.add_argument("--require-detection", action="store_true")
     args = parser.parse_args()
 
-    paths = image_paths(Path(args.input), args.max_frames)
+    archived_frames = load_archived_frames(Path(args.input), args.max_frames)
     verifier = ClipCropVerifier(
         ClipVerifierConfig(
             device=args.device,
@@ -54,6 +65,9 @@ def main() -> None:
     )
     inference_ms: list[float] = []
     detected = 0
+    proposed = 0
+    proposal_count = 0
+    verified_count = 0
     widths: list[int] = []
     means: list[float] = []
     manifest = {
@@ -66,14 +80,19 @@ def main() -> None:
         "verifier_minimum_probability": verifier.config.minimum_probability,
         "verifier_minimum_margin": verifier.config.minimum_margin,
         "distractor_labels": list(grounder.config.distractor_labels),
-        "sources": [str(path) for path in paths],
+        "sources": [
+            {"path": str(frame.source), "frame_index": frame.index}
+            for frame in archived_frames
+        ],
+        "capture_metadata": archived_frames[0].capture_metadata,
     }
     with SemanticRunWriter(args.output, manifest=manifest) as writer:
-        for index, path in enumerate(paths, start=1):
-            pixels = np.asarray(Image.open(path).convert("L"))
+        for frame_source in archived_frames:
+            pixels = frame_source.pixels
+            index = frame_source.index + 1
             frame = AiDeckFrame(
                 index,
-                time(),
+                frame_source.host_time_s,
                 pixels.shape[1],
                 pixels.shape[0],
                 1,
@@ -91,15 +110,27 @@ def main() -> None:
             widths.append(result.image_width)
             means.append(result.source_mean)
             detected += int(result.best is not None)
+            proposed += int(result.best_proposal is not None)
+            proposal_count += len(result.proposed_detections)
+            verified_count += len(result.detections)
 
     report = {
-        "frames": len(paths),
+        "frames": len(archived_frames),
         "prompt": args.prompt,
         "model_id": args.model_id,
         "threshold": args.threshold,
         "verifier_model_id": verifier.config.model_id,
         "frames_with_detection": detected,
-        "detection_rate": detected / len(paths),
+        "detection_rate": detected / len(archived_frames),
+        "frames_with_proposal": proposed,
+        "proposal_rate": proposed / len(archived_frames),
+        "proposals_total": proposal_count,
+        "verified_detections_total": verified_count,
+        "verification_rejection_rate": (
+            (proposal_count - verified_count) / proposal_count
+            if proposal_count
+            else 0.0
+        ),
         "inference_ms_median": median(inference_ms),
         "inference_ms_max": max(inference_ms),
         "minimum_width": min(widths),
@@ -128,6 +159,77 @@ def image_paths(path: Path, limit: int) -> list[Path]:
         return paths
     indices = np.linspace(0, len(paths) - 1, limit, dtype=int)
     return [paths[index] for index in indices]
+
+
+def load_archived_frames(path: Path, limit: int) -> list[ArchivedFrame]:
+    if path.is_file() and path.suffix.lower() == ".npz":
+        return _load_npz_frames(path, limit)
+    return [
+        ArchivedFrame(
+            source=image_path,
+            index=index,
+            host_time_s=time(),
+            pixels=np.asarray(Image.open(image_path).convert("L")),
+            capture_metadata={},
+        )
+        for index, image_path in enumerate(image_paths(path, limit))
+    ]
+
+
+def _load_npz_frames(path: Path, limit: int) -> list[ArchivedFrame]:
+    if limit <= 0:
+        raise ValueError("--max-frames must be positive")
+    with np.load(path, allow_pickle=False) as artifact:
+        required = {"decoded_frames", "host_time_s", "metadata_json"}
+        if not required.issubset(artifact.files):
+            raise ValueError(
+                "AI Deck NPZ must contain decoded_frames, host_time_s, and metadata_json"
+            )
+        frames = np.asarray(artifact["decoded_frames"])
+        host_times = np.asarray(artifact["host_time_s"], dtype=np.float64)
+        metadata = json.loads(str(artifact["metadata_json"]))
+    if frames.ndim != 3 or frames.dtype != np.uint8 or len(frames) == 0:
+        raise ValueError("AI Deck decoded_frames must be non-empty [frames, height, width] uint8")
+    if not isinstance(metadata, dict):
+        raise ValueError("AI Deck metadata_json must decode to an object")
+    if (
+        host_times.shape != (len(frames),)
+        or not np.isfinite(host_times).all()
+        or np.any(np.diff(host_times) < 0.0)
+    ):
+        raise ValueError("AI Deck host_time_s must be finite and nondecreasing")
+    count = min(limit, len(frames))
+    indices = np.linspace(0, len(frames) - 1, count, dtype=int)
+    return [
+        ArchivedFrame(
+            path,
+            int(index),
+            float(host_times[index]),
+            frames[index].copy(),
+            metadata,
+        )
+        for index in indices
+    ]
+
+
+def evaluate_paired_captures(
+    positive_path: Path,
+    negative_path: Path,
+    *,
+    sample_count: int,
+) -> dict[str, object]:
+    positive = load_archived_frames(positive_path, sample_count)
+    negative = load_archived_frames(negative_path, sample_count)
+    return evaluate_paired_gray4(
+        np.stack([frame.pixels for frame in positive]),
+        np.stack([frame.pixels for frame in negative]),
+        positive_indices=[frame.index for frame in positive],
+        negative_indices=[frame.index for frame in negative],
+        positive_source=positive_path,
+        negative_source=negative_path,
+        positive_metadata=positive[0].capture_metadata,
+        negative_metadata=negative[0].capture_metadata,
+    )
 
 
 if __name__ == "__main__":

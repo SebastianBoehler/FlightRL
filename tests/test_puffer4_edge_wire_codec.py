@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import struct
 
+import numpy as np
 import pytest
 import torch
 
+from flightrl.hardware.aideck_protocol import AIDECK_GRAY4_FORMAT, decode_pixels
 from flightrl.puffer4_edge_contract import EDGE_FRAME_PIXELS
 from flightrl.puffer4_edge_wire import (
     EDGE_INPUT_PACKET_BYTES,
@@ -39,6 +41,19 @@ def test_gray4_codec_uses_even_high_odd_low_nibbles() -> None:
     assert packed[:4] == bytes((0x01, 0x23, 0x45, 0x67))
     assert len(packed) == EDGE_FRAME_PIXELS // 2
     assert torch.equal(decoded, frame)
+
+
+def test_aideck_decoded_gray4_needs_only_divide_by_255_for_edge_codec() -> None:
+    payload = np.arange(EDGE_FRAME_PIXELS // 2, dtype=np.uint8).tobytes()
+    decoded = decode_pixels(payload, 64, 48, 1, AIDECK_GRAY4_FORMAT)
+    visual_segment = (
+        torch.from_numpy(decoded.copy()).reshape(-1).to(torch.float32) / 255.0
+    )
+
+    repacked = pack_gray4(visual_segment)
+
+    assert repacked == payload
+    assert torch.equal(unpack_gray4(repacked), visual_segment)
 
 
 def test_input_codec_matches_canonical_offsets_and_model_observation() -> None:

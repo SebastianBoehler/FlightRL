@@ -7,7 +7,12 @@ from pathlib import Path
 
 from flightrl.hardware.ranger_integrity import ranger_row_integrity
 from flightrl.hardware.ranger_map import estimate_room_bounds, summarize_map
-from flightrl.hardware.ranger_projection import points_from_rows, prepare_rows, trajectory_from_rows
+from flightrl.hardware.ranger_projection import (
+    points_from_rows,
+    prepare_rows,
+    rows_with_mapping_time,
+    trajectory_from_rows,
+)
 
 
 def main() -> None:
@@ -33,9 +38,10 @@ def main() -> None:
     output = Path(args.output or input_path.with_suffix(".room.json"))
     markdown = Path(args.markdown or output.with_suffix(".md"))
     raw_rows = read_rows(input_path)
-    source_integrity = ranger_row_integrity(raw_rows)
+    timed_rows, time_source = rows_with_mapping_time(raw_rows)
+    source_integrity = ranger_row_integrity(timed_rows)
     rows = prepare_rows(
-        raw_rows,
+        timed_rows,
         min_drone_z_m=args.min_drone_z_m,
         normalize_xy=not args.raw_origin,
     )
@@ -59,6 +65,7 @@ def main() -> None:
             "min_range_m": args.min_range_m,
             "min_drone_z_m": args.min_drone_z_m,
             "normalize_xy": not args.raw_origin,
+            "time_source": time_source,
         },
         "thresholds": {
             "min_points": args.min_points,

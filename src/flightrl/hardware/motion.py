@@ -19,6 +19,7 @@ class MotionCommanderLike(Protocol):
         velocity_z_m: float,
         rate_yaw: float = 0.0,
     ) -> None: ...
+    def start_turn_left(self, rate: float) -> None: ...
     def turn_left(self, angle_degrees: float, rate: float) -> None: ...
     def turn_right(self, angle_degrees: float, rate: float) -> None: ...
     def land(self, velocity: float) -> None: ...
@@ -36,6 +37,56 @@ class ParamLike(Protocol):
 class CrazyflieArmLike(Protocol):
     supervisor: SupervisorLike
     param: ParamLike
+
+
+@dataclass(frozen=True, slots=True)
+class PatrolFlightPlan:
+    default_height_m: float = 0.4
+    velocity_m_s: float = 0.1
+    turn_rate_deg_s: float = 8.0
+    turn_angle_degrees: float = 20.0
+    forward_distance_m: float = 0.3
+    hover_s: float = 0.5
+    max_flight_s: float = 25.0
+
+    def __post_init__(self) -> None:
+        positive = (
+            self.default_height_m,
+            self.velocity_m_s,
+            self.turn_rate_deg_s,
+            self.turn_angle_degrees,
+            self.forward_distance_m,
+            self.max_flight_s,
+        )
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(float(value))
+            or value <= 0.0
+            for value in positive
+        ):
+            raise HardwareSafetyError("patrol motion limits must be finite and positive")
+        if (
+            isinstance(self.hover_s, bool)
+            or not isinstance(self.hover_s, (int, float))
+            or not isfinite(float(self.hover_s))
+            or self.hover_s < 0.0
+        ):
+            raise HardwareSafetyError("patrol hover duration must be finite and nonnegative")
+        duration = self.nominal_duration_s()
+        if duration > self.max_flight_s:
+            raise HardwareSafetyError(
+                f"patrol nominal duration {duration:.2f}s exceeds "
+                f"max_flight_s={self.max_flight_s:.2f}"
+            )
+
+    def nominal_duration_s(self) -> float:
+        return (
+            2.0 * self.default_height_m / self.velocity_m_s
+            + 2.0 * self.forward_distance_m / self.velocity_m_s
+            + self.turn_angle_degrees / self.turn_rate_deg_s
+            + 4.0 * self.hover_s
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +168,44 @@ def execute_demo_flight(
         sleep(plan.hover_s)
         commander.land(velocity=plan.velocity_m_s)
         landed = True
+    finally:
+        if not landed:
+            commander.stop()
+            commander.land(velocity=plan.velocity_m_s)
+
+
+def execute_patrol_flight(
+    commander: MotionCommanderLike,
+    plan: PatrolFlightPlan,
+    *,
+    sleep: Callable[[float], None] = default_sleep,
+    on_phase: Callable[[str], None] = lambda _phase: None,
+) -> None:
+    landed = False
+    leg_duration_s = plan.forward_distance_m / plan.velocity_m_s
+    try:
+        on_phase("takeoff")
+        commander.take_off(height=plan.default_height_m, velocity=plan.velocity_m_s)
+        sleep(plan.hover_s)
+        on_phase("forward_1")
+        commander.start_linear_motion(plan.velocity_m_s, 0.0, 0.0, 0.0)
+        sleep(leg_duration_s)
+        commander.stop()
+        sleep(plan.hover_s)
+        on_phase("turn_left")
+        commander.start_turn_left(plan.turn_rate_deg_s)
+        sleep(plan.turn_angle_degrees / plan.turn_rate_deg_s)
+        commander.stop()
+        sleep(plan.hover_s)
+        on_phase("forward_2")
+        commander.start_linear_motion(plan.velocity_m_s, 0.0, 0.0, 0.0)
+        sleep(leg_duration_s)
+        commander.stop()
+        sleep(plan.hover_s)
+        on_phase("land")
+        commander.land(velocity=plan.velocity_m_s)
+        landed = True
+        on_phase("complete")
     finally:
         if not landed:
             commander.stop()

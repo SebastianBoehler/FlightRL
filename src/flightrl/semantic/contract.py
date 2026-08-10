@@ -68,6 +68,7 @@ class GroundingResult:
     source_mean: float
     inference_ms: float
     detections: tuple[GroundingDetection, ...]
+    proposed_detections: tuple[GroundingDetection, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.prompt.strip():
@@ -83,6 +84,11 @@ class GroundingResult:
     @property
     def best(self) -> GroundingDetection | None:
         return max(self.detections, key=lambda detection: detection.confidence, default=None)
+
+    @property
+    def best_proposal(self) -> GroundingDetection | None:
+        proposals = self.proposed_detections or self.detections
+        return max(proposals, key=lambda detection: detection.confidence, default=None)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

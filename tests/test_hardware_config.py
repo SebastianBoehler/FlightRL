@@ -81,6 +81,66 @@ def test_load_aideck_flow2_profile_binds_exact_deck_stack() -> None:
     assert config.decks.expect_multiranger is False
 
 
+def test_load_aideck_usb_capture_profile_uses_one_telemetry_block() -> None:
+    config = load_hardware_config(
+        ROOT
+        / "configs"
+        / "hardware"
+        / "crazyflie_2_1_brushless_aideck_flow2_usb_capture.toml"
+    )
+
+    assert config.radio.uri == "usb://0"
+    assert config.decks.expect_ai_deck is True
+    assert config.decks.expect_flow_deck is True
+    assert config.decks.expect_zranger is True
+    assert config.logging.variables == (
+        "stateEstimate.x",
+        "stateEstimate.y",
+        "stateEstimate.z",
+        "stateEstimate.yaw",
+        "pm.vbat",
+    )
+
+
+def test_load_aideck_usb_flow_preflight_profile_uses_raw_motion_block() -> None:
+    config = load_hardware_config(
+        ROOT
+        / "configs"
+        / "hardware"
+        / "crazyflie_2_1_brushless_aideck_flow2_usb_flow_preflight.toml"
+    )
+
+    assert config.radio.uri == "usb://0"
+    assert config.logging.variables == (
+        "motion.motion",
+        "motion.deltaX",
+        "motion.deltaY",
+        "motion.squal",
+        "range.zrange",
+    )
+
+
+def test_load_aideck_radio_flow_preflight_profile_uses_exact_uri() -> None:
+    config = load_hardware_config(
+        ROOT
+        / "configs"
+        / "hardware"
+        / "crazyflie_2_1_brushless_aideck_flow2_radio_flow_preflight.toml"
+    )
+
+    assert config.radio.uri == "radio://0/80/2M/E7E7E7E7E7"
+    assert config.decks.expect_ai_deck is True
+    assert config.decks.expect_flow_deck is True
+    assert config.decks.expect_zranger is True
+    assert config.logging.variables == (
+        "motion.motion",
+        "motion.deltaX",
+        "motion.deltaY",
+        "motion.squal",
+        "range.zrange",
+    )
+
+
 def test_invalid_demo_height_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "bad.toml"
     path.write_text(
