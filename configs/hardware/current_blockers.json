@@ -1,10 +1,8 @@
 {
-  "blockers": [
-    "m3_motor_issue"
-  ],
+  "blockers": [],
   "notes": [
-    "M3 motor/rotor fault is unresolved; do not treat calibration, replay, or deployment evidence as hardware-transfer ready until repaired and rebenchmarked.",
-    "2026-05-24 prop-off bench: M1, M2, and M4 spun at low power; M3 only twitched, indicating signal reaches the M3 channel but the motor/ESC path does not rotate."
+    "The 2026-05-24 M3 observation belonged to a legacy drone and does not describe the current aircraft.",
+    "Operator confirmed on 2026-08-09 that the current aircraft is working; no current motor blocker is reported."
   ],
-  "updated": "2026-05-24"
+  "updated": "2026-08-09"
 }
