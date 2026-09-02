@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from .aideck_protocol import AIDECK_DECODED_CAPTURE_SCHEMA, AIDECK_GRAY4_FORMAT
+from .aideck_protocol import (
+    AIDECK_DECODED_CAPTURE_SCHEMA as AIDECK_DECODED_CAPTURE_SCHEMA,
+)
+from .aideck_protocol import AIDECK_GRAY4_FORMAT
 
 
 PROCESS_SCHEMA = "flightrl.aideck_bounded_paired_capture.v1"
