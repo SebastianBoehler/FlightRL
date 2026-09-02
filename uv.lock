@@ -328,6 +328,7 @@ dependencies = [
 dev = [
     { name = "plotly" },
     { name = "pytest" },
+    { name = "torch" },
 ]
 hardware = [
     { name = "cflib" },
@@ -355,6 +356,7 @@ requires-dist = [
     { name = "pillow", marker = "extra == 'semantic'", specifier = ">=10" },
     { name = "plotly", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "torch", marker = "extra == 'dev'", specifier = ">=2.8" },
     { name = "torch", marker = "extra == 'semantic'", specifier = ">=2.8" },
     { name = "transformers", marker = "extra == 'semantic'", specifier = ">=5,<6" },
     { name = "wandb", marker = "extra == 'tracking'", specifier = ">=0.17" },
