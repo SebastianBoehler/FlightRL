@@ -11,6 +11,8 @@ artifacts have no flight authority; the retained catalog is
 
 Current starting points:
 
+- `cross_airframe_autonomy_stack_20260902.md` — primary-source-backed language,
+  accelerator, bundle, deployment, and cross-airframe architecture decision.
 - `docs/edge_navigation_v3.md` — edge-shaped policy and deployment boundary.
 - `docs/evidence/README.md` — artifact lifecycle and authority rules.
 - `architecture_literature_review.md` — literature comparison.
