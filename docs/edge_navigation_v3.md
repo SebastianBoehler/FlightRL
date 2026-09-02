@@ -136,10 +136,10 @@ inference.
 
 For hidden size 48, the current reference has:
 
-- 17,700 parameters;
-- 17,336 prospective int8 weight bytes plus 1,456 int32 bias bytes;
-- 18,792 total prospective quantized parameter bytes;
-- 96,144 estimated multiply-accumulates per step;
+- 17,602 parameters;
+- 17,240 prospective int8 weight bytes plus 1,448 int32 bias bytes;
+- 18,688 total prospective quantized parameter bytes;
+- 96,048 estimated multiply-accumulates per step;
 - 3,094 model-input elements and 1,536 elements in the largest internal
   activation (3,094 elements for the largest single tensor);
 - a 1,635-byte canonical input record.
