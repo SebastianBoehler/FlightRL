@@ -10,7 +10,7 @@ from flightrl.semantic.aideck_probe_gate import (
     LabeledGray4Capture,
     evaluate_cross_capture_gray4,
 )
-from scripts.evaluate_aideck_grounding import load_archived_frames
+from flightrl.semantic.aideck_archive import load_archived_frames
 
 
 def main(argv: list[str] | None = None) -> int:

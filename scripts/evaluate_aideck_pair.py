@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from scripts.evaluate_aideck_grounding import evaluate_paired_captures
+from flightrl.semantic.aideck_archive import evaluate_paired_captures
 
 
 def main(argv: list[str] | None = None) -> int:
