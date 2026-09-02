@@ -1,148 +1,232 @@
 # Architecture
 
-## System boundary
+## Product boundary
 
-FlightRL has three deliberately separate layers:
+FlightRL is a local-first mission-to-machine research stack. Its intended
+output is not one universal motor policy. It compiles explicit vehicle,
+terrain, sensor, and mission descriptions into:
+
+- high-throughput simulation inputs;
+- policies with a measured embodiment support envelope;
+- reproducible desktop, embedded-C, and FPGA deployment artifacts;
+- evidence binding the source, contracts, calibration, and target runtime.
+
+The current implementation is still centered on a Crazyflie edge target and a
+small set of desktop environments. New modules must move toward the target
+architecture below without weakening the current fail-closed hardware gates.
+
+## System shape
 
 ```text
-desktop research                    future deployed runtime
-
-native C / MuJoCo environments      AI Deck GAP8
-privileged teachers                 camera preprocessing
-PPO / imitation / distillation  ->  edge-v3 recurrent actor
-held-out challenge evaluation             |
-                                             v CPX proposal
-                                       STM32 safety layer
-                                       estimator/stabilizer
-                                             |
-                                             v
-                                           motors
+authoring inputs                 immutable compiled bundles
+terrain / CAD / calibration --> vehicle / terrain / sensor / mission
+                                       |
+                  +--------------------+--------------------+
+                  v                    v                    v
+             scalar C core       optimized backends    MuJoCo reference
+                  +--------------------+--------------------+
+                                       |
+                              Python / PyTorch learner
+                                       |
+                         policy bundle + restricted EdgeIR
+                              /          |          \
+                         float C       int8 C      HLS / FPGA
+                              \          |          /
+                             autopilot adapters and safety
 ```
 
-The desktop layers may use privileged state, larger critics, and richer
-diagnostics. The deployed actor may consume only the exact edge-v3 observation
-contract. The STM32 must independently decide whether and how a proposal is
-applied; the actor never owns motor authority.
+Generalization comes from stable contracts and replaceable adapters. It does
+not come from forcing all implementations into one language or silently
+reinterpreting same-shaped arrays.
 
-## Edge-v3 actor
+## Language allocation
 
-`aideck-navigation-policy-v3` is the only current deployment target. Its model
-input is one current 64x48 gray4 frame, 19 normalized telemetry values, and a
-closed-vocabulary target ID (`door`, `monitor`, or `sink`). Its outputs are
-normalized body-frame `vx`/`vy`, world-up `vz`, and world-up yaw-rate proposals.
+- **C17** owns scalar numerical semantics, deterministic batch stepping,
+  safety-critical helpers, and generated embedded actors.
+- **C++20** may implement CUDA, HLS, and vendor-host adapters behind the C
+  interface. It does not define different physics semantics.
+- **Python** owns experiment orchestration, PyTorch/PufferLib training,
+  offline compilation, evaluation, and reports. It stays out of per-environment
+  hot loops.
+- **Metal** is the first Apple GPU sensor backend. **CUDA** is added when an
+  NVIDIA target and an end-to-end bottleneck justify it.
+- **WebGPU/WGSL** may power the portable interactive viewer, never the
+  authoritative sensor implementation.
 
-The reference implementation is split into:
+Porting effort is not an architectural constraint. Validation surface is: a
+new implementation is accepted only when it produces a measured benefit and
+passes the reference parity gates.
 
-- `puffer4_edge_contract.py`: units, frames, normalization, wire records,
-  sequence/reset rules, target vocabulary, and action scales;
-- `puffer4_edge_policy.py`: edge-shaped PyTorch visual/recurrent actor;
-- `puffer4_edge_budget.py`: parameter, prospective quantized-byte, MAC, and
-  activation estimates.
+## Core seams
 
-The PyTorch graph is a design reference. It becomes an exact deployment graph
-only after preprocessing/operator freeze, float-C parity, calibrated int8
-validation, GAP8 sequence parity, and measured target memory/latency.
+### Native core
+
+`native/flightrl_core.h` is the versioned host interface for contiguous
+six-DoF batches. The CPython binding is one adapter at this seam. Future tensor,
+Metal, CUDA, or standalone hosts must use the same units and state/action
+semantics rather than call implementation functions directly.
+
+The scalar C path is the executable specification. Optimized backends are
+replaceable implementations and require differential one-step and trajectory
+tests. MuJoCo stays independently specified for rigid-body, contact, and sensor
+validation.
+
+### Artifact identity
+
+`flightrl.artifact_identity` owns canonical JSON encoding, SHA-256 payload
+binding, and file identity. Evidence contracts with these semantics use this
+interface rather than defining local encoders. Identity-bearing JSON rejects
+non-finite values; domain-specific framed tensor digests remain separate.
+
+Host bundles will eventually use FlatBuffers and aligned numeric chunks. JSON
+continues to be appropriate for human-readable evidence reports, but is never
+parsed in a simulation or control hot loop.
+
+### Embodiment
+
+`flightrl.sixdof.embodiment` defines the first explicit physical descriptor for
+the current rate-lag six-DoF model. `SixDofEnv.embodiment_descriptors()` exposes
+the descriptor actually sampled for each environment.
+
+This descriptor is not yet a complete vehicle bundle: the current simplified
+physics does not model arbitrary rotor topology, full inertia, materials, or
+motor/propeller maps. Those fields must be added only together with a simulator
+implementation and validation data that consume them.
+
+### Scenario bundle
+
+`compile_scenario_bundle(...)` is the first offline compiler seam. It consumes
+the repository's validated physics, room, sensor, and resolved-mission types
+and emits fixed little-endian float32 arrays plus one canonical manifest. The
+manifest binds array shapes, field ordering, coordinate frames, content
+digests, and explicitly simulation-only authority.
+
+`write_scenario_bundle(...)` never overwrites an existing directory, and
+`load_scenario_bundle(...)` revalidates the manifest and every array digest.
+This is the common input contract for later native CPU, Metal, CUDA, and SITL
+adapters; it is not a physical-flight deployment bundle.
+
+### Policy and autopilot
+
+The default portable policy emits bounded velocity, yaw-rate, or trajectory
+intent. PX4/ArduPilot or the Crazyflie STM32 owns estimation, attitude/rate
+stabilization, mixing, watchdogs, and motor authority. An aggressive body-rate
+policy is a separate capability profile with tighter timing and identification
+evidence.
+
+The current `aideck-navigation-policy-v3` actor remains the only concrete edge
+target. It consumes one 64x48 gray4 frame, 19 normalized telemetry values, a
+closed-vocabulary target ID, and recurrent state. Its proposals cannot assert
+mission completion or grant flight authority.
+
+## Current implementation boundary
+
+The repository does not yet contain the full target stack. In particular:
+
+- the native core models fixed quadrotor six-DoF state, not arbitrary rotor
+  topology, deformable frames, or material behavior;
+- the edge-v3 PyTorch actor is a design reference, not a frozen float-C, int8,
+  GAP8, or FPGA implementation;
+- no Metal or CUDA camera/sensor backend exists;
+- no multi-aircraft environment, network model, decentralized swarm policy, or
+  held-out-airframe promotion gate exists;
+- no PX4 or ArduPilot adapter implements this policy contract;
+- no typed deployment bundle grants learned physical-flight authority.
+
+Existing hardware modules support Crazyflie connection, preflight, capture,
+telemetry, nonlearned bring-up, and evidence collection. The generic
+sim-to-real manifest intentionally emits no hardware-approved learned
+checkpoint. These are retained safety boundaries, not compatibility gaps to
+work around.
 
 ## Desktop environments
 
 ### Native C
 
-The local extension owns contiguous vector state and writes observations,
-rewards, terminations, truncations, and episodic metrics in place. The generic
-native simulator is divided by responsibility:
+The extension owns contiguous vector state and writes observations, rewards,
+termination state, and metrics in place. `SixDofEnv` is intentionally named for
+its model rather than one aircraft. Crazyflie and Puffer values are explicit
+physics profiles, not simulator identities.
 
-- `native_actions.c`: bounded action handling and actuator smoothing;
-- `native_dynamics.c`: planar dynamics;
-- `native_sixdof.c`: six-DoF dynamics/reward integration;
-- `native_tasks.c`: task progression;
-- `native_reward.c`: reward decomposition;
-- `native_observation.c`: observation assembly;
-- `native_reset.c`: reset and randomization;
-- `native_termination.c`: crash, timeout, and bounds checks;
-- `native_logging.c`: episodic aggregation;
-- `binding.c` and binding headers: NumPy/Python vector interface.
-
-The fixed-door environment has a separate generated Ocean binding and explicit
-mission metric and privileged-teacher action contract. Its success metric
-requires approach and settle at the configured standoff, pose and velocity
-tolerances, continued visibility, and a 33-step hold. The retired fixed-door
-student actor is not loaded or reinterpreted as edge-v3.
+The fixed-door environment remains a privileged teacher. Its observation and
+mission contracts do not become edge-v3 merely because tensor dimensions are
+compatible.
 
 ### MuJoCo
 
-MuJoCo is an independent validation/calibration lane for rigid-body dynamics,
-contacts, room geometry, sensor semantics, and orbit/circle behavior. It shares
-task/reward contracts where exact parity is intended and rejects conflicting
-explicit physics/control settings. Its current rate-lag approximation is not
-claimed to be identical to native dynamics.
+MuJoCo is the independent, slower reference for dynamics, contacts, geometry,
+sensor semantics, and model-calibration experiments. It is not the bulk
+trainer and its implementation must not be copied into the C reference.
 
-### PufferLib export
+### Training
 
-FlightRL can export native environments into a separate upstream PufferLib 4
-checkout. The exporter copies the selected C modules, emits a thin Ocean
-`binding.c`, and writes the corresponding `.ini`. PufferLib checkpoints remain
-desktop research artifacts unless a later typed edge-v3 distillation and
-deployment bundle binds them to the onboard graph.
+PyTorch owns learners and export-time graphs. PufferLib consumes the native
+environment through generated Ocean adapters. State should remain resident
+across rollout steps; Python callbacks and repacking are excluded from the hot
+path. A future tensor adapter should use the native core interface and DLPack
+where zero-copy ownership can be proven.
 
-## Episode and action semantics
+## Cross-airframe and swarm contract
 
-Task identity is established before the first observation and remains stable
-for the episode. Only completed environments receive a new task. Probability
-vectors must be finite, nonnegative, correctly shaped, and have positive total
-mass.
+One runtime can support many aircraft. A shared policy is promoted only inside
+a measured support envelope.
 
-Continuous stochastic actors use a tanh-transformed normal distribution. PPO
-stores/reuses the pre-tanh sample for log-probability evaluation; it does not
-apply an inverse transform to an already saturated/clamped mode. Distribution
-locations, scales, and bounds must be finite, and scales must be positive.
+Cross-airframe training conditions the actor on physical descriptors or an
+identified dynamics latent. Evaluation holds out entire vehicle families as
+well as parameter seeds. A failure on a held-out family rejects the shared
+policy claim; the same compiler may still produce a family-specific policy.
 
-These desktop action contracts are not the edge-v3 setpoint ABI. Translation is
-explicit and byte/contract bound; shape equality is never sufficient evidence
-of semantic compatibility.
+Swarm policies use centralized training and decentralized execution. Each
+actor sees local sensing, mission context, embodiment, and bounded neighbor
+messages. Communication simulation must include latency, loss, stale data,
+clock offset, and changing neighbor identity.
 
-## Evidence and authority
+## Deployment contract
 
-Reports are evidence, not authority. Inputs that affect a claim must be bound by
-resolved path and SHA-256 and parsed with exact JSON boolean semantics. A
-record saying `ready=true` while also carrying failures is blocked.
+ONNX may be an interchange checkpoint. A restricted `EdgeIR` is the deployment
+authority and must specify:
 
-The generic sim-to-real manifest intentionally emits zero hardware-approved
-checkpoints. `require_hardware_approved()` unconditionally blocks learned live
-control because no typed edge-v3 deployment bundle producer exists. This is the
-correct current safety state, not an unfinished positive approval route.
+- fixed tensor shapes and an operator allowlist;
+- static memory offsets and maximum arena size;
+- accumulator widths, rounding, saturation, and quantization scales;
+- recurrent-state layout and reset rules;
+- units, coordinate frames, timestamps, and freshness requirements;
+- test vectors and a content identity.
 
-A future deployment bundle must bind at least:
+The first executable target chain is PyTorch -> float C -> int8 C. FPGA work
+starts only after this chain is frozen and bit-exact across recurrent
+sequences. hls4ml/Vitis is the first recurrent-policy route; FINN is reserved
+for compatible low-bit subgraphs.
 
-- source commit and dependency/toolchain identities;
-- observation, action, mission, target-vocabulary, and model-format contracts;
-- exact float/int8 weights, preprocessing, quantization, and tensor layouts;
-- host/GAP8 recurrent-sequence parity and reset/error vectors;
-- GAP8 ELF, firmware, CPX, STM32 safety configuration, and runtime identities;
-- calibration/held-out evidence provenance and freshness.
+## Evidence gates
 
-## Hardware code
+Every new implementation must pass the applicable layers:
 
-Hardware modules exist for Crazyflie connection/preflight, camera/firmware
-capture, telemetry, nonlearned bring-up, calibration evidence, and
-non-actuating grounding. They do not contain a learned edge-v3 flight runtime.
+1. schema, units, frame, and canonical-identity validation;
+2. scalar kernel golden vectors;
+3. differential backend one-step tests;
+4. long-rollout trajectory envelopes;
+5. independent MuJoCo or measured-hardware checks;
+6. complete recurrent-sequence export parity;
+7. throughput, p50/p95/p99 latency, memory, energy, and data-movement reports;
+8. staged hardware gates with independent timeout and manual takeover.
 
-Physical work is staged independently from policy promotion. Camera or
-telemetry evidence may be retained even when every learned checkpoint is
-invalidated. Generated checkpoints/runs are not retained merely because they
-were once successful.
+Floating accelerator paths use declared numerical tolerances. Fixed-point
+deployment is bit-exact because rounding and saturation are contract semantics.
 
-## Current deliberate gaps
+## Implementation order
 
-- no edge-v3 observation adapter, distillation/training entrypoint, or held-out
-  student evaluator;
-- no frozen float-C or calibrated int8 implementation;
-- no GAP8 kernel, ELF memory proof, or sustained target latency measurement;
-- no CPX proposal transport or STM32 proposal-safety implementation;
-- no typed edge-v3 deployment bundle or positive learned-flight authority;
-- no claim that the corrected fixed-door teacher covers arbitrary obstacles,
-  lighting, latency, other room footprints, a learned student, or physical
-  flight;
-- no multi-drone stepping or swarm policy.
+1. Extend the initial native ABI, artifact identity, embodiment, coordinate
+   frame, and scenario-bundle contracts as real backends require new fields.
+2. Build the offline terrain and vehicle compiler; runtime map parsing is
+   forbidden.
+3. Keep the CPU physics reference fast while adding deterministic Metal camera,
+   depth, segmentation, and perturbation kernels.
+4. Add embodiment-conditioned policies and held-out-airframe evaluation.
+5. Add PX4 and ArduPilot SITL adapters before physical integrations.
+6. Freeze `EdgeIR`, generate float/int8 C, and prove sequence parity.
+7. Add CUDA and FPGA implementations only against stable contracts and measured
+   bottlenecks.
 
-Unsupported paths fail closed instead of substituting legacy checkpoints,
-partial state loading, mock data, or inferred authority.
+Unsupported paths fail closed. A successful simulation, teacher, export, or
+replay report never authorizes physical flight.

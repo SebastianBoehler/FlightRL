@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 
 from flightrl.puffer4_sixdof_export import render_sixdof_puffer4_binding
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.rl import SixDofActorCritic, collect_rollout, position_error_for_task_indices, rollout_reward
 
 
 def test_native_reset_is_deterministic_and_within_room_bounds() -> None:
-    left = SixDofCrazyflieEnv(num_envs=16, seed=1, use_native_step=True)
-    right = SixDofCrazyflieEnv(num_envs=16, seed=2, use_native_step=True)
+    left = SixDofEnv(num_envs=16, seed=1, use_native_step=True)
+    right = SixDofEnv(num_envs=16, seed=2, use_native_step=True)
 
     left.native_reset(seed=123)
     right.native_reset(seed=123)
@@ -26,7 +26,7 @@ def test_native_reset_is_deterministic_and_within_room_bounds() -> None:
 
 
 def test_native_circle_step_does_not_call_python_observation(monkeypatch) -> None:
-    env = SixDofCrazyflieEnv(num_envs=4, seed=7, task="circle", use_native_step=True)
+    env = SixDofEnv(num_envs=4, seed=7, task="circle", use_native_step=True)
 
     def fail_observation():
         raise AssertionError("native circle step must assemble observations in C")
@@ -40,8 +40,8 @@ def test_native_circle_step_does_not_call_python_observation(monkeypatch) -> Non
 
 
 def test_native_progress_reward_matches_python_reward() -> None:
-    py_env = SixDofCrazyflieEnv(num_envs=8, seed=11, task="circle", reset_profile="circle_recovery", use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=8, seed=11, task="circle", reset_profile="circle_recovery", use_native_step=True)
+    py_env = SixDofEnv(num_envs=8, seed=11, task="circle", reset_profile="circle_recovery", use_native_step=False)
+    native_env = SixDofEnv(num_envs=8, seed=11, task="circle", reset_profile="circle_recovery", use_native_step=True)
     actions = np.zeros((8, 4), dtype=np.float32)
     task_indices = np.zeros(8, dtype=np.int32)
     previous_error = position_error_for_task_indices(py_env, ("circle",), task_indices)
@@ -64,14 +64,14 @@ def test_native_progress_reward_matches_python_reward() -> None:
 
 
 def test_native_default_circle_reward_matches_task_aware_python_reward() -> None:
-    py_env = SixDofCrazyflieEnv(
+    py_env = SixDofEnv(
         num_envs=8,
         seed=12,
         task="circle",
         reset_profile="circle_recovery",
         use_native_step=False,
     )
-    native_env = SixDofCrazyflieEnv(
+    native_env = SixDofEnv(
         num_envs=8,
         seed=12,
         task="circle",
@@ -87,7 +87,7 @@ def test_native_default_circle_reward_matches_task_aware_python_reward() -> None
 
 
 def test_native_circle_reward_uses_sampled_target_altitude() -> None:
-    env = SixDofCrazyflieEnv(
+    env = SixDofEnv(
         num_envs=1,
         seed=13,
         task="circle",
@@ -108,8 +108,8 @@ def test_native_circle_reward_uses_sampled_target_altitude() -> None:
 
 
 def test_native_live_clearance_reward_matches_python_reward() -> None:
-    py_env = SixDofCrazyflieEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=True)
+    py_env = SixDofEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=False)
+    native_env = SixDofEnv(num_envs=8, seed=14, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=True)
     actions = np.zeros((8, 4), dtype=np.float32)
     task_indices = np.zeros(8, dtype=np.int32)
     previous_error = position_error_for_task_indices(py_env, ("obstacle_avoidance",), task_indices)
@@ -132,8 +132,8 @@ def test_native_live_clearance_reward_matches_python_reward() -> None:
 
 
 def test_native_live_stable_clearance_reward_matches_python_reward() -> None:
-    py_env = SixDofCrazyflieEnv(num_envs=8, seed=15, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=8, seed=15, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=True)
+    py_env = SixDofEnv(num_envs=8, seed=15, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=False)
+    native_env = SixDofEnv(num_envs=8, seed=15, task="obstacle_avoidance", reset_profile="obstacle_close_live", use_native_step=True)
     actions = np.zeros((8, 4), dtype=np.float32)
     task_indices = np.zeros(8, dtype=np.int32)
     previous_error = position_error_for_task_indices(py_env, ("obstacle_avoidance",), task_indices)
@@ -156,7 +156,7 @@ def test_native_live_stable_clearance_reward_matches_python_reward() -> None:
 
 
 def test_collect_rollout_uses_preallocated_buffers() -> None:
-    env = SixDofCrazyflieEnv(num_envs=4, seed=13, reset_profile="position_yaw_easy", use_native_step=True)
+    env = SixDofEnv(num_envs=4, seed=13, reset_profile="position_yaw_easy", use_native_step=True)
     model = SixDofActorCritic(input_dim=28, hidden_size=16)
 
     rollout = collect_rollout(env, model, horizon=3, action_std=0.2)

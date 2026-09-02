@@ -9,14 +9,14 @@ import sys
 import numpy as np
 
 from flightrl.sixdof.command_replay import action_from_command_row, desired_velocity_world, replay_velocity_commands
-from flightrl.sixdof.env import SixDofCrazyflieEnv
+from flightrl.sixdof.env import SixDofEnv
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_action_from_command_row_converts_body_velocity_to_low_level_action() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=3)
+    env = SixDofEnv(num_envs=1, seed=3)
     row = base_row(vx="0.3", vy="0.0", vz="0.1", yawrate="30.0")
 
     action = action_from_command_row(env, row, velocity_gain=2.0, yawrate_scale=2.0)

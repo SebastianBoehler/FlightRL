@@ -6,7 +6,7 @@ from flightrl.sixdof.curriculum import RESET_PROFILES, sample_reset
 from flightrl.sixdof.env import euler_to_quat
 from flightrl.sixdof.geometry import BoxRoom
 from flightrl.sixdof.yaw import circle_tangent_yaw
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 
 
 def test_circle_profiles_are_registered() -> None:
@@ -27,7 +27,7 @@ def test_circle_profile_samples_target_near_orbit_radius() -> None:
 def test_circle_profile_initial_yaw_is_aligned_to_tangent() -> None:
     profile = RESET_PROFILES["circle_recovery"]
     position, roll, pitch, yaw, target, _target_yaw = sample_reset(profile, np.random.default_rng(11), 256, BoxRoom())
-    env = SixDofCrazyflieEnv(num_envs=256, seed=11, task="circle", reset_profile="circle_recovery")
+    env = SixDofEnv(num_envs=256, seed=11, task="circle", reset_profile="circle_recovery")
     env.position[:] = position
     env.target_position[:] = target
     env.quaternion[:] = euler_to_quat(roll, pitch, yaw)

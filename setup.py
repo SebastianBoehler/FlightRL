@@ -15,6 +15,7 @@ common_args = ["-O0", "-g"] if DEBUG else ["-O3"]
 extension = Extension(
     "flightrl._binding",
     sources=[
+        "src/flightrl/native/flightrl_core.c",
         "src/flightrl/native/binding.c",
         "src/flightrl/native/native_actions.c",
         "src/flightrl/native/native_env.c",

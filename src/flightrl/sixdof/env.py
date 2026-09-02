@@ -4,6 +4,7 @@ import numpy as np
 
 from .curriculum import ResetProfile, resolve_reset_profile, sample_initial_velocity, sample_reset
 from .dynamics import step_body_rate
+from .embodiment import embodiment_batch
 from .geometry import BoxRoom, body_rays_world, normalize_quat
 from .motor_rpm import MotorRpmParams, resolve_motor_rpm_params, step_motor_rpm
 from .native_reset import native_reset_one
@@ -42,7 +43,7 @@ TASK_IDS = {
 }
 REWARD_MODE_IDS = {"env": 0, "progress": 1, "progress_clearance": 2, "progress_yaw_clearance": 3, "live_clearance": 4, "live_stable_clearance": 5}
 
-class SixDofCrazyflieEnv:
+class SixDofEnv:
     def __init__(
         self,
         num_envs: int = 256,
@@ -243,6 +244,10 @@ class SixDofCrazyflieEnv:
             self.target_yaw.copy(),
             self.ranges_m.copy(),
         )
+
+    def embodiment_descriptors(self) -> np.ndarray:
+        """Return the physical descriptor for each sampled environment."""
+        return embodiment_batch(self.physics_params)
 
     def _reset_mask(self, mask: np.ndarray) -> None:
         count = int(np.sum(mask))

@@ -14,7 +14,7 @@ from flightrl.puffer4_config import Puffer4ExportSettings, build_puffer4_section
 from flightrl.puffer4_export import export_puffer4_assets
 from flightrl.puffer4_sixdof_export import export_sixdof_puffer4_assets
 from flightrl.puffer4_sixdof_sections import build_sixdof_sections
-from flightrl.sixdof import AxisAlignedObstacle, BoxRoom, SixDofCrazyflieEnv
+from flightrl.sixdof import AxisAlignedObstacle, BoxRoom, SixDofEnv
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,12 +170,12 @@ void terminal_transition(uint32_t index, float* out) {
 def test_native_sixdof_rejects_interior_obstacles() -> None:
     room = BoxRoom(obstacles=(AxisAlignedObstacle(-0.2, 0.2, -0.2, 0.2, 0.0, 1.0),))
     with pytest.raises(ValueError, match="does not support BoxRoom interior obstacles"):
-        SixDofCrazyflieEnv(num_envs=1, room=room, use_native_step=True)
+        SixDofEnv(num_envs=1, room=room, use_native_step=True)
 
-    python_env = SixDofCrazyflieEnv(num_envs=1, room=room, use_native_step=False)
+    python_env = SixDofEnv(num_envs=1, room=room, use_native_step=False)
     assert python_env.room.obstacles == room.obstacles
 
-    native_env = SixDofCrazyflieEnv(num_envs=1, use_native_step=True)
+    native_env = SixDofEnv(num_envs=1, use_native_step=True)
     native_env.room = room
     with pytest.raises(ValueError, match="does not support BoxRoom interior obstacles"):
         native_env.step(np.zeros((1, 4), dtype=np.float32))

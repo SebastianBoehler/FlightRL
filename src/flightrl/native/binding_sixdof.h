@@ -1,7 +1,7 @@
 #ifndef FLIGHTRL_BINDING_SIXDOF_H
 #define FLIGHTRL_BINDING_SIXDOF_H
 
-#include "binding_helpers.h"
+#include "binding_sixdof_core.h"
 #include "native_sixdof.h"
 
 static PyArrayObject *sixdof_array(PyObject *obj) {
@@ -63,19 +63,15 @@ static PyObject *sixdof_step(PyObject *self, PyObject *args) {
         goto fail;
     }
 
-    flightrl_sixdof_step_batch(
-        PyArray_DATA(pos),
-        PyArray_DATA(vel),
-        PyArray_DATA(quat),
-        PyArray_DATA(rates),
-        PyArray_DATA(ranges),
-        PyArray_DATA(thrust_state),
-        PyArray_DATA(actions),
-        PyArray_DATA(physics),
-        PyArray_DATA(room),
-        num_envs,
-        dt
+    FlightRLSixDofBatch batch = sixdof_core_batch(
+        pos, vel, quat, rates, ranges, thrust_state, actions, physics, room,
+        num_envs, dt
     );
+    int core_status = flightrl_core_step_sixdof(&batch);
+    if (core_status != FLIGHTRL_CORE_OK) {
+        PyErr_Format(PyExc_RuntimeError, "FlightRL core rejected six-DoF batch: %d", core_status);
+        goto fail;
+    }
     PyArray_ResolveWritebackIfCopy(pos);
     PyArray_ResolveWritebackIfCopy(vel);
     PyArray_ResolveWritebackIfCopy(quat);
@@ -178,11 +174,18 @@ static PyObject *sixdof_step_env(PyObject *self, PyObject *args) {
         PyErr_SetString(PyExc_ValueError, "sixdof_step_env received incompatible array shapes");
         goto fail;
     }
-    flightrl_sixdof_step_env_batch(
-        PyArray_DATA(pos), PyArray_DATA(vel), PyArray_DATA(quat), PyArray_DATA(rates), PyArray_DATA(ranges),
-        PyArray_DATA(thrust_state), PyArray_DATA(physics), PyArray_DATA(target), PyArray_DATA(target_yaw), PyArray_DATA(prev), PyArray_DATA(step_count),
-        PyArray_DATA(actions), PyArray_DATA(obs), PyArray_DATA(rewards), PyArray_DATA(terminals), PyArray_DATA(truncations), PyArray_DATA(room), n, dt
+    FlightRLSixDofEnvironmentBatch batch = sixdof_core_environment_batch(
+        sixdof_core_batch(
+            pos, vel, quat, rates, ranges, thrust_state, actions, physics, room,
+            n, dt
+        ),
+        target, target_yaw, prev, step_count, obs, rewards, terminals, truncations
     );
+    int core_status = flightrl_core_step_environment(&batch);
+    if (core_status != FLIGHTRL_CORE_OK) {
+        PyErr_Format(PyExc_RuntimeError, "FlightRL core rejected environment batch: %d", core_status);
+        goto fail;
+    }
     PyArray_ResolveWritebackIfCopy(pos);
     PyArray_ResolveWritebackIfCopy(vel);
     PyArray_ResolveWritebackIfCopy(quat);
@@ -242,12 +245,21 @@ static PyObject *sixdof_step_env_context(PyObject *self, PyObject *args) {
         PyErr_SetString(PyExc_ValueError, "sixdof_step_env_context received incompatible array shapes");
         goto fail;
     }
-    flightrl_sixdof_step_env_context_batch(
-        PyArray_DATA(pos), PyArray_DATA(vel), PyArray_DATA(quat), PyArray_DATA(rates), PyArray_DATA(ranges),
-        PyArray_DATA(thrust_state), PyArray_DATA(physics), PyArray_DATA(target), PyArray_DATA(target_yaw), PyArray_DATA(prev), PyArray_DATA(step_count), PyArray_DATA(actions),
-        PyArray_DATA(obs), PyArray_DATA(rewards), PyArray_DATA(terminals), PyArray_DATA(truncations), PyArray_DATA(room),
-        PyArray_DATA(task_ids), reward_mode, PyArray_DATA(previous_error), n, dt
+    FlightRLSixDofEnvironmentBatch batch = sixdof_core_environment_batch(
+        sixdof_core_batch(
+            pos, vel, quat, rates, ranges, thrust_state, actions, physics, room,
+            n, dt
+        ),
+        target, target_yaw, prev, step_count, obs, rewards, terminals, truncations
     );
+    batch.task_ids = PyArray_DATA(task_ids);
+    batch.reward_mode = reward_mode;
+    batch.previous_error = PyArray_DATA(previous_error);
+    int core_status = flightrl_core_step_environment_with_context(&batch);
+    if (core_status != FLIGHTRL_CORE_OK) {
+        PyErr_Format(PyExc_RuntimeError, "FlightRL core rejected contextual environment batch: %d", core_status);
+        goto fail;
+    }
     PyArray_ResolveWritebackIfCopy(pos); PyArray_ResolveWritebackIfCopy(vel); PyArray_ResolveWritebackIfCopy(quat);
     PyArray_ResolveWritebackIfCopy(rates); PyArray_ResolveWritebackIfCopy(ranges); PyArray_ResolveWritebackIfCopy(target);
     PyArray_ResolveWritebackIfCopy(thrust_state);

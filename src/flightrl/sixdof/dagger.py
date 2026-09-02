@@ -7,7 +7,7 @@ import torch
 
 from .dataset import task_probability_vector, teacher_labels
 from .episode_tasks import EpisodeTaskAssignments
-from .env import SixDofCrazyflieEnv
+from .env import SixDofEnv
 from .evaluation import checkpoint_tasks, load_policy_from_checkpoint
 from .observation import augment_observation
 from .tasks import append_task_encoding, parse_task_spec
@@ -32,7 +32,7 @@ def collect_policy_dataset(
     validate_selected_tasks(selected_tasks, policy_tasks)
     sampling_probabilities = task_probability_vector(selected_tasks, task_probabilities)
     rng = np.random.default_rng(seed)
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, task=selected_tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     env.reset(seed=seed)
     episode_tasks = EpisodeTaskAssignments.sample(
         rng=rng,

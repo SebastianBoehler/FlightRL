@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from .controller import executed_action_for_controller
-from .env import SixDofCrazyflieEnv, quat_to_yaw, wrap_angle
+from .env import SixDofEnv, quat_to_yaw, wrap_angle
 from .evaluation import ControllerPolicy
 from .observation import augment_observation
 from .policies import SixDofPolicy, teacher_actions
@@ -24,7 +24,7 @@ def diagnose_controller(
     use_native_step: bool = False,
     bins: int = 8,
 ) -> dict:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=task, reset_profile=reset_profile, use_native_step=use_native_step)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, task=task, reset_profile=reset_profile, use_native_step=use_native_step)
     obs, _ = env.reset(seed=seed)
     task_indices = np.full(env.num_envs, policy_tasks.index(task), dtype=np.int64)
     survived = np.ones(env.num_envs, dtype=bool)
@@ -58,7 +58,7 @@ def diagnose_controller(
     }
 
 
-def controller_actions(model: SixDofPolicy | ControllerPolicy | None, env: SixDofCrazyflieEnv, policy_obs: np.ndarray, task: str) -> np.ndarray:
+def controller_actions(model: SixDofPolicy | ControllerPolicy | None, env: SixDofEnv, policy_obs: np.ndarray, task: str) -> np.ndarray:
     if model is None:
         return teacher_actions(env, task=task)
     if isinstance(model, ControllerPolicy):
@@ -70,7 +70,7 @@ def controller_actions(model: SixDofPolicy | ControllerPolicy | None, env: SixDo
         return model(torch.from_numpy(policy_obs).float()).cpu().numpy()
 
 
-def step_metrics(step: int, env: SixDofCrazyflieEnv, actions: np.ndarray, survived: np.ndarray) -> dict[str, float]:
+def step_metrics(step: int, env: SixDofEnv, actions: np.ndarray, survived: np.ndarray) -> dict[str, float]:
     position_error = np.linalg.norm(env.target_position - env.position, axis=1)
     clearance = np.min(env.ranges_m[:, :4], axis=1)
     yaw_error = np.abs(wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion)))

@@ -8,7 +8,7 @@ import pytest
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
 from flightrl.mujoco.control import MuJoCoControlParams, rate_control_torque
 from flightrl.mujoco.model import build_crazyflie_mjcf
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 
 
 def test_brushless_model_uses_official_motor_span_and_propeller_diameter() -> None:
@@ -59,7 +59,7 @@ def test_mujoco_reset_matches_python_initial_velocity_profile() -> None:
         "reset_profile": "obstacle_hover_drift_recovery",
     }
 
-    python_env = SixDofCrazyflieEnv(**kwargs)
+    python_env = SixDofEnv(**kwargs)
     mujoco_env = MuJoCoCrazyflieEnv(**kwargs)
 
     np.testing.assert_array_equal(mujoco_env.velocity, python_env.velocity)

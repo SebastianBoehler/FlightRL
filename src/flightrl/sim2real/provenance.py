@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
+
+from flightrl.artifact_identity import sha256_file
 
 
 def path_provenance(path: Path) -> dict[str, Any]:
@@ -13,14 +14,6 @@ def path_provenance(path: Path) -> dict[str, Any]:
         data["size_bytes"] = stat.st_size
         data["sha256"] = sha256_file(path)
     return data
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def verify_path_provenance(expected: dict[str, Any]) -> dict[str, Any]:

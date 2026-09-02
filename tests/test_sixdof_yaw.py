@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.env import euler_to_quat
 from flightrl.sixdof.rl import rollout_reward
 from flightrl.sixdof.yaw import circle_tangent_yaw, yaw_error_for_task
 
 
 def test_circle_yaw_reference_uses_tangent_not_reset_target_yaw() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=23)
+    env = SixDofEnv(num_envs=1, seed=23)
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
     env.target_yaw[:] = 0.0
@@ -21,7 +21,7 @@ def test_circle_yaw_reference_uses_tangent_not_reset_target_yaw() -> None:
 
 
 def test_circle_observation_encodes_tangent_yaw_error() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=31, task="circle")
+    env = SixDofEnv(num_envs=1, seed=31, task="circle")
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
     env.target_yaw[:] = 0.0
@@ -34,7 +34,7 @@ def test_circle_observation_encodes_tangent_yaw_error() -> None:
 
 
 def test_position_yaw_observation_keeps_reset_target_yaw() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=37, task="position_yaw")
+    env = SixDofEnv(num_envs=1, seed=37, task="position_yaw")
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
     env.target_yaw[:] = 0.0
@@ -47,7 +47,7 @@ def test_position_yaw_observation_keeps_reset_target_yaw() -> None:
 
 
 def test_multitask_observation_uses_each_episode_task_yaw_reference() -> None:
-    env = SixDofCrazyflieEnv(num_envs=2, seed=39, task="position_yaw")
+    env = SixDofEnv(num_envs=2, seed=39, task="position_yaw")
     env.position[:] = np.asarray(
         [[0.75, 0.0, 0.65], [0.75, 0.0, 0.65]],
         dtype=np.float32,
@@ -75,7 +75,7 @@ def test_multitask_observation_uses_each_episode_task_yaw_reference() -> None:
 
 
 def test_native_circle_step_recomputes_tangent_yaw_observation() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=41, task="circle", use_native_step=True)
+    env = SixDofEnv(num_envs=1, seed=41, task="circle", use_native_step=True)
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.velocity[:] = 0.0
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
@@ -91,7 +91,7 @@ def test_native_circle_step_recomputes_tangent_yaw_observation() -> None:
 
 
 def test_task_conditioned_yaw_reward_uses_circle_reference() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=29)
+    env = SixDofEnv(num_envs=1, seed=29)
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
     env.target_yaw[:] = 0.0

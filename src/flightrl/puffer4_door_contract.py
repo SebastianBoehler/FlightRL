@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
 from math import isclose, isfinite, radians
 from typing import Any, Mapping, MutableMapping
 
+from flightrl.artifact_identity import bind_payload, require_bound_payload, sha256_payload
 from flightrl.puffer4_edge_schema import ACTION_SPECS
 
 
@@ -104,23 +103,17 @@ class DoorTeacherActionContract:
                 )
 
     def sha256(self) -> str:
-        encoded = json.dumps(
-            self.payload(),
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-        return hashlib.sha256(encoded).hexdigest()
+        return sha256_payload(self.payload())
 
     def to_report(self) -> dict[str, Any]:
-        return self.payload() | {"sha256": self.sha256()}
+        return bind_payload(self.payload())
 
     @classmethod
     def from_report(cls, report: Mapping[str, Any]) -> DoorTeacherActionContract:
-        payload = {key: value for key, value in report.items() if key != "sha256"}
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        digest = hashlib.sha256(encoded).hexdigest()
-        if report.get("sha256") != digest:
-            raise ValueError("fixed-door action contract SHA-256 does not match")
+        payload = require_bound_payload(
+            report,
+            label="fixed-door action contract",
+        )
         if tuple(payload.pop("action_order", ())) != ACTION_ORDER:
             raise ValueError("fixed-door action order does not match")
         if (

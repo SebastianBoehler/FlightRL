@@ -4,7 +4,8 @@ from .checkpoint_contract import (
     build_checkpoint_payload,
     require_current_checkpoint,
 )
-from .env import SixDofCrazyflieEnv
+from .env import SixDofEnv
+from .embodiment import EmbodimentDescriptor
 from .geometry import AxisAlignedObstacle, BoxRoom
 from .native import native_step, native_step_env
 from .tasks import MULTITASK, TASKS, append_task_encoding, parse_task_spec
@@ -16,7 +17,8 @@ __all__ = [
     "CHECKPOINT_SCHEMA",
     "MULTITASK",
     "TASKS",
-    "SixDofCrazyflieEnv",
+    "SixDofEnv",
+    "EmbodimentDescriptor",
     "SixDofPolicy",
     "append_task_encoding",
     "build_checkpoint_payload",

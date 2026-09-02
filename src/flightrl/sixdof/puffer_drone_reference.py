@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import configparser
-import hashlib
 import json
 import math
 import re
@@ -9,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from flightrl.artifact_identity import sha256_file
 from .env import ACTION_DIM, OBSERVATION_DIM, TASK_IDS
 from .motor_rpm import resolve_motor_rpm_params
 from .physics import resolve_domain_randomization, resolve_physics_profile
@@ -110,7 +110,7 @@ def flightrl_contract() -> dict[str, Any]:
     motor = resolve_motor_rpm_params("puffer_parameters")
     min_rpm = max(0.0, 2.0 * motor.hover_rpm - motor.max_rpm)
     return {
-        "source": "FlightRL SixDofCrazyflieEnv parameter-inspired motor_rpm lane",
+        "source": "FlightRL SixDofEnv parameter-inspired motor_rpm lane",
         "observation_dim": OBSERVATION_DIM,
         "action_dim": ACTION_DIM,
         "action_modes": {
@@ -192,10 +192,6 @@ def parse_macros(path: Path, names: tuple[str, ...]) -> dict[str, float]:
     if missing:
         raise ValueError(f"missing macros in {path}: {', '.join(sorted(missing))}")
     return values
-
-
-def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def parse_number(raw: str) -> float:

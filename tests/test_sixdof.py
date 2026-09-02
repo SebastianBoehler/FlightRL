@@ -4,12 +4,12 @@ import numpy as np
 import pytest
 
 from flightrl.hardware.ranger_projection import points_from_rows
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, native_step, teacher_actions
+from flightrl.sixdof import BoxRoom, SixDofEnv, native_step, teacher_actions
 from flightrl.sixdof.geometry import body_rays_world
 
 
 def test_sixdof_env_shapes_and_teacher_step() -> None:
-    env = SixDofCrazyflieEnv(num_envs=4, seed=5)
+    env = SixDofEnv(num_envs=4, seed=5)
     obs, _ = env.reset(seed=5)
     assert obs.shape == (4, 28)
     actions = teacher_actions(env, task="position_yaw")
@@ -22,7 +22,7 @@ def test_sixdof_env_shapes_and_teacher_step() -> None:
 
 
 def test_sixdof_reset_done_only_resets_done_rows() -> None:
-    env = SixDofCrazyflieEnv(num_envs=4, seed=9)
+    env = SixDofEnv(num_envs=4, seed=9)
     env.reset(seed=9)
     before = env.position.copy()
     obs = env.reset_done(np.asarray([False, True, False, True]))
@@ -46,7 +46,7 @@ def test_identity_body_rays_point_along_body_axes() -> None:
 
 
 def test_obstacle_teacher_responds_to_vertical_clearance() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=6, task="obstacle_avoidance")
+    env = SixDofEnv(num_envs=1, seed=6, task="obstacle_avoidance")
     env.position[:] = np.asarray([[0.0, 0.0, 0.5]], dtype=np.float32)
     env.target_position[:] = env.position
     env.velocity[:] = 0.0
@@ -66,7 +66,7 @@ def test_obstacle_teacher_responds_to_vertical_clearance() -> None:
 
 
 def test_teacher_rejects_retired_or_unknown_task_semantics() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=6)
+    env = SixDofEnv(num_envs=1, seed=6)
 
     with pytest.raises(ValueError, match="unknown 6-DoF teacher task"):
         teacher_actions(env, task="attitude")
@@ -97,7 +97,7 @@ def test_ranger_map_projects_rows_to_points() -> None:
 
 
 def test_native_sixdof_step_matches_python_step() -> None:
-    env = SixDofCrazyflieEnv(num_envs=16, seed=31)
+    env = SixDofEnv(num_envs=16, seed=31)
     env.reset(seed=31)
     actions = teacher_actions(env, task="position_yaw").astype(np.float32)
     position = env.position.copy()
@@ -117,8 +117,8 @@ def test_native_sixdof_step_matches_python_step() -> None:
 
 
 def test_native_step_env_matches_python_env_rollout() -> None:
-    python_env = SixDofCrazyflieEnv(num_envs=8, seed=41, use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=8, seed=41, use_native_step=True)
+    python_env = SixDofEnv(num_envs=8, seed=41, use_native_step=False)
+    native_env = SixDofEnv(num_envs=8, seed=41, use_native_step=True)
     obs_py, _ = python_env.reset(seed=41)
     obs_native, _ = native_env.reset(seed=41)
     assert np.allclose(obs_py, obs_native)

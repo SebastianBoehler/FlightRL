@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv
+from flightrl.sixdof import BoxRoom, SixDofEnv
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_sixdof_reset_starts_inside_custom_room() -> None:
     room = BoxRoom(x_min=-0.4, x_max=0.5, y_min=-0.3, y_max=0.6, z_min=0.0, z_max=1.0)
-    env = SixDofCrazyflieEnv(num_envs=32, seed=7, room=room)
+    env = SixDofEnv(num_envs=32, seed=7, room=room)
     env.reset(seed=7)
 
     assert room.contains(env.position, margin=0.03).all()
@@ -22,8 +22,8 @@ def test_sixdof_reset_starts_inside_custom_room() -> None:
 
 def test_native_step_env_matches_python_with_custom_room() -> None:
     room = BoxRoom(x_min=-0.7, x_max=0.9, y_min=-0.8, y_max=0.6, z_min=0.0, z_max=1.4, max_range_m=2.0)
-    python_env = SixDofCrazyflieEnv(num_envs=8, seed=9, room=room, use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=8, seed=9, room=room, use_native_step=True)
+    python_env = SixDofEnv(num_envs=8, seed=9, room=room, use_native_step=False)
+    native_env = SixDofEnv(num_envs=8, seed=9, room=room, use_native_step=True)
     actions = [[0.02, 0.01, -0.02, 0.03]] * 8
 
     python_env.step(actions)

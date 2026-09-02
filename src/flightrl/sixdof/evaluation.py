@@ -9,7 +9,7 @@ from .circle import circle_orbit_error_from_arrays
 from .checkpoint_contract import require_current_checkpoint
 from .controller import executed_action_for_controller
 from .disturbance import configure_disturbance
-from .env import SixDofCrazyflieEnv
+from .env import SixDofEnv
 from .observation import augment_observation
 from .policies import SixDofPolicy, roll_pitch_from_quat, teacher_actions
 from .tasks import append_task_encoding
@@ -167,7 +167,7 @@ def evaluate_one(
     domain_randomization: str | None = None,
     disturbance_profile: str | None = None,
 ) -> dict[str, float]:
-    env = SixDofCrazyflieEnv(
+    env = SixDofEnv(
         num_envs=num_envs,
         seed=seed,
         task=task,
@@ -274,11 +274,11 @@ def residual_model_actions(controller: ControllerPolicy, env, obs: np.ndarray, _
     return executed_action_for_controller("teacher_residual", residual, base, controller.residual_scale)
 
 
-def teacher_action(_model, env: SixDofCrazyflieEnv, _obs, _task_indices, _tasks, task: str) -> np.ndarray:
+def teacher_action(_model, env: SixDofEnv, _obs, _task_indices, _tasks, task: str) -> np.ndarray:
     return teacher_actions(env, task=task)
 
 
-def position_error_for_task(env: SixDofCrazyflieEnv, task: str) -> np.ndarray:
+def position_error_for_task(env: SixDofEnv, task: str) -> np.ndarray:
     if task == "circle":
         return circle_orbit_error_from_arrays(env.position, env.target_position)
     return np.linalg.norm(env.target_position - env.position, axis=1).astype(np.float32)

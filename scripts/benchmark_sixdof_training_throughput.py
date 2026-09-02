@@ -8,7 +8,7 @@ from time import perf_counter
 
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.controller import CONTROLLERS
 from flightrl.sixdof.dataset import parse_task_probabilities, task_probability_vector
 from flightrl.sixdof.observation import OBSERVATION_MODES, observation_dim
@@ -79,7 +79,7 @@ def select_variants(variants: list[ThroughputVariant], names: list[str] | None) 
 
 def benchmark_variant(variant: ThroughputVariant, args: argparse.Namespace) -> dict:
     torch.manual_seed(17)
-    env = SixDofCrazyflieEnv(num_envs=variant.num_envs, seed=17, task=args.task, use_native_step=args.native_step, reset_profile=args.reset_profile)
+    env = SixDofEnv(num_envs=variant.num_envs, seed=17, task=args.task, use_native_step=args.native_step, reset_profile=args.reset_profile)
     model = SixDofActorCritic(input_dim=observation_dim(28 + task_observation_dim(args.policy_tasks), args.observation_mode), hidden_size=variant.hidden_size)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
     config = PpoConfig(hidden_size=variant.hidden_size, minibatch_size=variant.minibatch_size, update_epochs=variant.update_epochs)
@@ -105,7 +105,7 @@ def benchmark_variant(variant: ThroughputVariant, args: argparse.Namespace) -> d
     }
 
 
-def collect(env: SixDofCrazyflieEnv, model: SixDofActorCritic, horizon: int, config: PpoConfig, args: argparse.Namespace) -> dict:
+def collect(env: SixDofEnv, model: SixDofActorCritic, horizon: int, config: PpoConfig, args: argparse.Namespace) -> dict:
     return collect_rollout(
         env,
         model,

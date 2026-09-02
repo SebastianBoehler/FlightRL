@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, teacher_actions
+from flightrl.sixdof import BoxRoom, SixDofEnv, teacher_actions
 from flightrl.sixdof.env import quat_to_yaw
 
 
@@ -60,8 +60,8 @@ def main() -> None:
 
 
 def run_profile(args: argparse.Namespace, profile: str, room: BoxRoom | None) -> dict:
-    py_env = SixDofCrazyflieEnv(args.num_envs, seed=args.seed, task=args.task, room=room, use_native_step=False, reset_profile=profile)
-    native_env = SixDofCrazyflieEnv(args.num_envs, seed=args.seed, task=args.task, room=room, use_native_step=True, reset_profile=profile)
+    py_env = SixDofEnv(args.num_envs, seed=args.seed, task=args.task, room=room, use_native_step=False, reset_profile=profile)
+    native_env = SixDofEnv(args.num_envs, seed=args.seed, task=args.task, room=room, use_native_step=True, reset_profile=profile)
     rng = np.random.default_rng(args.seed + 10_000)
     errors = {key: [] for key in (*STATE_SIGNALS, *RANGE_SIGNALS)}
     terminal_mismatches = 0
@@ -88,7 +88,7 @@ def run_profile(args: argparse.Namespace, profile: str, room: BoxRoom | None) ->
     }
 
 
-def actions_for(env: SixDofCrazyflieEnv, rng: np.random.Generator, source: str, scale: float) -> np.ndarray:
+def actions_for(env: SixDofEnv, rng: np.random.Generator, source: str, scale: float) -> np.ndarray:
     if source == "zero":
         return np.zeros((env.num_envs, 4), dtype=np.float32)
     if source == "teacher":
@@ -96,14 +96,14 @@ def actions_for(env: SixDofCrazyflieEnv, rng: np.random.Generator, source: str, 
     return np.clip(rng.normal(0.0, scale, size=(env.num_envs, 4)), -1.0, 1.0).astype(np.float32)
 
 
-def collect_errors(errors: dict[str, list[np.ndarray]], py_env: SixDofCrazyflieEnv, native_env: SixDofCrazyflieEnv) -> None:
+def collect_errors(errors: dict[str, list[np.ndarray]], py_env: SixDofEnv, native_env: SixDofEnv) -> None:
     py_state = signal_arrays(py_env)
     native_state = signal_arrays(native_env)
     for key in errors:
         errors[key].append(native_state[key] - py_state[key])
 
 
-def signal_arrays(env: SixDofCrazyflieEnv) -> dict[str, np.ndarray]:
+def signal_arrays(env: SixDofEnv) -> dict[str, np.ndarray]:
     ranges_mm = env.ranges_m * 1000.0
     return {
         "stateEstimate.x": env.position[:, 0],

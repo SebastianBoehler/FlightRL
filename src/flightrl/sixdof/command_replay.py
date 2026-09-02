@@ -8,7 +8,7 @@ from typing import Mapping
 
 import numpy as np
 
-from .env import SixDofCrazyflieEnv, euler_to_quat, quat_to_yaw
+from .env import SixDofEnv, euler_to_quat, quat_to_yaw
 from .geometry import BoxRoom
 from .policies import action_from_desired_acc
 
@@ -36,7 +36,7 @@ def replay_velocity_commands(
         prepared = override_height(prepared, override_z_m)
     if not prepared:
         return [], []
-    env = SixDofCrazyflieEnv(num_envs=1, room=room, seed=0)
+    env = SixDofEnv(num_envs=1, room=room, seed=0)
     set_env_from_row(env, prepared[0])
     sim_rows = [row_from_env(env, np.zeros(4, dtype=np.float32), prepared[0], 0)]
     for index, row in enumerate(prepared[:-1], start=1):
@@ -60,7 +60,7 @@ def replay_velocity_commands(
 
 
 def action_from_command_row(
-    env: SixDofCrazyflieEnv,
+    env: SixDofEnv,
     row: Mapping[str, str],
     *,
     velocity_gain: float = 2.5,
@@ -81,7 +81,7 @@ def action_from_command_row(
     return action_from_desired_acc(env, desired_acc, yaw_rate)
 
 
-def command_yaw_rad(env: SixDofCrazyflieEnv, row: Mapping[str, str], yaw_source: str) -> float:
+def command_yaw_rad(env: SixDofEnv, row: Mapping[str, str], yaw_source: str) -> float:
     if yaw_source == "logged":
         return float(np.deg2rad(_float(row, "stabilizer.yaw")))
     if yaw_source == "sim":
@@ -97,7 +97,7 @@ def desired_velocity_world(vx: float, vy: float, vz: float, yaw: float, command_
     raise ValueError("command_frame must be 'body' or 'world'")
 
 
-def set_env_from_row(env: SixDofCrazyflieEnv, row: Mapping[str, str]) -> None:
+def set_env_from_row(env: SixDofEnv, row: Mapping[str, str]) -> None:
     env.position[0] = [_float(row, "stateEstimate.x"), _float(row, "stateEstimate.y"), _float(row, "stateEstimate.z")]
     env.velocity[0] = [
         _float(row, "stateEstimate.vx"),
@@ -164,7 +164,7 @@ def load_box_room(path: str | None) -> BoxRoom | None:
     )
 
 
-def row_from_env(env: SixDofCrazyflieEnv, action: np.ndarray, source: Mapping[str, str], step: int) -> dict[str, float]:
+def row_from_env(env: SixDofEnv, action: np.ndarray, source: Mapping[str, str], step: int) -> dict[str, float]:
     roll, pitch, yaw = quat_to_euler(env.quaternion[0])
     ranges = env.ranges_m[0] * 1000.0
     return {

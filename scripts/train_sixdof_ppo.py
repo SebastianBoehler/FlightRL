@@ -8,7 +8,7 @@ from time import perf_counter
 
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv, build_checkpoint_payload, evaluate_checkpoint_policy, evaluate_policy, gate_status, require_current_checkpoint
+from flightrl.sixdof import SixDofEnv, build_checkpoint_payload, evaluate_checkpoint_policy, evaluate_policy, gate_status, require_current_checkpoint
 from flightrl.sixdof.checkpoint_contract import require_matching_override
 from flightrl.sixdof.controller import CONTROLLERS
 from flightrl.sixdof.dataset import parse_task_probabilities, task_probability_vector
@@ -74,7 +74,7 @@ def main() -> None:
     input_dim = observation_dim(28 + task_observation_dim(args.policy_tasks), args.observation_mode)
 
     torch.manual_seed(args.seed)
-    env = SixDofCrazyflieEnv(
+    env = SixDofEnv(
         num_envs=args.num_envs,
         seed=args.seed,
         task=args.task,

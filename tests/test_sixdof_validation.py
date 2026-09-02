@@ -7,7 +7,7 @@ import pytest
 
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
 from flightrl.mujoco.control import MuJoCoControlParams
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.geometry import AxisAlignedObstacle, BoxRoom, normalize_quat
 from flightrl.sixdof.motor_rpm import MotorRpmParams
 from flightrl.sixdof.physics import (
@@ -147,7 +147,7 @@ def test_quaternion_normalization_rejects_undefined_inputs(
 )
 def test_python_env_rejects_ambiguous_constructor_values(kwargs: dict) -> None:
     with pytest.raises((TypeError, ValueError)):
-        SixDofCrazyflieEnv(**kwargs)
+        SixDofEnv(**kwargs)
 
 
 @pytest.mark.parametrize(
@@ -160,7 +160,7 @@ def test_python_env_rejects_ambiguous_constructor_values(kwargs: dict) -> None:
     ],
 )
 def test_python_env_rejects_malformed_action_batches(actions) -> None:
-    env = SixDofCrazyflieEnv(num_envs=1)
+    env = SixDofEnv(num_envs=1)
     with pytest.raises((TypeError, ValueError)):
         env.step(actions)
 
@@ -174,13 +174,13 @@ def test_python_env_rejects_malformed_action_batches(actions) -> None:
     ],
 )
 def test_python_env_rejects_malformed_reset_masks(done: np.ndarray) -> None:
-    env = SixDofCrazyflieEnv(num_envs=1)
+    env = SixDofEnv(num_envs=1)
     with pytest.raises((TypeError, ValueError)):
         env.reset_done(done)
 
 
 def test_python_env_rejects_invalid_native_context_arrays() -> None:
-    env = SixDofCrazyflieEnv(num_envs=2)
+    env = SixDofEnv(num_envs=2)
 
     with pytest.raises(ValueError, match="task indices"):
         env.set_native_context(task_indices=np.asarray([0]), tasks=("circle",))

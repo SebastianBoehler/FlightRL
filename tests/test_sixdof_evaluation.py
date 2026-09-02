@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import torch
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, build_checkpoint_payload
+from flightrl.sixdof import SixDofEnv, SixDofPolicy, build_checkpoint_payload
 from flightrl.sixdof.curriculum import ResetProfile
 from flightrl.sixdof.evaluation import aggregate_task_metrics, evaluate_one, position_error_for_task
 from flightrl.sixdof.gates import gate_status
@@ -88,7 +88,7 @@ def test_checkpoint_eval_can_gate_yaw_error(tmp_path: Path) -> None:
 
 
 def test_circle_eval_position_error_uses_orbit_not_center() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1, seed=17, task="circle", reset_profile="circle_recovery")
+    env = SixDofEnv(num_envs=1, seed=17, task="circle", reset_profile="circle_recovery")
     env.position[:] = np.asarray([[0.75, 0.0, 0.65]], dtype=np.float32)
     env.target_position[:] = np.asarray([[0.0, 0.0, 0.65]], dtype=np.float32)
 

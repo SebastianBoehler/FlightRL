@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import configparser
-import hashlib
 import json
 from math import isfinite
 from pathlib import Path
 
-from flightrl.evidence_scope import file_identity
+from flightrl.artifact_identity import canonical_json_bytes, file_identity, sha256_payload
 from flightrl.puffer4_config import Puffer4ExportSettings, render_puffer4_ini
 from flightrl.puffer4_edge_contract import edge_policy_contract_report
 from flightrl.puffer4_edge_execution import edge_execution_provenance
@@ -141,7 +140,7 @@ def canonical_edge_environment_config(
 
 
 def edge_environment_config_sha256(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode()).hexdigest()
+    return sha256_payload(value)
 
 
 def edge_collection_source_identity() -> dict[str, dict[str, str]]:
@@ -182,7 +181,7 @@ def require_edge_collection_metadata(metadata: object) -> None:
         appearance_seed=metadata["appearance_seed"],
         collection_profile=profile,
     )
-    if _canonical_json(config) != _canonical_json(expected):
+    if canonical_json_bytes(config) != canonical_json_bytes(expected):
         raise ValueError("edge dataset environment config is not canonical")
     digest = edge_environment_config_sha256(config)
     if metadata["environment_config_sha256"] != digest:
@@ -230,15 +229,3 @@ def _parse_ini_value(value: str) -> int | float:
     if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
         raise ValueError("edge environment config contains a nonnumeric value")
     return parsed
-
-
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("edge dataset environment config is not canonical JSON") from exc

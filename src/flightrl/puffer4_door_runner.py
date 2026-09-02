@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Sequence
 
 import torch
 
+from flightrl.artifact_identity import sha256_file, sha256_payload
 from flightrl.puffer4_door_export import DOOR_NATIVE_FILES
 from flightrl.puffer4_native_revision import require_clean_puffer_revision
 
@@ -261,16 +261,11 @@ def _source_manifest(
 
 
 def _manifest_sha256(manifest: dict[str, str]) -> str:
-    encoded = json.dumps(
-        manifest,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    return sha256_payload(manifest)
 
 
 def _file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return sha256_file(path)
 
 
 def _write_json_atomic(path: Path, value: dict) -> None:

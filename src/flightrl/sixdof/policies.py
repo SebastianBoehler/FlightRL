@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from .env import ACTION_DIM, OBSERVATION_DIM, SixDofCrazyflieEnv, quat_to_yaw, wrap_angle
+from .env import ACTION_DIM, OBSERVATION_DIM, SixDofEnv, quat_to_yaw, wrap_angle
 from .geometry import quat_to_matrix
 from .tasks import TASKS
 from .yaw import circle_tangent_yaw
@@ -37,7 +37,7 @@ class SixDofPolicy(nn.Module):
         return hidden
 
 
-def teacher_actions(env: SixDofCrazyflieEnv, task: str = "position_yaw") -> np.ndarray:
+def teacher_actions(env: SixDofEnv, task: str = "position_yaw") -> np.ndarray:
     if task == "obstacle_avoidance":
         return obstacle_teacher(env, profile=getattr(env, "teacher_profile", "default"))
     if task == "circle":
@@ -47,14 +47,14 @@ def teacher_actions(env: SixDofCrazyflieEnv, task: str = "position_yaw") -> np.n
     raise ValueError(f"unknown 6-DoF teacher task {task!r}; expected one of {TASKS}")
 
 
-def position_yaw_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
+def position_yaw_teacher(env: SixDofEnv) -> np.ndarray:
     error = env.target_position - env.position
     desired_acc = 3.0 * error - 1.4 * env.velocity
     desired_yaw_rate = 1.8 * wrap_angle(env.target_yaw - quat_to_yaw(env.quaternion))
     return action_from_desired_acc(env, desired_acc, desired_yaw_rate)
 
 
-def obstacle_teacher(env: SixDofCrazyflieEnv, *, profile: str = "default") -> np.ndarray:
+def obstacle_teacher(env: SixDofEnv, *, profile: str = "default") -> np.ndarray:
     if profile not in TEACHER_PROFILES:
         raise ValueError(f"unknown teacher profile {profile!r}; expected one of {', '.join(TEACHER_PROFILES)}")
     if profile == "aggressive_open_stress":
@@ -85,7 +85,7 @@ def clip_live_action_envelope(actions: np.ndarray) -> np.ndarray:
 
 
 def obstacle_teacher_from_gains(
-    env: SixDofCrazyflieEnv,
+    env: SixDofEnv,
     *,
     position_gain: float,
     velocity_gain: float,
@@ -108,7 +108,7 @@ def obstacle_teacher_from_gains(
     return action_from_desired_acc(env, desired_acc, yaw_rate, max_lean_rad=max_lean_rad, attitude_rate_gain=attitude_rate_gain)
 
 
-def circle_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
+def circle_teacher(env: SixDofEnv) -> np.ndarray:
     radial = env.position - env.target_position
     radial[:, 2] = 0.0
     radius = np.maximum(np.linalg.norm(radial[:, :2], axis=1, keepdims=True), 0.2)
@@ -124,7 +124,7 @@ def circle_teacher(env: SixDofCrazyflieEnv) -> np.ndarray:
 
 
 def action_from_desired_acc(
-    env: SixDofCrazyflieEnv,
+    env: SixDofEnv,
     desired_acc: np.ndarray,
     yaw_rate: np.ndarray,
     *,

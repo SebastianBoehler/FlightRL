@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from flightrl.sim2real.live_profile import build_live_sim_profile, range_dropout_probability, write_report
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.sensor_model import SixDofSensorProfile, resolve_sensor_profile
 
 
@@ -92,7 +92,7 @@ def test_range_dropout_ignores_open_space_no_return_values() -> None:
 
 def test_sensor_profile_adds_observation_dropout_and_action_lag() -> None:
     profile = SixDofSensorProfile(range_dropout_prob=1.0, action_lag_s=0.03)
-    env = SixDofCrazyflieEnv(num_envs=4, seed=3, task="obstacle_avoidance", sensor_profile=profile)
+    env = SixDofEnv(num_envs=4, seed=3, task="obstacle_avoidance", sensor_profile=profile)
 
     obs, _ = env.reset(seed=3)
     assert np.allclose(obs[:, 18:24], 1.0)
@@ -106,7 +106,7 @@ def test_sensor_profile_adds_observation_dropout_and_action_lag() -> None:
 
 def test_no_ranger_sensor_profile_masks_ranges_without_disabling_room_model() -> None:
     profile = resolve_sensor_profile("no_ranger")
-    env = SixDofCrazyflieEnv(num_envs=4, seed=13, task="position_yaw", sensor_profile=profile)
+    env = SixDofEnv(num_envs=4, seed=13, task="position_yaw", sensor_profile=profile)
 
     obs, _ = env.reset(seed=13)
 

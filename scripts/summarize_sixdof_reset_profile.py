@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flightrl.sixdof import SixDofCrazyflieEnv, teacher_actions
+from flightrl.sixdof import SixDofEnv, teacher_actions
 
 
 def main() -> None:
@@ -31,7 +31,7 @@ def main() -> None:
 
 
 def summarize(args: argparse.Namespace) -> dict:
-    env = SixDofCrazyflieEnv(
+    env = SixDofEnv(
         num_envs=args.num_envs,
         seed=args.seed,
         task=args.task,

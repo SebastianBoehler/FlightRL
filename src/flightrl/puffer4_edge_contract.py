@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from math import hypot, isfinite
 from numbers import Real
 from typing import Any, Mapping
 
+from flightrl.artifact_identity import bind_payload, require_bound_payload
 from flightrl.puffer4_edge_action_contract import edge_action_contract_payload
 from flightrl.puffer4_edge_wire import (
     EdgeTimingProfile,
@@ -112,8 +111,7 @@ def edge_policy_contract_report(
     hidden_size: int = 48,
     timing: EdgeTimingProfile | None = None,
 ) -> dict[str, Any]:
-    payload = _payload(hidden_size, timing)
-    return payload | {"sha256": _sha256(payload)}
+    return bind_payload(_payload(hidden_size, timing))
 
 
 def verify_edge_policy_contract(
@@ -122,9 +120,7 @@ def verify_edge_policy_contract(
     hidden_size: int,
     timing: EdgeTimingProfile | None = None,
 ) -> None:
-    payload = {key: value for key, value in report.items() if key != "sha256"}
-    if report.get("sha256") != _sha256(payload):
-        raise ValueError("AI Deck policy contract SHA-256 does not match")
+    payload = require_bound_payload(report, label="AI Deck policy contract")
     if payload != _payload(hidden_size, timing):
         raise ValueError("AI Deck policy contract is not an approved v3 payload")
 
@@ -273,8 +269,3 @@ def _telemetry_field(spec: tuple[Any, ...]) -> dict[str, Any]:
         "reference_frame": reference_frame,
         "formula": f"clip({formula}, {clip[0]}, {clip[1]})",
     }
-
-
-def _sha256(payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()

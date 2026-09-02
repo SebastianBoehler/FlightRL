@@ -7,7 +7,7 @@ from time import perf_counter
 
 import numpy as np
 
-from flightrl.sixdof import SixDofCrazyflieEnv, native_step_env
+from flightrl.sixdof import SixDofEnv, native_step_env
 from flightrl.sixdof.policies import teacher_actions
 
 
@@ -33,8 +33,8 @@ def main() -> None:
 
 
 def benchmark_count(num_envs: int, steps: int) -> dict[str, float]:
-    py_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=3, use_native_step=False)
-    native_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=3, use_native_step=True)
+    py_env = SixDofEnv(num_envs=num_envs, seed=3, use_native_step=False)
+    native_env = SixDofEnv(num_envs=num_envs, seed=3, use_native_step=True)
     actions = teacher_actions(py_env, task="position_yaw")
     python_sps = time_loop(lambda: py_env.step(actions), num_envs, steps)
     raw_sps = time_loop(lambda: native_step_env_once(native_env, actions), num_envs, steps)
@@ -56,7 +56,7 @@ def time_loop(fn, num_envs: int, steps: int) -> float:
     return (num_envs * steps) / (perf_counter() - start)
 
 
-def native_step_env_once(env: SixDofCrazyflieEnv, actions: np.ndarray) -> None:
+def native_step_env_once(env: SixDofEnv, actions: np.ndarray) -> None:
     native_step_env(env, actions)
 
 

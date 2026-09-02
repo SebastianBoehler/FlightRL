@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "flightrl"
 version = "0.1.0"
-description = "Mac-first research stack for a small AI Deck indoor-navigation policy."
+description = "Local-first autonomy co-design stack for simulation, training, and edge deployment."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

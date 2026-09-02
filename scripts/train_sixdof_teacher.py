@@ -7,13 +7,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from flightrl.sixdof import SixDofCrazyflieEnv, SixDofPolicy, build_checkpoint_payload, evaluate_policy, teacher_actions
+from flightrl.sixdof import SixDofEnv, SixDofPolicy, build_checkpoint_payload, evaluate_policy, teacher_actions
 from flightrl.sixdof.episode_tasks import EpisodeTaskAssignments
 from flightrl.sixdof.tasks import MULTITASK, TASKS, append_task_encoding, parse_task_spec, select_task_actions, task_observation_dim
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a vectorized 6-DoF Crazyflie teacher-imitation policy")
+    parser = argparse.ArgumentParser(description="Train a vectorized 6-DoF teacher-imitation policy")
     parser.add_argument("--task", default="position_yaw", help=f"One of {', '.join(TASKS)}, '{MULTITASK}', or comma-separated tasks")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--updates", type=int, default=240)
@@ -34,7 +34,7 @@ def main() -> None:
     np.random.seed(args.seed)
     tasks = parse_task_spec(args.task)
     rng = np.random.default_rng(args.seed)
-    env = SixDofCrazyflieEnv(num_envs=args.num_envs, seed=args.seed, task=tasks[0], use_native_step=args.native_step)
+    env = SixDofEnv(num_envs=args.num_envs, seed=args.seed, task=tasks[0], use_native_step=args.native_step)
     input_dim = 28 + task_observation_dim(tasks)
     model = SixDofPolicy(hidden_size=args.hidden_size, input_dim=input_dim)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
@@ -104,7 +104,7 @@ def main() -> None:
     print(f"metrics={payload['metrics']}")
 
 
-def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
+def teacher_labels(env: SixDofEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
     if len(tasks) == 1:
         return teacher_actions(env, task=tasks[0])
     return select_task_actions({task: teacher_actions(env, task=task) for task in tasks}, task_indices, tasks)

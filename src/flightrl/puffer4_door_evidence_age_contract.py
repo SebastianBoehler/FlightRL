@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
 from math import isclose, isfinite
 from types import MappingProxyType
 from typing import Any, Mapping, MutableMapping
+
+from flightrl.artifact_identity import bind_payload, require_bound_payload, sha256_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,15 +55,10 @@ class DoorEvidenceAgeContract:
         }
 
     def sha256(self) -> str:
-        encoded = json.dumps(
-            self.payload(),
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-        return hashlib.sha256(encoded).hexdigest()
+        return sha256_payload(self.payload())
 
     def to_report(self) -> dict[str, Any]:
-        return self.payload() | {"sha256": self.sha256()}
+        return bind_payload(self.payload())
 
     def env_values(self) -> dict[str, float]:
         return {
@@ -97,16 +92,10 @@ class DoorEvidenceAgeContract:
         cls,
         report: Mapping[str, Any],
     ) -> DoorEvidenceAgeContract:
-        payload = {key: value for key, value in report.items() if key != "sha256"}
-        encoded = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-        if report.get("sha256") != hashlib.sha256(encoded).hexdigest():
-            raise ValueError(
-                "fixed-door evidence-age contract SHA-256 does not match"
-            )
+        payload = require_bound_payload(
+            report,
+            label="fixed-door evidence-age contract",
+        )
         try:
             return cls(**payload)
         except TypeError as exc:

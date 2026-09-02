@@ -1,23 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
+
+from flightrl.artifact_identity import file_identity
 
 
 DESKTOP_CPU_SCOPE = "desktop_cpu_only"
 DESKTOP_DEVELOPMENT_SCOPE = "desktop_development"
 EDGE_DEPLOYMENT_SCOPE = "edge_deployment"
 EDGE_DEPLOYMENT_VERIFIER_MISSING = "edge_deployment_verifier_missing"
-
-
-def file_identity(path: str | Path) -> dict[str, str]:
-    resolved = Path(path).resolve()
-    digest = hashlib.sha256()
-    with resolved.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return {"path": str(resolved), "sha256": digest.hexdigest()}
 
 
 def require_file_identity(

@@ -1,17 +1,18 @@
 # FlightRL
 
-FlightRL is a Mac-first research stack for training a small, target-conditioned
-indoor navigation policy and eventually running that policy on the Crazyflie
-AI Deck. The intended deployed actor proposes bounded velocity and yaw-rate
-setpoints; the STM32 estimator, safety layer, stabilizer, and motor mixer remain
-authoritative.
+FlightRL is a local-first autonomy co-design stack for compiling vehicle,
+terrain, sensor, and mission descriptions into fast simulations, bounded
+policies, and reproducible edge artifacts. The current hardware lane targets a
+small target-conditioned Crazyflie AI Deck policy. Its actor proposes bounded
+velocity and yaw-rate setpoints; the STM32 estimator, safety layer, stabilizer,
+and motor mixer remain authoritative.
 
 ## Current status
 
 - The canonical target is `aideck-navigation-policy-v3`: one 64x48 gray4 frame,
   19 telemetry values, one of three target IDs, and four bounded setpoint
   proposals.
-- The PyTorch reference actor has 17,700 parameters and an estimated 96,144
+- The PyTorch reference actor has 17,602 parameters and an estimated 96,048
   MACs per step. These are static graph estimates, not GAP8 measurements.
 - The native fixed-door environment provides a privileged desktop teacher;
   generic six-DoF environments provide desktop teacher, training, and
@@ -73,6 +74,7 @@ Useful narrow checks:
 ```bash
 python scripts/smoke_test.py --config configs/tasks/hover.toml
 python scripts/benchmark_sixdof_native.py --num-envs 8192 --steps 1000
+python scripts/report_edge_budget.py
 python -m pytest -q tests/test_puffer4_edge_policy.py
 ```
 
@@ -140,7 +142,11 @@ simulation-gate output as live authority.
 
 ## Repository map
 
-- `src/flightrl/native/`: high-throughput native environments and bindings.
+- `src/flightrl/native/`: C semantic core, versioned host interface, and Python
+  adapter.
+- `src/flightrl/artifact_identity.py`: canonical content and file identities.
+- `src/flightrl/scenario_bundle.py`: offline compilation of explicit vehicle,
+  terrain, sensor, frame, and resolved-mission contracts.
 - `src/flightrl/sixdof/`: six-DoF tasks, policies, PPO/imitation, and reports.
 - `src/flightrl/mujoco/`: independent rigid-body/contact validation lane.
 - `src/flightrl/puffer4_door_*`: fixed-door privileged teacher, mission metric,

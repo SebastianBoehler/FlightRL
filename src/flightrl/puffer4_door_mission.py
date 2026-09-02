@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
 from math import hypot, isfinite, pi
 from typing import Any, Literal, Mapping, Sequence
+
+from flightrl.artifact_identity import bind_payload, sha256_payload
 
 
 MissionMetricCompatibility = Literal[
@@ -81,13 +81,10 @@ class DoorMissionMetric:
         }
 
     def sha256(self) -> str:
-        encoded = json.dumps(
-            self.payload(), sort_keys=True, separators=(",", ":")
-        ).encode()
-        return hashlib.sha256(encoded).hexdigest()
+        return sha256_payload(self.payload())
 
     def to_report(self) -> dict[str, Any]:
-        return self.payload() | {"sha256": self.sha256()}
+        return bind_payload(self.payload())
 
     def env_values(self) -> dict[str, int | float]:
         payload = self.payload()

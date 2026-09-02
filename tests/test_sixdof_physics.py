@@ -4,13 +4,13 @@ import numpy as np
 
 from flightrl.puffer4_sixdof_export import build_sixdof_sections
 from flightrl.puffer4_config import Puffer4ExportSettings
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.disturbance import SixDofDisturbanceProfile, configure_disturbance, resolve_disturbance_profile
 from flightrl.sixdof.physics import LINEAR_DRAG, MASS, MOTOR_TAU
 
 
 def test_body_rate_randomization_does_not_claim_behaviorless_mass_variation() -> None:
-    env = SixDofCrazyflieEnv(num_envs=16, seed=7, physics_profile="crazyflie_brushless", domain_randomization="crazyflie_training")
+    env = SixDofEnv(num_envs=16, seed=7, physics_profile="crazyflie_brushless", domain_randomization="crazyflie_training")
     env.reset(seed=7)
 
     assert env.physics_params.shape == (16, 9)
@@ -20,7 +20,7 @@ def test_body_rate_randomization_does_not_claim_behaviorless_mass_variation() ->
 
 
 def test_motor_rpm_randomization_keeps_behavioral_mass_variation() -> None:
-    env = SixDofCrazyflieEnv(
+    env = SixDofEnv(
         num_envs=16,
         seed=7,
         action_mode="motor_rpm",
@@ -33,8 +33,8 @@ def test_motor_rpm_randomization_keeps_behavioral_mass_variation() -> None:
 
 def test_native_matches_python_with_randomized_crazyflie_physics() -> None:
     kwargs = {"num_envs": 8, "seed": 13, "physics_profile": "crazyflie_brushless", "domain_randomization": "crazyflie_training"}
-    python_env = SixDofCrazyflieEnv(use_native_step=False, **kwargs)
-    native_env = SixDofCrazyflieEnv(use_native_step=True, **kwargs)
+    python_env = SixDofEnv(use_native_step=False, **kwargs)
+    native_env = SixDofEnv(use_native_step=True, **kwargs)
     np.testing.assert_allclose(python_env.physics_params, native_env.physics_params)
 
     rng = np.random.default_rng(13)
@@ -59,7 +59,7 @@ def test_puffer_sixdof_export_includes_realism_knobs() -> None:
 
 
 def test_disturbance_profile_pushes_level_hover_in_open_space() -> None:
-    env = SixDofCrazyflieEnv(num_envs=4, seed=11, reset_profile="obstacle_hover_live")
+    env = SixDofEnv(num_envs=4, seed=11, reset_profile="obstacle_hover_live")
     env.position[:] = np.asarray([0.0, 0.0, 0.5], dtype=np.float32)
     env.velocity[:] = 0.0
     env.quaternion[:] = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32)

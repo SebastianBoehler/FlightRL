@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from flightrl.sixdof import BoxRoom, SixDofCrazyflieEnv, checkpoint_tasks, load_policy_from_checkpoint, teacher_actions
+from flightrl.sixdof import BoxRoom, SixDofEnv, checkpoint_tasks, load_policy_from_checkpoint, teacher_actions
 from flightrl.sixdof.observation import augment_observation
 from flightrl.sixdof.tasks import append_task_encoding, parse_task_spec, task_indices_for_name
 
@@ -32,7 +32,7 @@ def main() -> None:
     if "," in task or task == "multitask":
         raise SystemExit("--task must select one concrete task for rollout")
     room = load_room_report(args.room_report) if args.room_report else None
-    env = SixDofCrazyflieEnv(num_envs=1, seed=args.seed, task=task, room=room, use_native_step=args.native_step)
+    env = SixDofEnv(num_envs=1, seed=args.seed, task=task, room=room, use_native_step=args.native_step)
     model = load_policy_from_checkpoint(checkpoint) if checkpoint and not args.teacher else None
     obs, _ = env.reset(seed=args.seed)
     task_indices = task_indices_for_name(task, tasks, env.num_envs)
@@ -86,7 +86,7 @@ def load_room_report(path: str | None) -> BoxRoom | None:
     )
 
 
-def row_from_env(env: SixDofCrazyflieEnv, action: np.ndarray, reward: float, step: int) -> dict[str, float]:
+def row_from_env(env: SixDofEnv, action: np.ndarray, reward: float, step: int) -> dict[str, float]:
     roll, pitch, yaw = quat_to_euler(env.quaternion[0])
     ranges = env.ranges_m[0] * 1000.0
     return {

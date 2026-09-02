@@ -3,6 +3,13 @@
 #include "binding_sixdof.h"
 #include "binding_sixdof_setpoint.h"
 #include "binding_sixdof_vision.h"
+#include "flightrl_core.h"
+
+static PyObject *core_abi_version(PyObject *self, PyObject *args) {
+    (void)self;
+    (void)args;
+    return PyLong_FromUnsignedLong(flightrl_core_abi_version());
+}
 
 static int my_init(DronePlanarEnv *env, PyObject *kwargs) {
     env->dt = (float)flightrl_unpack_number(kwargs, "dt");
@@ -133,6 +140,7 @@ static int my_get(PyObject *dict, DronePlanarEnv *env) {
 }
 
 static PyMethodDef methods[] = {
+    {"core_abi_version", core_abi_version, METH_NOARGS, "Return the native FlightRL C ABI version"},
     {"env_init", (PyCFunction)env_init, METH_VARARGS | METH_KEYWORDS, "Initialize a native environment"},
     {"env_reset", env_reset, METH_VARARGS, "Reset one environment"},
     {"env_step", env_step, METH_VARARGS, "Step one environment"},

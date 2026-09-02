@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import hashlib
-import json
 from pathlib import Path
 import re
 
+from flightrl.artifact_identity import sha256_payload
 from flightrl.puffer4_door_runner import (
     BUILD_FINGERPRINT_SCHEMA_VERSION,
     BUILD_MODE,
@@ -53,9 +52,7 @@ def canonical_edge_native_build_fingerprint(value: object) -> dict:
     if re.fullmatch(r"[0-9a-f]{40}", revision["git_commit"]) is None:
         raise ValueError("edge native build dependency revision is invalid")
     sources = _source_manifest(value["source_files_sha256"])
-    manifest_sha256 = hashlib.sha256(
-        json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    manifest_sha256 = sha256_payload(sources)
     for name in (
         "source_manifest_sha256",
         "source_manifest_sha256_before",

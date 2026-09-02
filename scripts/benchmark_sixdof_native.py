@@ -5,11 +5,11 @@ from time import perf_counter
 
 import numpy as np
 
-from flightrl.sixdof import SixDofCrazyflieEnv, native_step
+from flightrl.sixdof import SixDofEnv, native_step
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark Python vs native 6-DoF Crazyflie stepping")
+    parser = argparse.ArgumentParser(description="Benchmark Python vs native 6-DoF stepping")
     parser.add_argument("--num-envs", type=int, default=8192)
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=17)
@@ -34,7 +34,7 @@ def random_actions(num_envs: int, steps: int, seed: int) -> np.ndarray:
 
 
 def benchmark_python(num_envs: int, actions: np.ndarray, seed: int, physics_profile: str, domain_randomization: str) -> float:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=False, physics_profile=physics_profile, domain_randomization=domain_randomization)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, use_native_step=False, physics_profile=physics_profile, domain_randomization=domain_randomization)
     env.reset(seed=seed)
     start = perf_counter()
     for action in actions:
@@ -43,7 +43,7 @@ def benchmark_python(num_envs: int, actions: np.ndarray, seed: int, physics_prof
 
 
 def benchmark_native_raw(num_envs: int, actions: np.ndarray, seed: int, physics_profile: str, domain_randomization: str) -> float:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, physics_profile=physics_profile, domain_randomization=domain_randomization)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, physics_profile=physics_profile, domain_randomization=domain_randomization)
     env.reset(seed=seed)
     start = perf_counter()
     for action in actions:
@@ -62,7 +62,7 @@ def benchmark_native_raw(num_envs: int, actions: np.ndarray, seed: int, physics_
 
 
 def benchmark_native_env(num_envs: int, actions: np.ndarray, seed: int, physics_profile: str, domain_randomization: str) -> float:
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=True, physics_profile=physics_profile, domain_randomization=domain_randomization)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, use_native_step=True, physics_profile=physics_profile, domain_randomization=domain_randomization)
     env.reset(seed=seed)
     start = perf_counter()
     for action in actions:

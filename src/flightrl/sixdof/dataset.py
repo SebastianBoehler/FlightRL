@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .env import SixDofCrazyflieEnv
+from .env import SixDofEnv
 from .episode_tasks import EpisodeTaskAssignments, task_probability_vector
 from .observation import OBSERVATION_MODES, augment_observation
 from .policies import teacher_actions
@@ -31,7 +31,7 @@ def collect_teacher_dataset(
     tasks = parse_task_spec(task_spec)
     sampling_probabilities = task_probability_vector(tasks, task_probabilities)
     rng = np.random.default_rng(seed)
-    env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
+    env = SixDofEnv(num_envs=num_envs, seed=seed, task=tasks[0], use_native_step=use_native_step, reset_profile=reset_profile)
     env.reset(seed=seed)
     episode_tasks = EpisodeTaskAssignments.sample(
         rng=rng,
@@ -174,7 +174,7 @@ def execution_actions(labels: np.ndarray, rng: np.random.Generator, noise_std: f
     return np.clip(labels + noise, -1.0, 1.0).astype(np.float32)
 
 
-def teacher_labels(env: SixDofCrazyflieEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
+def teacher_labels(env: SixDofEnv, tasks: tuple[str, ...], task_indices: np.ndarray) -> np.ndarray:
     if len(tasks) == 1:
         return teacher_actions(env, task=tasks[0])
     return select_task_actions({task: teacher_actions(env, task=task) for task in tasks}, task_indices, tasks)

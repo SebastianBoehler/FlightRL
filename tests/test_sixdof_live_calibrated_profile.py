@@ -7,14 +7,14 @@ from pathlib import Path
 
 import numpy as np
 
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_obstacle_close_live_profile_samples_close_ranges() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1024, seed=42, task="obstacle_avoidance", reset_profile="obstacle_close_live")
+    env = SixDofEnv(num_envs=1024, seed=42, task="obstacle_avoidance", reset_profile="obstacle_close_live")
     env.reset(seed=42)
     hmin = np.min(env.ranges_m[:, :4], axis=1)
 
@@ -24,7 +24,7 @@ def test_obstacle_close_live_profile_samples_close_ranges() -> None:
 
 
 def test_obstacle_hover_live_profile_keeps_target_at_start_pose() -> None:
-    env = SixDofCrazyflieEnv(num_envs=1024, seed=44, task="obstacle_avoidance", reset_profile="obstacle_hover_live")
+    env = SixDofEnv(num_envs=1024, seed=44, task="obstacle_avoidance", reset_profile="obstacle_hover_live")
     env.reset(seed=44)
     hmin = np.min(env.ranges_m[:, :4], axis=1)
 
@@ -34,7 +34,7 @@ def test_obstacle_hover_live_profile_keeps_target_at_start_pose() -> None:
 
 
 def test_obstacle_vertical_live_profile_samples_top_and_bottom_ranges() -> None:
-    env = SixDofCrazyflieEnv(num_envs=2048, seed=43, task="obstacle_avoidance", reset_profile="obstacle_vertical_live")
+    env = SixDofEnv(num_envs=2048, seed=43, task="obstacle_avoidance", reset_profile="obstacle_vertical_live")
     env.reset(seed=43)
 
     assert np.quantile(env.ranges_m[:, 5], 0.10) < 0.35

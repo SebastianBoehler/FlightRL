@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 
 from flightrl.mujoco import MuJoCoCrazyflieEnv, is_mujoco_available
-from flightrl.sixdof import SixDofCrazyflieEnv
+from flightrl.sixdof import SixDofEnv
 from flightrl.sixdof.policies import teacher_actions
 
 
@@ -45,8 +45,8 @@ def main() -> None:
 
 
 def benchmark_count(num_envs: int, steps: int, seed: int, sensor_profile: str | None) -> dict[str, float]:
-    py_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=False, sensor_profile=sensor_profile)
-    native_env = SixDofCrazyflieEnv(num_envs=num_envs, seed=seed, use_native_step=True, sensor_profile=sensor_profile)
+    py_env = SixDofEnv(num_envs=num_envs, seed=seed, use_native_step=False, sensor_profile=sensor_profile)
+    native_env = SixDofEnv(num_envs=num_envs, seed=seed, use_native_step=True, sensor_profile=sensor_profile)
     mujoco_env = MuJoCoCrazyflieEnv(num_envs=num_envs, seed=seed, sensor_profile=sensor_profile)
     actions = teacher_actions(py_env, task="position_yaw")
     python_sps = time_loop(lambda: py_env.step(actions), num_envs, steps)
