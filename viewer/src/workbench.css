@@ -1,0 +1,258 @@
+:root {
+  color-scheme: dark;
+  --bg: #11161c;
+  --panel: #192028;
+  --line: #303b46;
+  --text: #e5ebf1;
+  --muted: #a6b2bf;
+  --accent: #75badf;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #edf1f5;
+  --panel: #fff;
+  --line: #cbd3dc;
+  --text: #1b2938;
+  --muted: #536576;
+  --accent: #176593;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+header {
+  height: 76px;
+  border-color: var(--line);
+  background: var(--panel);
+  padding: 0 24px;
+  gap: 32px;
+}
+.brand {
+  font-size: 23px;
+  letter-spacing: -1px;
+}
+.brand span {
+  color: var(--accent);
+}
+.heading {
+  font-size: 17px;
+  color: var(--text);
+  font-weight: 600;
+}
+.heading span {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-top: 5px;
+}
+button,
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+button:hover,
+button.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border-color: var(--accent);
+  color: var(--text);
+}
+#theme {
+  margin-left: auto;
+}
+main {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 650px;
+  height: calc(100vh - 210px);
+  border-color: var(--line);
+}
+.workspace {
+  background: var(--bg);
+  border-color: var(--line);
+}
+.scene-bar {
+  background: var(--panel);
+  border-color: var(--line);
+  padding: 12px 18px;
+  height: 64px;
+}
+.scene-bar label {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.scene-bar select {
+  font-size: 13px;
+  max-width: 230px;
+}
+.view-buttons button {
+  font-size: 13px;
+}
+.scene-note {
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--text);
+  top: 80px;
+  left: 20px;
+}
+.scene-note span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.scene-legend {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0;
+  left: 20px;
+}
+.big-status {
+  left: 20px;
+  bottom: 50px;
+}
+.big-status > span {
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--muted);
+  text-transform: none;
+}
+.big-status strong {
+  font-size: 34px;
+  color: var(--text);
+}
+aside {
+  background: var(--panel);
+  padding: 18px 20px;
+  overflow: auto;
+}
+.aside-title {
+  font-size: 16px;
+  color: var(--text);
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.aside-title span {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.metric {
+  padding: 16px 0;
+  border-color: var(--line);
+  margin-bottom: 16px;
+}
+.metric span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.metric strong {
+  font-size: 20px;
+  color: var(--text);
+}
+.feed-title {
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.feed-title span {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.feed-caption {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 0 18px;
+}
+#camera,
+#operator-camera {
+  image-rendering: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  max-height: 210px;
+  object-fit: contain;
+  background: #0a1016;
+}
+.operator {
+  margin-bottom: 16px;
+}
+#outage {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+#outage span {
+  font-size: 12px;
+}
+.record-list {
+  border-color: var(--line);
+}
+.record-list div {
+  font-size: 12px;
+  gap: 16px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.record-list b {
+  color: var(--text);
+  font-size: 12px;
+  text-align: right;
+}
+.scope {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+footer {
+  background: var(--panel);
+  border-color: var(--line);
+  padding: 12px 24px;
+}
+.playback {
+  gap: 18px;
+}
+.scrub label {
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+#clock {
+  font-size: 13px;
+}
+#play {
+  font-size: 17px;
+  background: var(--accent);
+  color: var(--bg);
+  border: 0;
+}
+#chapters {
+  gap: 10px;
+}
+#chapters button {
+  font-size: 12px;
+  letter-spacing: 0;
+  border-color: var(--line);
+  padding: 5px 10px;
+  min-height: 30px;
+}
+.evidence {
+  border-color: var(--line);
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.evidence a {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+#airflow-toggle[aria-pressed="true"] { border-color: #63cfe3; color: #63cfe3; }

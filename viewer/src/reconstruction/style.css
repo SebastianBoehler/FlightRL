@@ -1,0 +1,190 @@
+:root {
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+  color: #dce6eb;
+  background: #152029;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header,
+nav,
+footer {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 17px 24px;
+  border-bottom: 1px solid #344550;
+}
+header > a {
+  font-size: 25px;
+  font-weight: 750;
+  text-decoration: none;
+  color: inherit;
+}
+header span {
+  color: #77c3dd;
+}
+header div {
+  flex: 1;
+}
+h1 {
+  font-size: 21px;
+  margin: 0;
+}
+h2 {
+  font-size: 16px;
+  margin: 16px 0 9px;
+}
+p {
+  margin: 3px 0 14px;
+  color: #aebfc9;
+}
+button,
+select {
+  font: inherit;
+  padding: 8px 13px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #49606f;
+  border-radius: 6px;
+  cursor: pointer;
+}
+a {
+  color: #81cbe6;
+}
+nav {
+  flex-wrap: wrap;
+}
+nav a {
+  margin-left: auto;
+}
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  height: calc(100vh - 250px);
+  min-height: 500px;
+}
+#world {
+  position: relative;
+  overflow: hidden;
+}
+.legend {
+  position: absolute;
+  top: 20px;
+  left: 23px;
+  color: #bdcbd4;
+  pointer-events: none;
+}
+.legend span {
+  color: #57dec1;
+}
+.legend b {
+  font-weight: 400;
+  color: #f0ab69;
+}
+#status {
+  position: absolute;
+  bottom: 20px;
+  left: 23px;
+  background: #111b23e8;
+  padding: 10px 14px;
+  border-radius: 6px;
+  color: #dce6eb;
+}
+aside {
+  padding: 6px 22px;
+  overflow: auto;
+  border-left: 1px solid #344550;
+}
+#camera {
+  width: 100%;
+  background: #081015;
+  border-radius: 5px;
+}
+dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  font-size: 14px;
+}
+dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+dt {
+  color: #aebfc9;
+}
+.note {
+  padding: 10px 24px;
+  color: #aebfc9;
+  font-size: 14px;
+}
+footer input {
+  flex: 1;
+  accent-color: #57dec1;
+}
+output {
+  min-width: 140px;
+}
+.light {
+  background: #eef3f6;
+  color: #192c38;
+  color-scheme: light;
+}
+.light p,
+.light dt,
+.light .note {
+  color: #465d6c;
+}
+@media (max-width: 900px) {
+  main {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  #world {
+    height: 55vh;
+  }
+  aside {
+    border-left: 0;
+    display: block;
+  }
+  #camera {
+    max-width: 400px;
+  }
+  header,
+  nav,
+  footer {
+    padding: 12px;
+    gap: 12px;
+  }
+  nav a {
+    margin-left: 0;
+  }
+  output {
+    min-width: 90px;
+  }
+}
+@media (min-width: 901px) {
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+  header,
+  nav,
+  footer,
+  .note {
+    flex-shrink: 0;
+  }
+  main {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+}

@@ -1,0 +1,123 @@
+@media (max-width: 1050px) {
+  main {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+  aside {
+    padding: 20px 16px;
+  }
+  .view-buttons {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .scene-bar select {
+    max-width: 185px;
+  }
+  .scene-legend {
+    display: none;
+  }
+  header {
+    gap: 25px;
+  }
+}
+@media (max-width: 720px) {
+  header {
+    height: 75px;
+    padding: 0 18px;
+  }
+  .heading {
+    display: none;
+  }
+  .simulation {
+    font-size: 8px;
+  }
+  main {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+  .workspace {
+    height: 65svh;
+    min-height: 410px;
+    border-right: 0;
+  }
+  aside {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    padding: 20px;
+  }
+  .aside-title,
+  .metric,
+  .record-list,
+  .scope {
+    grid-column: 1/-1;
+  }
+  .metric {
+    margin: 0;
+  }
+  .feed-title {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+  #camera {
+    grid-column: 1;
+    grid-row: 4/7;
+  }
+  .feed-caption {
+    grid-column: 1;
+  }
+  .operator {
+    grid-column: 2;
+    grid-row: 4/7;
+    height: auto;
+  }
+  .operator .feed-title {
+    display: block;
+    line-height: 1.7;
+  }
+  .operator .feed-title span {
+    display: block;
+  }
+  footer {
+    height: auto;
+    min-height: 174px;
+    padding: 18px;
+  }
+  .scene-bar {
+    left: 18px;
+    right: 18px;
+    top: 18px;
+  }
+  .view-buttons {
+    gap: 3px;
+  }
+  .view-buttons button {
+    font-size: 8px;
+    padding: 8px;
+  }
+  .scene-bar select {
+    max-width: 170px;
+  }
+  .big-status {
+    left: 18px;
+    top: 110px;
+  }
+  .scene-note {
+    left: 18px;
+  }
+  #chapters {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .evidence {
+    line-height: 1.6;
+    flex-direction: column;
+  }
+  #outage {
+    top: 47px;
+  }
+  .scope {
+    margin: 0;
+  }
+}

@@ -1,0 +1,65 @@
+#source-select {
+  width: 100%;
+  font-size: 10px;
+  padding-inline: 4px;
+}
+#source-controls {
+  display: grid;
+  gap: 9px;
+}
+#source-controls label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+#source-controls input[type="checkbox"] {
+  justify-self: start;
+}
+#source-controls a {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 9px;
+  text-align: center;
+}
+#speed {
+  min-height: 26px;
+  font-size: 10px;
+}
+#feeds:has(figure:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+#feeds figure > .sensor-surface {
+  position: relative;
+  aspect-ratio: 4/3;
+}
+#feeds .sensor-surface canvas {
+  height: 100%;
+  width: 100%;
+}
+[data-view="scene"] #feeds .sensor-surface {
+  max-height: 80px;
+}
+.drone-label,
+.task-label {
+  position: absolute;
+  pointer-events: none;
+  font-size: 10px;
+  background: #12251bda;
+  border-radius: 3px;
+  padding: 3px 6px;
+  transform: translate(-50%, -100%);
+}
+@media (max-width: 600px) {
+  #source-select {
+    font-size: 9px;
+  }
+  .timeline:has(#speed:not([hidden])) {
+    grid-template-columns: minmax(40px, 1fr) 45px auto;
+  }
+  .timeline:has(#speed:not([hidden])) #live {
+    grid-column: 3;
+  }
+  .timeline:has(#speed:not([hidden])) #replay-time {
+    grid-column: 1 / 3;
+  }
+}

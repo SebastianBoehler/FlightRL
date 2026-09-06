@@ -1,0 +1,74 @@
+footer {
+  height: 174px;
+  border-top: 1px solid #31414a;
+  padding: 20px 30px;
+  background: #111b22;
+}
+.playback {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+#play {
+  width: 40px;
+  height: 37px;
+  color: #59d7c5;
+}
+#speed {
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.scrub {
+  flex: 1;
+}
+.scrub label {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  display: flex;
+  justify-content: space-between;
+  color: #a6bbc2;
+}
+.scrub label span {
+  letter-spacing: 0;
+}
+input[type="range"] {
+  width: 100%;
+  accent-color: #59d7c5;
+  height: 12px;
+  cursor: pointer;
+  margin-top: 9px;
+}
+#chapters {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0 12px;
+}
+#chapters button {
+  font-size: 9px;
+  padding: 7px 13px;
+  letter-spacing: 0.3px;
+}
+.evidence {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  font-size: 9px;
+  color: #8fa6af;
+}
+.evidence a {
+  color: #59d7c5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+#error {
+  position: fixed;
+  inset: 35% 15%;
+  padding: 30px;
+  background: #402421;
+  border: 1px solid #a46d60;
+  font-size: 14px;
+  z-index: 20;
+}
+select option {
+  background: #152027;
+}

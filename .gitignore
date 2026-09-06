@@ -35,3 +35,10 @@ external/
 
 # Workspace-specific symlink
 resources
+
+# Local inspection viewer
+viewer/node_modules/
+viewer/public/data
+
+viewer/public/review
+viewer/public/forest-quality

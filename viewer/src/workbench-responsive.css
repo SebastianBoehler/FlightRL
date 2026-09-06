@@ -1,0 +1,161 @@
+@media (max-width: 1100px) {
+  main {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .scene-bar {
+    height: auto;
+    align-items: flex-start;
+    gap: 8px;
+    flex-direction: column;
+  }
+  .scene-note {
+    top: 115px;
+  }
+  .view-buttons button {
+    padding: 6px 8px;
+  }
+  .heading span {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  header {
+    padding: 12px 16px;
+    height: auto;
+    gap: 16px;
+  }
+  .brand {
+    font-size: 20px;
+  }
+  .heading {
+    font-size: 14px;
+  }
+  #theme {
+    font-size: 12px;
+    padding: 6px;
+  }
+  main {
+    display: block;
+    height: auto;
+    min-height: 0;
+  }
+  .workspace {
+    height: 580px;
+  }
+  aside {
+    overflow: visible;
+    display: block;
+  }
+  .scene-bar {
+    padding: 12px;
+  }
+  #camera,
+  #operator-camera {
+    max-height: none;
+    width: 100%;
+    height: auto;
+  }
+  .feed-title span {
+    font-size: 12px;
+  }
+  footer {
+    padding: 16px;
+  }
+  .evidence {
+    line-height: 1.5;
+    gap: 12px;
+  }
+  #chapters {
+    flex-wrap: wrap;
+  }
+}
+main {
+  min-height: 460px;
+}
+.big-status {
+  top: auto;
+}
+.scene-bar {
+  top: 0;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid var(--line);
+}
+.scene-bar select {
+  margin-top: 0;
+  background: var(--panel);
+}
+.view-buttons button {
+  background: var(--panel);
+}
+.view-buttons button.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--text);
+}
+.operator {
+  height: auto;
+  padding-bottom: 12px;
+  border-color: var(--line);
+}
+#operator-camera {
+  width: 100%;
+  height: auto;
+  max-height: 150px;
+}
+#outage {
+  height: 150px;
+}
+.scene-legend {
+  bottom: 20px;
+}
+.feed-title {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+#scene {
+  background: transparent;
+}
+@media (max-width: 760px) {
+  main {
+    min-height: 0;
+  }
+  .scene-note {
+    top: 115px;
+  }
+  .big-status {
+    top: auto;
+  }
+  .scene-bar {
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+  #operator-camera {
+    max-height: none;
+  }
+  .view-buttons button {
+    font-size: 12px;
+  }
+  .heading {
+    display: none;
+  }
+}
+:root[data-theme="light"] #link.good {
+  color: #14734f;
+}
+:root[data-theme="light"] .scene-legend {
+  color: #445664;
+}
+footer {
+  height: 134px;
+}
+select option {
+  background: var(--panel);
+  color: var(--text);
+}
+@media (max-width: 760px) {
+  footer {
+    height: auto;
+  }
+}
+header{flex-wrap:wrap;height:auto;min-height:76px;padding-block:12px;row-gap:12px}header select[aria-label="Dashboard mission"]{max-width:min(290px,70vw)}header a{color:#86d3e4}

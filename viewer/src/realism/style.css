@@ -1,0 +1,137 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #111916;
+  color: #e4e9df;
+  font: 14px system-ui;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 18px 24px;
+  border-bottom: 1px solid #354338;
+}
+h1 {
+  font-size: 19px;
+  margin: 0 0 5px;
+  font-weight: 550;
+}
+p {
+  margin: 0;
+  color: #a8b8aa;
+  font-size: 12px;
+}
+nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+button,
+a,
+label {
+  font: inherit;
+  color: inherit;
+}
+button {
+  background: #263b2d;
+  border: 1px solid #4b6652;
+  border-radius: 5px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+a {
+  margin-left: 6px;
+  font-size: 12px;
+}
+#view {
+  position: relative;
+  height: 58vh;
+  min-height: 330px;
+}
+#view > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#metrics {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  background: #122017df;
+  border: 1px solid #536749;
+  padding: 10px 14px;
+  max-width: 90%;
+  font-variant-numeric: tabular-nums;
+}
+#feeds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 24px;
+}
+figure {
+  margin: 0;
+  min-width: 0;
+}
+figure canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: contain;
+  max-height: 220px;
+  background: #080d09;
+}
+figcaption {
+  padding: 7px 0;
+  color: #afc1b0;
+  font-size: 12px;
+}
+#status {
+  padding: 0 24px 16px;
+  color: #a8b8aa;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+#error {
+  margin: 12px 24px;
+  padding: 12px;
+  color: #ffb5a5;
+  background: #41251f;
+  border: 1px solid #aa6250;
+  white-space: pre-wrap;
+}
+#error:empty {
+  display: none;
+}
+@media (max-width: 600px) {
+  header {
+    padding: 12px;
+  }
+  #feeds {
+    gap: 6px;
+    padding: 12px;
+  }
+  #view {
+    height: 50vh;
+  }
+  figcaption {
+    font-size: 10px;
+  }
+  nav {
+    gap: 5px;
+  }
+  button {
+    padding: 8px;
+    font-size: 12px;
+  }
+}

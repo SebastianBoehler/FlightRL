@@ -1,0 +1,55 @@
+{
+  "runtime": {
+    "model": "robbyant/lingbot-map",
+    "upstream_commit": "bfcd0f20383d3a35cc9757a36ab1d5b6e5064df4",
+    "seed": 4000,
+    "drone": 1,
+    "frame_stride": 10,
+    "num_scale_frames": 4,
+    "input": "RGB only",
+    "device": "mps",
+    "dtype": "float32",
+    "attention": "SDPA",
+    "image_size": [
+      266,
+      196
+    ],
+    "scope": "Development smoke evaluation, not held-out generalization or online control",
+    "frames": 19,
+    "inference_s": 4.336465416999999,
+    "frames_per_s": 4.381448523840494,
+    "checkpoint_sha256": "ee665103348e07e6b826d529b8e61de8f413d5432a4f2e84970d6c8fd2e1cd72"
+  },
+  "metrics": {
+    "tracked_frames": 19,
+    "total_frames": 19,
+    "tracking_fraction": 1.0,
+    "ate_rmse_m": 0.1270575123026333,
+    "endpoint_error_m": 0.09421680935492317,
+    "evaluation_scale": 4.852786056472654,
+    "alignment": "Sim(3), evaluator only",
+    "relative_translation_rmse_m": 0.10186769460385549,
+    "surface_accuracy_m": 0.39893387456206886,
+    "surface_error_p95_m": 0.8463046713927637,
+    "surface_coverage": 0.0035169111044597427
+  },
+  "points": 2038,
+  "mission": {
+    "status": "collision",
+    "controller": "RGB-D role-conditioned CTBR actor",
+    "mission_time_s": 18.0,
+    "reports": [
+      true,
+      true,
+      false
+    ],
+    "min_peer_clearance_m": 1.6273560523986816,
+    "altitude_range_m": [
+      0.7814931869506836,
+      0.44439005851745605,
+      2.951603949069977
+    ]
+  },
+  "confidence_threshold": 1.5,
+  "limitations": "One development trajectory, RGB only, 1 Hz keyframes, 4-frame initialization, evaluator-only Sim3. No relocalization or active exploration."
+}

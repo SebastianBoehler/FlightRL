@@ -1,0 +1,28 @@
+{
+  "episodes": 6,
+  "mission_complete": 0,
+  "collisions": 4,
+  "incorrect_reports": 2,
+  "camera_frames_per_s": 134.9770262283146,
+  "quality_thresholds": {
+    "surface_distance_m": 0.15,
+    "tracking_fraction": 0.95,
+    "ate_rmse_m": 0.15
+  },
+  "mapping": {
+    "rgb": {
+      "sequences": 18,
+      "passed_tracking_and_drift_checks": 0,
+      "mean_tracking_fraction": 0.13731093169927208,
+      "median_ate_rmse_m": 0.014474101934447729,
+      "median_surface_accuracy_m": 1.2757093597388627
+    },
+    "rgbd": {
+      "sequences": 18,
+      "passed_tracking_and_drift_checks": 1,
+      "mean_tracking_fraction": 0.9652272157394758,
+      "median_ate_rmse_m": 0.7078049622171436,
+      "median_surface_accuracy_m": 0.2755876262078724
+    }
+  }
+}

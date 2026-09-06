@@ -1,0 +1,809 @@
+[
+  {
+    "seed": 4100,
+    "mission": {
+      "status": "collision",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 22.7,
+      "reports": [
+        true,
+        true,
+        false
+      ],
+      "min_peer_clearance_m": 1.6228363513946533,
+      "altitude_range_m": [
+        2.553445339202881,
+        0.44624894857406616,
+        2.9112921357154846
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 12,
+        "tracked_frames": 3,
+        "total_frames": 228,
+        "tracking_fraction": 0.013157894736842105,
+        "ate_rmse_m": 0.011373122775652264,
+        "endpoint_error_m": 0.008982018189880316,
+        "evaluation_scale": 0.15000631477211074,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.0212920616352915,
+        "surface_accuracy_m": 5.6913456833054665,
+        "surface_error_p95_m": 8.601128460883512,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 28177,
+        "tracked_frames": 142,
+        "total_frames": 228,
+        "tracking_fraction": 0.6228070175438597,
+        "ate_rmse_m": 0.7180008076689607,
+        "endpoint_error_m": 0.918913287743227,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.028469776190488356,
+        "surface_accuracy_m": 0.23373054435486956,
+        "surface_error_p95_m": 0.7446030869818667,
+        "surface_coverage": 0.9698348623853211
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 12,
+        "tracked_frames": 5,
+        "total_frames": 228,
+        "tracking_fraction": 0.021929824561403508,
+        "ate_rmse_m": 0.00849008714161992,
+        "endpoint_error_m": 0.010913615597875476,
+        "evaluation_scale": 0.05982127123865469,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.01280928372264089,
+        "surface_accuracy_m": 1.0352762376474829,
+        "surface_error_p95_m": 1.4978379059703268,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 36370,
+        "tracked_frames": 228,
+        "total_frames": 228,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.9586197237435476,
+        "endpoint_error_m": 1.256797761172306,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.015107321236032912,
+        "surface_accuracy_m": 0.349989668613767,
+        "surface_error_p95_m": 1.005247412890004,
+        "surface_coverage": 0.9753157290470723
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 15,
+        "tracked_frames": 5,
+        "total_frames": 228,
+        "tracking_fraction": 0.021929824561403508,
+        "ate_rmse_m": 0.014474101934447729,
+        "endpoint_error_m": 0.02285273714348429,
+        "evaluation_scale": 0.07909449538016106,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.015228845562577599,
+        "surface_accuracy_m": 1.0864933337387928,
+        "surface_error_p95_m": 2.153782488947167,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 31070,
+        "tracked_frames": 225,
+        "total_frames": 228,
+        "tracking_fraction": 0.9868421052631579,
+        "ate_rmse_m": 0.2498964489385639,
+        "endpoint_error_m": 0.2665599549878153,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.019415754608073724,
+        "surface_accuracy_m": 0.09964304827474033,
+        "surface_error_p95_m": 0.2213299223162854,
+        "surface_coverage": 0.9442565186751233
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": false,
+        "inliers": 0
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 0
+      }
+    ],
+    "flight_wall_s": 0.3126800839963835,
+    "reconstruction_wall_s": 4.614704709005309,
+    "camera_frames": 684,
+    "camera_frames_per_s": 148.22183501042147,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  },
+  {
+    "seed": 4101,
+    "mission": {
+      "status": "collision",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 18.1,
+      "reports": [
+        true,
+        true,
+        false
+      ],
+      "min_peer_clearance_m": 1.4727892875671387,
+      "altitude_range_m": [
+        0.7799179553985596,
+        0.5073671936988831,
+        2.6806952953338623
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 17,
+        "tracked_frames": 4,
+        "total_frames": 182,
+        "tracking_fraction": 0.02197802197802198,
+        "ate_rmse_m": 0.01244751215491612,
+        "endpoint_error_m": 0.0139367131214991,
+        "evaluation_scale": 0.045663586376537474,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.020386146570973648,
+        "surface_accuracy_m": 0.6549892538880538,
+        "surface_error_p95_m": 1.1122374143997158,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 34573,
+        "tracked_frames": 182,
+        "total_frames": 182,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.9360638481113891,
+        "endpoint_error_m": 1.1281117778118361,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.03665678265610502,
+        "surface_accuracy_m": 0.3007384766570221,
+        "surface_error_p95_m": 0.9136812108896089,
+        "surface_coverage": 0.9874218573472923
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 16,
+        "tracked_frames": 7,
+        "total_frames": 182,
+        "tracking_fraction": 0.038461538461538464,
+        "ate_rmse_m": 0.007405341788900023,
+        "endpoint_error_m": 0.005215651052317363,
+        "evaluation_scale": 0.08441972653056654,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.01279196195443564,
+        "surface_accuracy_m": 1.2757093597388627,
+        "surface_error_p95_m": 1.6190090311525303,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 37490,
+        "tracked_frames": 182,
+        "total_frames": 182,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 1.1392525101200293,
+        "endpoint_error_m": 1.6978076989575535,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.018905946557147557,
+        "surface_accuracy_m": 0.38094615701850526,
+        "surface_error_p95_m": 1.0197663370770964,
+        "surface_coverage": 0.9640735704573106
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 57,
+        "tracked_frames": 40,
+        "total_frames": 182,
+        "tracking_fraction": 0.21978021978021978,
+        "ate_rmse_m": 0.024914492864096256,
+        "endpoint_error_m": 0.03782606341768974,
+        "evaluation_scale": 0.045726968568611866,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.016787568809493003,
+        "surface_accuracy_m": 0.585577734851714,
+        "surface_error_p95_m": 1.104493134111102,
+        "surface_coverage": 0.0014163191439137619
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 20551,
+        "tracked_frames": 182,
+        "total_frames": 182,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.20899635652215778,
+        "endpoint_error_m": 0.6032315956163755,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.0176352597601179,
+        "surface_accuracy_m": 0.08207682250452418,
+        "surface_error_p95_m": 0.2119893543789897,
+        "surface_coverage": 0.9645133370052719
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": true,
+        "inliers": 15,
+        "translation_error_m": 0.3310930033667122,
+        "rotation_error_deg": 3.2876804144353393
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 11
+      }
+    ],
+    "flight_wall_s": 0.27861112500249874,
+    "reconstruction_wall_s": 3.984493875002954,
+    "camera_frames": 546,
+    "camera_frames_per_s": 137.03120575121858,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  },
+  {
+    "seed": 4102,
+    "mission": {
+      "status": "collision",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 19.3,
+      "reports": [
+        true,
+        true,
+        false
+      ],
+      "min_peer_clearance_m": 1.589853286743164,
+      "altitude_range_m": [
+        0.781747579574585,
+        0.5091439485549927,
+        2.815616488456726
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 13,
+        "tracked_frames": 3,
+        "total_frames": 194,
+        "tracking_fraction": 0.015463917525773196,
+        "ate_rmse_m": 0.0049159798224271195,
+        "endpoint_error_m": 0.002113708350134778,
+        "evaluation_scale": 0.044663469629723326,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.010241703298401272,
+        "surface_accuracy_m": 1.3998584332630917,
+        "surface_error_p95_m": 1.998794515809799,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 28309,
+        "tracked_frames": 160,
+        "total_frames": 194,
+        "tracking_fraction": 0.8247422680412371,
+        "ate_rmse_m": 0.9372636311440549,
+        "endpoint_error_m": 1.1593595729750543,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.027457226308715357,
+        "surface_accuracy_m": 0.29049903383502157,
+        "surface_error_p95_m": 0.9528666316022223,
+        "surface_coverage": 0.9898967051195053
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 15,
+        "tracked_frames": 4,
+        "total_frames": 194,
+        "tracking_fraction": 0.020618556701030927,
+        "ate_rmse_m": 0.006583949131089874,
+        "endpoint_error_m": 0.0034165738068748872,
+        "evaluation_scale": 0.03975642862428219,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.011467094300042557,
+        "surface_accuracy_m": 1.021505150319419,
+        "surface_error_p95_m": 1.52080074487507,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 37835,
+        "tracked_frames": 194,
+        "total_frames": 194,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 1.1911860230317435,
+        "endpoint_error_m": 1.6468041563572657,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.018322139801622214,
+        "surface_accuracy_m": 0.37185017972315343,
+        "surface_error_p95_m": 1.011809618141705,
+        "surface_coverage": 0.974845060153117
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 14,
+        "tracked_frames": 25,
+        "total_frames": 194,
+        "tracking_fraction": 0.12886597938144329,
+        "ate_rmse_m": 0.02850046179701651,
+        "endpoint_error_m": 0.043475710253075645,
+        "evaluation_scale": 0.052303477656781464,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.03525703459780843,
+        "surface_accuracy_m": 2.5867511257554368,
+        "surface_error_p95_m": 3.1379713684516477,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 27977,
+        "tracked_frames": 194,
+        "total_frames": 194,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.16229718641522803,
+        "endpoint_error_m": 0.2109692297707148,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.019508158550671024,
+        "surface_accuracy_m": 0.13601327006495917,
+        "surface_error_p95_m": 0.3192115666883156,
+        "surface_coverage": 0.8687434633198865
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": false,
+        "inliers": 0
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 0
+      }
+    ],
+    "flight_wall_s": 0.29943358300079126,
+    "reconstruction_wall_s": 4.3434571250109,
+    "camera_frames": 582,
+    "camera_frames_per_s": 133.99464602716424,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  },
+  {
+    "seed": 4103,
+    "mission": {
+      "status": "incorrect_report",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 10.4,
+      "reports": [
+        true,
+        true,
+        false
+      ],
+      "min_peer_clearance_m": 1.5497076511383057,
+      "altitude_range_m": [
+        0.7728030681610107,
+        0.5247285962104797,
+        0.06819701194763184
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 15,
+        "tracked_frames": 4,
+        "total_frames": 105,
+        "tracking_fraction": 0.0380952380952381,
+        "ate_rmse_m": 0.020277415177077623,
+        "endpoint_error_m": 0.02837837695130698,
+        "evaluation_scale": 0.21741868128920688,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.036452791080333134,
+        "surface_accuracy_m": 4.1027915377595034,
+        "surface_error_p95_m": 7.731343579953362,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 34576,
+        "tracked_frames": 105,
+        "total_frames": 105,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.7966365574744841,
+        "endpoint_error_m": 2.0615398890026753,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.08939311884100988,
+        "surface_accuracy_m": 0.30703732540872414,
+        "surface_error_p95_m": 0.9424656283582578,
+        "surface_coverage": 0.9887849079025549
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 19,
+        "tracked_frames": 8,
+        "total_frames": 105,
+        "tracking_fraction": 0.0761904761904762,
+        "ate_rmse_m": 0.04387817287520336,
+        "endpoint_error_m": 0.03352088747541175,
+        "evaluation_scale": 0.17592513351655906,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.07462494983698302,
+        "surface_accuracy_m": 5.194759663585405,
+        "surface_error_p95_m": 7.856379412957381,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 29713,
+        "tracked_frames": 105,
+        "total_frames": 105,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.6976091167653267,
+        "endpoint_error_m": 1.105008833383882,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.02454869515353024,
+        "surface_accuracy_m": 0.32698490841107525,
+        "surface_error_p95_m": 0.99034679876202,
+        "surface_coverage": 0.9736842105263158
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 36,
+        "tracked_frames": 83,
+        "total_frames": 105,
+        "tracking_fraction": 0.7904761904761904,
+        "ate_rmse_m": 0.01279808559520662,
+        "endpoint_error_m": 0.02217322509112385,
+        "evaluation_scale": 0.09888741511298463,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.00884810046191713,
+        "surface_accuracy_m": 0.6179136939561807,
+        "surface_error_p95_m": 1.4935817816161072,
+        "surface_coverage": 0.004819830158365848
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 5820,
+        "tracked_frames": 105,
+        "total_frames": 105,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.20061703046351503,
+        "endpoint_error_m": 0.3191172228079165,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.006264805155474815,
+        "surface_accuracy_m": 0.09211493888210125,
+        "surface_error_p95_m": 0.2874521047877096,
+        "surface_coverage": 0.8914390635758549
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": false,
+        "inliers": 0
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 0
+      }
+    ],
+    "flight_wall_s": 0.16834745799133088,
+    "reconstruction_wall_s": 2.4815335419989424,
+    "camera_frames": 315,
+    "camera_frames_per_s": 126.93763540518536,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  },
+  {
+    "seed": 4104,
+    "mission": {
+      "status": "incorrect_report",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 8.8,
+      "reports": [
+        true,
+        false,
+        false
+      ],
+      "min_peer_clearance_m": 1.4743118286132812,
+      "altitude_range_m": [
+        0.7819862365722656,
+        0.5676392912864685,
+        0.08098602294921875
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 14,
+        "tracked_frames": 3,
+        "total_frames": 89,
+        "tracking_fraction": 0.033707865168539325,
+        "ate_rmse_m": 0.00887564871767119,
+        "endpoint_error_m": 0.001962239132704486,
+        "evaluation_scale": 0.03803200017994224,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.017997272503072842,
+        "surface_accuracy_m": 1.6849339172111804,
+        "surface_error_p95_m": 2.054758880852451,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 26076,
+        "tracked_frames": 89,
+        "total_frames": 89,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.6488618252786492,
+        "endpoint_error_m": 1.0169599980544564,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.032757088072285646,
+        "surface_accuracy_m": 0.24031765022437543,
+        "surface_error_p95_m": 0.8334795095394513,
+        "surface_coverage": 0.9898630758756336
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 29,
+        "tracked_frames": 25,
+        "total_frames": 89,
+        "tracking_fraction": 0.2808988764044944,
+        "ate_rmse_m": 0.05505312179605185,
+        "endpoint_error_m": 0.06298461412288914,
+        "evaluation_scale": 0.11731528826324392,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.05246941633250529,
+        "surface_accuracy_m": 0.6042095905979321,
+        "surface_error_p95_m": 1.4317235636854428,
+        "surface_coverage": 0.0012844729882886287
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 27940,
+        "tracked_frames": 89,
+        "total_frames": 89,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.4827503551537256,
+        "endpoint_error_m": 0.9285587641371654,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.021960201537423743,
+        "surface_accuracy_m": 0.2635889272126814,
+        "surface_error_p95_m": 0.8624966740053709,
+        "surface_coverage": 0.9875330562901398
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 30,
+        "tracked_frames": 35,
+        "total_frames": 89,
+        "tracking_fraction": 0.39325842696629215,
+        "ate_rmse_m": 0.06756523908797529,
+        "endpoint_error_m": 0.05519383754151815,
+        "evaluation_scale": 0.051312817365476486,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.038592093292705035,
+        "surface_accuracy_m": 3.249281382589884,
+        "surface_error_p95_m": 4.0089226853723545,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 8828,
+        "tracked_frames": 89,
+        "total_frames": 89,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 0.06054633196239015,
+        "endpoint_error_m": 0.10984656586401091,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.004750093762726031,
+        "surface_accuracy_m": 0.044024466791996106,
+        "surface_error_p95_m": 0.11899144719533707,
+        "surface_coverage": 0.991371615590598
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": false,
+        "inliers": 5
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 6
+      }
+    ],
+    "flight_wall_s": 0.1446027500060154,
+    "reconstruction_wall_s": 2.15547024999978,
+    "camera_frames": 267,
+    "camera_frames_per_s": 123.87088153966738,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  },
+  {
+    "seed": 4105,
+    "mission": {
+      "status": "collision",
+      "controller": "RGB-D role-conditioned CTBR actor",
+      "mission_time_s": 19.8,
+      "reports": [
+        true,
+        true,
+        false
+      ],
+      "min_peer_clearance_m": 1.6885395050048828,
+      "altitude_range_m": [
+        1.751878023147583,
+        0.5285822153091431,
+        2.5971816778182983
+      ]
+    },
+    "mapping": [
+      {
+        "drone": 1,
+        "mode": "rgb",
+        "points": 12,
+        "tracked_frames": 3,
+        "total_frames": 199,
+        "tracking_fraction": 0.01507537688442211,
+        "ate_rmse_m": 0.015927471657292382,
+        "endpoint_error_m": 0.008157867422186715,
+        "evaluation_scale": 0.09334309524144294,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.0363655567498861,
+        "surface_accuracy_m": 3.829797344193285,
+        "surface_error_p95_m": 5.512812529215796,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 1,
+        "mode": "rgbd",
+        "points": 31760,
+        "tracked_frames": 188,
+        "total_frames": 199,
+        "tracking_fraction": 0.9447236180904522,
+        "ate_rmse_m": 0.7863422849626944,
+        "endpoint_error_m": 1.1284265147142518,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.02983079939755943,
+        "surface_accuracy_m": 0.28758632520306343,
+        "surface_error_p95_m": 0.9287507992875748,
+        "surface_coverage": 0.9790291831646869
+      },
+      {
+        "drone": 2,
+        "mode": "rgb",
+        "points": 12,
+        "tracked_frames": 2,
+        "total_frames": 199,
+        "tracking_fraction": 0.010050251256281407,
+        "ate_rmse_m": null,
+        "surface_accuracy_m": null,
+        "surface_coverage": 0.0
+      },
+      {
+        "drone": 2,
+        "mode": "rgbd",
+        "points": 37544,
+        "tracked_frames": 199,
+        "total_frames": 199,
+        "tracking_fraction": 1.0,
+        "ate_rmse_m": 1.358552002821461,
+        "endpoint_error_m": 1.7749963283424217,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.019223796903909872,
+        "surface_accuracy_m": 0.3874859210227842,
+        "surface_error_p95_m": 1.0103644519243584,
+        "surface_coverage": 0.9579165475850243
+      },
+      {
+        "drone": 3,
+        "mode": "rgb",
+        "points": 87,
+        "tracked_frames": 66,
+        "total_frames": 199,
+        "tracking_fraction": 0.3316582914572864,
+        "ate_rmse_m": 0.07911160399486372,
+        "endpoint_error_m": 0.16537168700323948,
+        "evaluation_scale": 0.05381645300064046,
+        "alignment": "Sim(3), evaluator only",
+        "relative_translation_rmse_m": 0.02170071515960414,
+        "surface_accuracy_m": 0.6279380521882566,
+        "surface_error_p95_m": 1.046797083605161,
+        "surface_coverage": 0.0014708045300779527
+      },
+      {
+        "drone": 3,
+        "mode": "rgbd",
+        "points": 29631,
+        "tracked_frames": 198,
+        "total_frames": 199,
+        "tracking_fraction": 0.9949748743718593,
+        "ate_rmse_m": 0.20275876187656056,
+        "endpoint_error_m": 0.32141581941590575,
+        "evaluation_scale": 1.0,
+        "alignment": "initial camera frame only",
+        "relative_translation_rmse_m": 0.030562913997090175,
+        "surface_accuracy_m": 0.12474872564704417,
+        "surface_error_p95_m": 0.3766603032257757,
+        "surface_coverage": 0.9790410354463892
+      }
+    ],
+    "registration": [
+      {
+        "drone": 2,
+        "accepted": false,
+        "inliers": 0
+      },
+      {
+        "drone": 3,
+        "accepted": false,
+        "inliers": 8
+      }
+    ],
+    "flight_wall_s": 0.2905497909960104,
+    "reconstruction_wall_s": 4.5796670420095325,
+    "camera_frames": 597,
+    "camera_frames_per_s": 130.35882183654113,
+    "coverage_definition": "Fraction of sampled surfaces visible along the flown trajectory within 0.15 m of reconstruction; NOT whole-site coverage",
+    "mapping_completion": "Not assessed: active exploration and whole-site coverage are not implemented"
+  }
+]
