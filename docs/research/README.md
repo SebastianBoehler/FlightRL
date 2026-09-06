@@ -11,6 +11,16 @@ artifacts have no flight authority; the retained catalog is
 
 Current starting points:
 
+- `../robotics-workbench-20260906.md` — implemented xArm7 import, causal recording, synchronized replay and measured local validation.
+- `robotics-product-positioning-20260906.md` — industrial pilot focus, existing visualization tools and the next partner evidence milestone.
+- `robotics-retrospective-20260906.md` — current import/timestamp gaps, articulated-model choice, unified workbench and measured performance gates.
+- `../robotics-inspection-20260906.md` — implemented shared drone/rover physics, actual RGB-D training, and held-out inspection/docking evidence.
+- `robotics-platform-direction-20260906.md` — staged general robotics capability map and product direction.
+
+- `realism-implementation-20260906.md` — shared forest RGB-D, Jolt contacts and measured local rendering budget.
+
+- `autonomous_drone_technology_trajectory_20260903.md` — current technology
+  trajectory, durable architecture bets, and explicit kill criteria.
 - `cross_airframe_autonomy_stack_20260902.md` — primary-source-backed language,
   accelerator, bundle, deployment, and cross-airframe architecture decision.
 - `docs/edge_navigation_v3.md` — edge-shaped policy and deployment boundary.

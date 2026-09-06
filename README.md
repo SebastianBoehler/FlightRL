@@ -7,6 +7,14 @@ small target-conditioned Crazyflie AI Deck policy. Its actor proposes bounded
 velocity and yaw-rate setpoints; the STM32 estimator, safety layer, stabilizer,
 and motor mixer remain authoritative.
 
+The forward architecture separates a general typed mission supervisor from the
+learned controller. A versioned policy-I/O contract can describe contiguous raw
+camera, IMU, actuator, electrical, thermal, typed-goal, embodiment, and neighbor
+signals with only explicit affine calibration, then select velocity, body-rate,
+or direct per-motor action heads. Language stays in the low-rate mission
+compiler. These new contracts are simulation/training foundations; they do not
+make the current hardware lane direct-motor capable.
+
 ## Current status
 
 - The canonical target is `aideck-navigation-policy-v3`: one 64x48 gray4 frame,
@@ -17,6 +25,13 @@ and motor mixer remain authoritative.
 - The native fixed-door environment provides a privileged desktop teacher;
   generic six-DoF environments provide desktop teacher, training, and
   evaluation lanes.
+- A generic Python/C mission supervisor now requires target verification before
+  navigation and keeps recovery/abort semantics outside learned policy output.
+- `flightrl.policy_io_contract` binds raw signal layouts and swappable action
+  heads without authorizing hardware deployment.
+- The separate desktop [industrial robotics workbench](docs/industry-expansion-20260906.md)
+  runs power/production inspection with a drone and wheeled rover, actual WebGPU
+  camera observations, shared MuJoCo contacts and a learned visual-servo policy.
 - No learned navigation checkpoint in the working repository is current,
   approved, or deployable.
 - Generic checkpoint manifests cannot authorize learned live control. A typed,
@@ -147,6 +162,8 @@ simulation-gate output as live authority.
 - `src/flightrl/artifact_identity.py`: canonical content and file identities.
 - `src/flightrl/scenario_bundle.py`: offline compilation of explicit vehicle,
   terrain, sensor, frame, and resolved-mission contracts.
+- `src/flightrl/policy_io_contract.py`: hash-bound raw observation and action-head
+  layout compiler.
 - `src/flightrl/sixdof/`: six-DoF tasks, policies, PPO/imitation, and reports.
 - `src/flightrl/mujoco/`: independent rigid-body/contact validation lane.
 - `src/flightrl/puffer4_door_*`: fixed-door privileged teacher, mission metric,

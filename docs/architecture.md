@@ -15,6 +15,12 @@ The current implementation is still centered on a Crazyflie edge target and a
 small set of desktop environments. New modules must move toward the target
 architecture below without weakening the current fail-closed hardware gates.
 
+The [industrial robotics workbench](industry-expansion-20260906.md) is a separate
+desktop lane: MuJoCo owns both interacting robots, WebGPU supplies actual RGB-D,
+and `RobotEnvironment` separates reset/step/observe from the live transport. Its
+serial visual evaluation and CPU stepping are measured separately from native
+flight batch throughput. It is not yet a universal compiled robot backend.
+
 ## System shape
 
 ```text
@@ -23,7 +29,7 @@ terrain / CAD / calibration --> vehicle / terrain / sensor / mission
                                        |
                   +--------------------+--------------------+
                   v                    v                    v
-             scalar C core       optimized backends    MuJoCo reference
+             scalar C core       optimized backends    MuJoCo robot worlds
                   +--------------------+--------------------+
                                        |
                               Python / PyTorch learner
@@ -34,6 +40,20 @@ terrain / CAD / calibration --> vehicle / terrain / sensor / mission
                               \          |          /
                              autopilot adapters and safety
 ```
+
+Natural-language instructions never enter a control-rate loop. An offline
+compiler lowers them into typed mission state and bounded target/constraint
+records. The generic supervisor then executes only fixed states and events:
+`preflight -> takeoff -> search -> verify -> navigate -> hold/land`, with
+recovery and abort transitions available from the relevant phases. The Python
+implementation is the readable reference; `native/mission_runtime.*` is its
+versioned constant-time C runtime.
+
+`MissionProgram` is the low-rate compositional contract. It binds semantic
+targets to stable integer IDs and compiles search, approach, inspect, track,
+hold, return, land, and abort primitives into fixed-width numeric rows. A future
+language or VLM planner may produce this type; it may not invent new runtime
+operators or pass free text into the learned controller.
 
 Generalization comes from stable contracts and replaceable adapters. It does
 not come from forcing all implementations into one language or silently
@@ -46,12 +66,13 @@ reinterpreting same-shaped arrays.
 - **C++20** may implement CUDA, HLS, and vendor-host adapters behind the C
   interface. It does not define different physics semantics.
 - **Python** owns experiment orchestration, PyTorch/PufferLib training,
-  offline compilation, evaluation, and reports. It stays out of per-environment
-  hot loops.
+  offline compilation, evaluation, and reports. Native flight hot loops remain
+  in C; the interactive robotics adapter currently steps MuJoCo through Python.
 - **Metal** is the first Apple GPU sensor backend. **CUDA** is added when an
   NVIDIA target and an end-to-end bottleneck justify it.
-- **WebGPU/WGSL** may power the portable interactive viewer, never the
-  authoritative sensor implementation.
+- **WebGPU/WGSL** powers the interactive viewer and the industrial workbench's
+  RGB-D observations. Its rendered depth is checked against independent physical
+  rays; this path has a separate performance envelope from native Metal sensors.
 
 Porting effort is not an architectural constraint. Validation surface is: a
 new implementation is accepted only when it produces a measured benefit and
@@ -108,11 +129,34 @@ adapters; it is not a physical-flight deployment bundle.
 
 ### Policy and autopilot
 
-The default portable policy emits bounded velocity, yaw-rate, or trajectory
-intent. PX4/ArduPilot or the Crazyflie STM32 owns estimation, attitude/rate
-stabilization, mixing, watchdogs, and motor authority. An aggressive body-rate
-policy is a separate capability profile with tighter timing and identification
-evidence.
+`flightrl.policy_io_contract` defines a target-independent raw-observation seam.
+Each signal declares its source role, wire dtype, shape, unit, coordinate frame,
+sample rate, contiguous byte offset, and identity or affine calibration. The
+contract intentionally has no slot for hand-engineered task features. Camera,
+IMU, actuator feedback, battery/current/temperature, audio, typed goal vectors,
+embodiment descriptors, and neighbor messages can therefore be added without
+changing simulator semantics or hiding preprocessing inside a trainer.
+
+Every signal also requires monotonic capture time, sequence, and explicit
+validity metadata. Missing data is masked, never encoded as plausible zeroes.
+Natural-language tokens remain in the low-rate compiler; the control policy
+receives only a fixed typed goal-conditioning vector derived from the active
+mission primitive.
+
+The same observation family may be paired with one explicit action head:
+
+- bounded velocity plus yaw rate for broad autopilot portability;
+- body rates plus collective thrust for aggressive control while retaining a
+  flight-controller mixer;
+- normalized per-actuator thrust for direct-control research across arbitrary
+  rotor counts.
+
+These are separate capability profiles, not interchangeable checkpoints. Direct
+motor output still passes through a vehicle-specific actuator/safety adapter and
+requires tighter timing, system-identification, failure-injection, HIL, and
+physical promotion evidence. A simulation contract never grants hardware motor
+authority. PX4/ArduPilot or the Crazyflie STM32 remains authoritative for every
+currently implemented physical path.
 
 The current `aideck-navigation-policy-v3` actor remains the only concrete edge
 target. It consumes one 64x48 gray4 frame, 19 normalized telemetry values, a
@@ -132,6 +176,12 @@ The repository does not yet contain the full target stack. In particular:
   held-out-airframe promotion gate exists;
 - no PX4 or ArduPilot adapter implements this policy contract;
 - no typed deployment bundle grants learned physical-flight authority.
+
+The generic policy-I/O and mission-runtime contracts are foundations only. No
+current trainer consumes the new raw multimodal layout, and no current model
+emits direct motor commands through it. The existing edge-v3 and six-DoF actors
+retain their exact historical inputs and action semantics until a new policy
+family proves parity and promotion gates.
 
 Existing hardware modules support Crazyflie connection, preflight, capture,
 telemetry, nonlearned bring-up, and evidence collection. The generic
@@ -218,14 +268,17 @@ deployment is bit-exact because rounding and saturation are contract semantics.
 
 1. Extend the initial native ABI, artifact identity, embodiment, coordinate
    frame, and scenario-bundle contracts as real backends require new fields.
-2. Build the offline terrain and vehicle compiler; runtime map parsing is
+2. Connect the typed mission and raw policy-I/O contracts to scenario bundles,
+   datasets, and one reference learner without adding Python callbacks to the
+   native step loop.
+3. Build the offline terrain and vehicle compiler; runtime map parsing is
    forbidden.
-3. Keep the CPU physics reference fast while adding deterministic Metal camera,
+4. Keep the CPU physics reference fast while adding deterministic Metal camera,
    depth, segmentation, and perturbation kernels.
-4. Add embodiment-conditioned policies and held-out-airframe evaluation.
-5. Add PX4 and ArduPilot SITL adapters before physical integrations.
-6. Freeze `EdgeIR`, generate float/int8 C, and prove sequence parity.
-7. Add CUDA and FPGA implementations only against stable contracts and measured
+5. Add embodiment-conditioned policies and held-out-airframe evaluation.
+6. Add PX4 and ArduPilot SITL adapters before physical integrations.
+7. Freeze `EdgeIR`, generate float/int8 C, and prove sequence parity.
+8. Add CUDA and FPGA implementations only against stable contracts and measured
    bottlenecks.
 
 Unsupported paths fail closed. A successful simulation, teacher, export, or
