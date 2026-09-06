@@ -8,6 +8,7 @@ class MissionPhase(str, Enum):
     PRE_FLIGHT = "preflight"
     TAKEOFF = "takeoff"
     SEARCH = "search"
+    VERIFY = "verify"
     NAVIGATE = "navigate"
     RECOVER = "recover"
     HOLD = "hold"
@@ -19,6 +20,8 @@ class MissionEvent(str, Enum):
     PREFLIGHT_PASSED = "preflight_passed"
     TAKEOFF_READY = "takeoff_ready"
     TARGET_ACQUIRED = "target_acquired"
+    TARGET_CONFIRMED = "target_confirmed"
+    TARGET_REJECTED = "target_rejected"
     TARGET_LOST = "target_lost"
     BLOCKED = "blocked"
     RECOVERED = "recovered"
@@ -49,7 +52,10 @@ class PhaseLimits:
 TRANSITIONS: dict[tuple[MissionPhase, MissionEvent], MissionPhase] = {
     (MissionPhase.PRE_FLIGHT, MissionEvent.PREFLIGHT_PASSED): MissionPhase.TAKEOFF,
     (MissionPhase.TAKEOFF, MissionEvent.TAKEOFF_READY): MissionPhase.SEARCH,
-    (MissionPhase.SEARCH, MissionEvent.TARGET_ACQUIRED): MissionPhase.NAVIGATE,
+    (MissionPhase.SEARCH, MissionEvent.TARGET_ACQUIRED): MissionPhase.VERIFY,
+    (MissionPhase.VERIFY, MissionEvent.TARGET_CONFIRMED): MissionPhase.NAVIGATE,
+    (MissionPhase.VERIFY, MissionEvent.TARGET_REJECTED): MissionPhase.SEARCH,
+    (MissionPhase.VERIFY, MissionEvent.TARGET_LOST): MissionPhase.SEARCH,
     (MissionPhase.NAVIGATE, MissionEvent.TARGET_LOST): MissionPhase.SEARCH,
     (MissionPhase.NAVIGATE, MissionEvent.GOAL_REACHED): MissionPhase.HOLD,
     (MissionPhase.HOLD, MissionEvent.LANDING_REQUESTED): MissionPhase.LAND,
@@ -61,6 +67,7 @@ LIMITS: dict[MissionPhase, PhaseLimits] = {
     MissionPhase.PRE_FLIGHT: PhaseLimits(0.0, 0.0, False, "preflight"),
     MissionPhase.TAKEOFF: PhaseLimits(0.12, 20.0, False, "controller"),
     MissionPhase.SEARCH: PhaseLimits(0.20, 35.0, True, "policy"),
+    MissionPhase.VERIFY: PhaseLimits(0.08, 20.0, False, "perception"),
     MissionPhase.NAVIGATE: PhaseLimits(0.25, 45.0, True, "policy"),
     MissionPhase.RECOVER: PhaseLimits(0.16, 35.0, False, "controller"),
     MissionPhase.HOLD: PhaseLimits(0.08, 20.0, False, "controller"),
@@ -82,6 +89,7 @@ def next_state(state: MissionState, event: MissionEvent) -> MissionState:
         return replace_phase(state, MissionPhase.ABORT, event.value)
     if event is MissionEvent.BLOCKED and state.phase in {
         MissionPhase.SEARCH,
+        MissionPhase.VERIFY,
         MissionPhase.NAVIGATE,
     }:
         return MissionState(
@@ -94,6 +102,7 @@ def next_state(state: MissionState, event: MissionEvent) -> MissionState:
     if event is MissionEvent.RECOVERED and state.phase is MissionPhase.RECOVER:
         if state.resume_phase not in {
             MissionPhase.SEARCH,
+            MissionPhase.VERIFY,
             MissionPhase.NAVIGATE,
         }:
             raise ValueError("recovery state has no valid phase to resume")

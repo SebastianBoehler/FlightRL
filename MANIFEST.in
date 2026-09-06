@@ -1,1 +1,5 @@
 recursive-include src/flightrl/native *.c *.h *.inc
+
+recursive-include src/flightrl/native *.metal
+
+recursive-include src/flightrl/native/realism *.cpp CMakeLists.txt

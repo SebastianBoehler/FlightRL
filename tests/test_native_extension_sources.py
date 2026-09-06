@@ -18,6 +18,13 @@ def test_native_extension_links_versioned_core_abi() -> None:
     assert 'extern "C"' in header_source
 
 
+def test_native_extension_links_generic_mission_runtime() -> None:
+    root = Path(__file__).resolve().parents[1]
+    setup_source = (root / "setup.py").read_text()
+
+    assert '"src/flightrl/native/mission_runtime.c"' in setup_source
+
+
 def test_native_extension_does_not_disable_nonfinite_checks() -> None:
     root = Path(__file__).resolve().parents[1]
     setup_source = (root / "setup.py").read_text()
@@ -33,6 +40,10 @@ def test_native_sources_and_includes_ship_in_packages() -> None:
         "native/*.c",
         "native/*.h",
         "native/*.inc",
+        "native/*.metal",
+        "native/realism/*.cpp",
+        "native/realism/*.h",
+        "native/realism/CMakeLists.txt",
     ]
     assert "recursive-include src/flightrl/native *.c *.h *.inc" in (
         root / "MANIFEST.in"

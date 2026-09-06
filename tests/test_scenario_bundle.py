@@ -189,3 +189,12 @@ def test_scenario_bundle_rejects_nonfinite_resolved_mission_values() -> None:
             sensor=SixDofSensorProfile(),
             mission=mission,
         )
+
+
+def test_empty_mission_compiles_for_diagnostic_scenario(tmp_path: Path) -> None:
+    bundle = compile_scenario_bundle(
+        vehicle=SixDofPhysicsProfile(), terrain=BoxRoom(), sensor=SixDofSensorProfile(),
+        mission=ResolvedMissionPlan(source_text="diagnostic", steps=()),
+    )
+    loaded = load_scenario_bundle(write_scenario_bundle(bundle, tmp_path / "scenario"))
+    assert loaded.arrays["mission_steps"].shape == (0, 9)

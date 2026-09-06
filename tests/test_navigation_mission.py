@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from flightrl.navigation.mission import MissionEvent, MissionPhase, MissionState, next_state, phase_limits
+from flightrl.navigation.mission import (
+    MissionEvent,
+    MissionPhase,
+    MissionState,
+    next_state,
+    phase_limits,
+)
 
 
 def test_mission_state_machine_runs_single_drone_navigation_flow() -> None:
@@ -16,6 +22,9 @@ def test_mission_state_machine_runs_single_drone_navigation_flow() -> None:
     assert state.phase is MissionPhase.SEARCH
 
     state = next_state(state, MissionEvent.TARGET_ACQUIRED)
+    assert state.phase is MissionPhase.VERIFY
+
+    state = next_state(state, MissionEvent.TARGET_CONFIRMED)
     assert state.phase is MissionPhase.NAVIGATE
 
     state = next_state(state, MissionEvent.BLOCKED)
@@ -26,6 +35,18 @@ def test_mission_state_machine_runs_single_drone_navigation_flow() -> None:
 
     state = next_state(state, MissionEvent.GOAL_REACHED)
     assert state.phase is MissionPhase.HOLD
+
+
+def test_rejected_candidate_returns_to_search_without_navigation_authority() -> None:
+    state = MissionState(phase=MissionPhase.SEARCH)
+
+    verifying = next_state(state, MissionEvent.TARGET_ACQUIRED)
+    searching = next_state(verifying, MissionEvent.TARGET_REJECTED)
+
+    assert verifying.phase is MissionPhase.VERIFY
+    assert phase_limits(verifying.phase).learned_policy_phase_eligible is False
+    assert searching.phase is MissionPhase.SEARCH
+    assert searching.reason == "target_rejected"
 
 
 def test_mission_state_machine_abort_wins_from_any_phase() -> None:
@@ -50,6 +71,20 @@ def test_recovery_resumes_search_without_inventing_target_acquisition() -> None:
     assert recovering.resume_phase is MissionPhase.SEARCH
     assert resumed.phase is MissionPhase.SEARCH
     assert resumed.resume_phase is None
+
+
+def test_recovery_resumes_verification_without_confirming_the_target() -> None:
+    verifying = MissionState(
+        phase=MissionPhase.VERIFY,
+        step=3,
+        reason="target_acquired",
+    )
+
+    recovering = next_state(verifying, MissionEvent.BLOCKED)
+    resumed = next_state(recovering, MissionEvent.RECOVERED)
+
+    assert recovering.resume_phase is MissionPhase.VERIFY
+    assert resumed.phase is MissionPhase.VERIFY
 
 
 def test_recovery_without_origin_is_rejected() -> None:

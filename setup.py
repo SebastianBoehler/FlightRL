@@ -16,6 +16,7 @@ extension = Extension(
     "flightrl._binding",
     sources=[
         "src/flightrl/native/flightrl_core.c",
+        "src/flightrl/native/mission_runtime.c",
         "src/flightrl/native/binding.c",
         "src/flightrl/native/native_actions.c",
         "src/flightrl/native/native_env.c",
@@ -30,6 +31,7 @@ extension = Extension(
         "src/flightrl/native/native_sixdof.c",
         "src/flightrl/native/native_sixdof_setpoint.c",
         "src/flightrl/native/native_sixdof_vision.c",
+        "src/flightrl/native/inspection_scene.c",
         "src/flightrl/native/native_door_self_mask.c",
     ],
     include_dirs=[

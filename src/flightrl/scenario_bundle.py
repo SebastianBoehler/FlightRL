@@ -214,7 +214,7 @@ def _require_mission_inside_terrain(
     targets = np.asarray(
         [step.target_xyz_m for step in mission.steps],
         dtype=np.float32,
-    )
+    ).reshape(-1, 3)
     if not np.all(terrain.contains(targets, margin=0.0)):
         raise ValueError("resolved mission target is outside navigable terrain")
 

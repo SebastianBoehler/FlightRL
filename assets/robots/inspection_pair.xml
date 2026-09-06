@@ -1,0 +1,39 @@
+<mujoco model="inspection_pair">
+  <compiler angle="radian" inertiafromgeom="auto"/>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast" cone="elliptic"/>
+  <default><geom friction="0.9 0.005 0.001" solref="0.01 1" condim="4"/><joint damping="0.02"/></default>
+  <worldbody>
+    <geom name="floor" type="box" size="9 6 .1" pos="2 0 -.1" rgba=".32 .34 .32 1"/>
+    <body name="drone" pos="-2 -1.2 1.6">
+      <freejoint name="drone_free"/>
+      <geom name="drone_chassis" type="box" size=".0925 .106 .032" mass=".377" rgba=".85 .22 .15 1"/>
+      <site name="drone_camera" pos=".035 0 .012"/>
+      <site name="drone_imu"/>
+    </body>
+    <body name="rover" pos="-2 1.2 .17">
+      <freejoint name="rover_free"/>
+      <geom name="rover_chassis" type="box" size=".22 .17 .07" mass="7" rgba=".12 .4 .8 1"/>
+      <geom name="rover_camera_housing" type="box" size=".04 .04 .04" pos=".17 0 .14" mass=".15" rgba=".1 .12 .15 1"/>
+      <site name="rover_camera" pos=".22 0 .14"/>
+      <site name="rover_imu"/>
+      <body name="left_wheel" pos="0 .21 -.06"><joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping=".05"/>
+        <geom name="left_tire" type="cylinder" size=".11 .035" quat=".70710678 .70710678 0 0" mass=".45" rgba=".08 .09 .1 1"/>
+      </body>
+      <body name="right_wheel" pos="0 -.21 -.06"><joint name="right_wheel_joint" type="hinge" axis="0 1 0" damping=".05"/>
+        <geom name="right_tire" type="cylinder" size=".11 .035" quat=".70710678 .70710678 0 0" mass=".45" rgba=".08 .09 .1 1"/>
+      </body>
+      <geom name="front_caster" type="sphere" size=".04" pos=".17 0 -.13" mass=".08" friction=".01 .001 .001" priority="1" rgba=".1 .1 .1 1"/>
+      <geom name="rear_caster" type="sphere" size=".04" pos="-.17 0 -.13" mass=".08" friction=".01 .001 .001" priority="1" rgba=".1 .1 .1 1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <velocity name="left_drive" joint="left_wheel_joint" kv="3" ctrlrange="-6 6" forcerange="-3 3"/>
+    <velocity name="right_drive" joint="right_wheel_joint" kv="3" ctrlrange="-6 6" forcerange="-3 3"/>
+  </actuator>
+  <sensor>
+    <gyro name="drone_gyro" site="drone_imu"/><accelerometer name="drone_accelerometer" site="drone_imu"/>
+    <gyro name="rover_gyro" site="rover_imu"/><accelerometer name="rover_accelerometer" site="rover_imu"/>
+    <jointpos name="left_encoder" joint="left_wheel_joint"/><jointpos name="right_encoder" joint="right_wheel_joint"/>
+    <jointvel name="left_speed" joint="left_wheel_joint"/><jointvel name="right_speed" joint="right_wheel_joint"/>
+  </sensor>
+</mujoco>

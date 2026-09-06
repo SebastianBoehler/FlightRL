@@ -4,6 +4,7 @@
 #include "binding_sixdof_setpoint.h"
 #include "binding_sixdof_vision.h"
 #include "flightrl_core.h"
+#include "binding_inspection.h"
 
 static PyObject *core_abi_version(PyObject *self, PyObject *args) {
     (void)self;
@@ -140,6 +141,8 @@ static int my_get(PyObject *dict, DronePlanarEnv *env) {
 }
 
 static PyMethodDef methods[] = {
+    {"inspection_render", inspection_render, METH_VARARGS, "Render authored inspection scene batches"},
+    {"inspection_collision", inspection_collision, METH_VARARGS, "Check swept inspection body envelopes"},
     {"core_abi_version", core_abi_version, METH_NOARGS, "Return the native FlightRL C ABI version"},
     {"env_init", (PyCFunction)env_init, METH_VARARGS | METH_KEYWORDS, "Initialize a native environment"},
     {"env_reset", env_reset, METH_VARARGS, "Reset one environment"},
